@@ -6,6 +6,7 @@ import { useAuth } from '../auth.jsx';
 import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
+import StylePicker from '../components/StylePicker.jsx';
 import { formatDate, formatDateTime, nowMinutesTR, slugify, formBaseUrl, today, weekdayName, timeToMin } from '../lib/util.js';
 
 const APPT_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
@@ -92,6 +93,7 @@ function NewFormModal({ onClose }) {
   const [templateId, setTemplateId] = useState('iletisim');
   const [error, setError] = useState('');
   const [tq, setTq] = useState('');
+  const [styleId, setStyleId] = useState('yuzen');
   const autoSlug = slugify(`${isletme} ${name}`);
   const finalSlug = slugTouched ? slug : autoSlug;
 
@@ -99,7 +101,7 @@ function NewFormModal({ onClose }) {
     e.preventDefault();
     setError('');
     try {
-      const id = await api.createForm({ name, isletme, slug: finalSlug, templateId });
+      const id = await api.createForm({ name, isletme, slug: finalSlug, templateId, styleId });
       toast('Form oluşturuldu.');
       navigate(`/panel/formlar/${id}/duzenle`);
     } catch (err) {
@@ -148,6 +150,10 @@ function NewFormModal({ onClose }) {
             );
           })}
           <div className="pf-hint">Listede sektörünüz yoksa "Boş form" ya da "Genel iletişim formu" ile başlayın; randevu gerekiyorsa Alanlar'dan "Randevu" alanı ekleyin.</div>
+        </div>
+        <div className="stack-sm">
+          <div className="pf-label">Tasarım <span className="muted small">(sonradan Görünüm sekmesinden tek tıkla değiştirilebilir)</span></div>
+          <StylePicker value={styleId} onChange={setStyleId} />
         </div>
         {error && <div className="notice notice-err" role="alert">{error}</div>}
         <div className="row-end">

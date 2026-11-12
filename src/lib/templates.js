@@ -20,6 +20,7 @@ export const typeLabel = (t) => FIELD_TYPES.find((x) => x.type === t)?.label || 
 export const hasOptions = (t) => ['select', 'radio', 'checkbox'].includes(t);
 
 export const DEFAULT_APPEARANCE = {
+  style: 'yuzen', // hazır tasarım (src/lib/formStyles.js)
   background: 'beyaz', // 'seffaf' | 'beyaz' | 'ozel'
   bgColor: '#FFFFFF',
   primary: '#2F5BEA',
@@ -180,16 +181,16 @@ export const TEMPLATES = [
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('email', 'email', 'E-posta', { required: true }),
       f('hayvan_adi', 'text', 'Hayvanınızın adı', { required: true }),
-      f('hayvan_turu', 'select', 'Hayvan türü', { required: true, options: ['Kedi', 'Köpek', 'Kuş', 'Diğer'] }),
+      f('hayvan_turu', 'radio', 'Dostunuz', { required: true, options: ['🐱 Kedi', '🐶 Köpek', '🐦 Kuş', '🐰 Tavşan', '🐾 Diğer'] }),
       f('randevu', 'randevu', 'Randevu', { required: true }),
       f('aciklama', 'textarea', 'Şikayet / açıklama', { maxLength: 500 })
     ],
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       services: [
-        { id: 'svc_muayene', name: 'Muayene', duration: 30, buffer: 10 },
-        { id: 'svc_asi', name: 'Aşı', duration: 15, buffer: 5 },
-        { id: 'svc_tiras', name: 'Tıraş / bakım', duration: 60, buffer: 10 }
+        { id: 'svc_muayene', name: '🩺 Muayene', duration: 30, buffer: 10 },
+        { id: 'svc_asi', name: '💉 Aşı', duration: 15, buffer: 5 },
+        { id: 'svc_tiras', name: '✂️ Tıraş / bakım', duration: 60, buffer: 10 }
       ],
       interval: 15
     })
@@ -455,4 +456,4 @@ export function buildFormContent(templateId) {
   };
 }
 
-export const GOOGLE_FONTS = ['Inter', 'Poppins', 'Montserrat', 'Roboto', 'Open Sans', 'Nunito', 'Lato', 'Raleway', 'Playfair Display', 'Space Grotesk'];
+export const GOOGLE_FONTS = ['Inter', 'Plus Jakarta Sans', 'Outfit', 'Manrope', 'Poppins', 'Montserrat', 'Roboto', 'Open Sans', 'Nunito', 'Lato', 'Raleway', 'Playfair Display', 'Fraunces', 'Space Grotesk'];

@@ -11,6 +11,8 @@ import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
 import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl } from '../lib/shared.js';
+import StylePicker from '../components/StylePicker.jsx';
+import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
   ['alanlar', 'Alanlar'],
@@ -320,6 +322,12 @@ function AppearanceTab({ draft, setDraft }) {
   return (
     <div className="stack">
       <p className="muted">Form, müşterinin sitesine iframe ile gömülecek. Bu ayarlarla sitenin bir parçası gibi görünmesini sağlayın.</p>
+
+      <section className="sub-card stack">
+        <h3>Tasarım</h3>
+        <div className="pf-hint">Bir tasarıma tıklayın; renkleri, yazı tipi ve köşeleri tek seferde değişir. Sağdaki önizlemede hemen görünür, müşteriye <b>Yayınla</b> deyince geçer. Sonra renkleri aşağıdan dilediğiniz gibi ayarlayabilirsiniz.</div>
+        <StylePicker value={a.style || DEFAULT_STYLE} onChange={(id) => setDraft({ ...draft, appearance: applyFormStyle(a, id) })} />
+      </section>
 
       <section className="sub-card stack">
         <h3>Başlık</h3>

@@ -4,10 +4,12 @@ import { addDays, dayOfMonth, formatBytes, formatDate, formatDateShort, monthSho
 import { firstBookableDate, isDateOpen, resourcesForService } from '../lib/availability.js';
 import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
+import { displayValue } from '../lib/shared.js';
+import { DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
-function useGoogleFont(font) {
+export function useGoogleFont(font) {
   useEffect(() => {
     if (!font || font === 'site') return;
     const id = `gf-${font.replace(/\s/g, '-')}`;
@@ -169,17 +171,18 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
 
   return (
     <div className="bf-appt" id={inputId}>
+      {services.length > 1 && (
+        <div className="bf-svc" role="radiogroup" aria-label={t(lang, 'service')}>
+          {services.map((s) => (
+            <button key={s.id} type="button" role="radio" aria-checked={serviceId === s.id} className={`bf-svc-card ${serviceId === s.id ? 'is-on' : ''}`} onClick={() => set({ serviceId: s.id, resourceId: '', time: '' })}>
+              <span className="bf-svc-tick" aria-hidden="true">✓</span>
+              <b>{s.name}</b>
+              <span>{s.duration} {lang === 'en' ? 'min' : 'dk'}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="bf-appt-row">
-        {services.length > 1 && (
-          <label className="bf-mini">
-            <span>{t(lang, 'service')}</span>
-            <select value={serviceId} onChange={(e) => set({ serviceId: e.target.value, resourceId: '', time: '' })}>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.name} ({s.duration} {lang === 'en' ? 'min' : 'dk'})</option>
-              ))}
-            </select>
-          </label>
-        )}
         {hasResources && (
           <label className="bf-mini">
             <span>{cfg.resourceLabel || 'Personel'}</span>
@@ -246,6 +249,12 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
               ))}
             </div>
           )}
+        </div>
+      )}
+      {v.date && v.time && (
+        <div className="bf-pick-sum" role="status">
+          <span aria-hidden="true">📅</span>
+          <span>{weekdayName(v.date, lang)}, {formatDate(v.date, lang)} · <b>{v.time}</b>{services.length > 1 ? ` · ${services.find((x) => x.id === serviceId)?.name || ''}` : ''}</span>
         </div>
       )}
       {error && <div className="bf-error" role="alert">{error}</div>}
@@ -339,7 +348,9 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
   const lang = s.language || 'tr';
   useGoogleFont(a.font);
+  const style = a.style || DEFAULT_STYLE;
   const [values, setValues] = useState({});
+  const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [kvkk, setKvkk] = useState(false);
   const [kvkkError, setKvkkError] = useState('');
@@ -355,7 +366,34 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const startedAt = useRef(Date.now());
 
   const vis = useMemo(() => visibilityMap(fields, values), [fields, values]);
-  const labelInside = a.labelPosition === 'ic';
+  const labelInside = a.labelPosition === 'ic' && style !== 'yuzen';
+  const floating = style === 'yuzen';
+
+  // "Adım adım" tasarımı: randevu alanı varsa 1) hizmet ve zaman 2) bilgiler 3) onay; yoksa 4'erli gruplar
+  const steps = useMemo(() => {
+    if (style !== 'adim') return null;
+    const shown = fields.filter((f) => vis[f.key]);
+    const appt = shown.filter((f) => f.type === 'randevu');
+    const rest = shown.filter((f) => f.type !== 'randevu');
+    const out = [];
+    if (appt.length) out.push({ title: cfg?.term || t(lang, 'stepTime'), keys: appt.map((f) => f.key) });
+    for (let i = 0; i < rest.length; i += appt.length ? 99 : 4) out.push({ title: t(lang, 'stepInfo'), keys: rest.slice(i, i + (appt.length ? 99 : 4)).map((f) => f.key) });
+    out.push({ title: t(lang, 'stepConfirm'), keys: [], final: true });
+    return out;
+  }, [style, fields, vis, cfg, lang]);
+  const stepNo = steps ? Math.min(step, steps.length - 1) : 0;
+  const inStep = (f) => !steps || steps[stepNo].keys.includes(f.key);
+  const lastStep = !steps || steps[stepNo].final;
+  function nextStep() {
+    const errs = {};
+    for (const f of fields) if (vis[f.key] && inStep(f)) {
+      const e = validateField(f, values[f.key], lang);
+      if (e) errs[f.key] = e;
+    }
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+    setStep(stepNo + 1);
+  }
   const set = (key, val) => {
     setValues((x) => {
       const next = { ...x };
@@ -421,12 +459,17 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     a.width === 'dar' ? 'bf-narrow' : '',
     a.width === 'iki' ? 'bf-two' : '',
     labelInside ? 'bf-inside' : '',
-    a.dark ? 'bf-dark' : ''
+    a.dark ? 'bf-dark' : '',
+    `bf-style-${style}`
   ].join(' ');
+  const decor = style === 'cam' ? (
+    <span className="bf-glass-bg" aria-hidden="true"><i /><i /><i /></span>
+  ) : null;
 
   if (done) {
     return (
       <div className={className} style={appearanceStyle(a)} lang={lang}>
+        {decor}
         <div className="bf-success" role="status">
           <div className="bf-success-icon" aria-hidden="true">✓</div>
           <p>{done.successMessage || t(lang, 'thanks')}</p>
@@ -441,7 +484,14 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   }
 
   return (
-    <form className={className} style={appearanceStyle(a)} onSubmit={submit} noValidate lang={lang}>
+    <form className={className} style={appearanceStyle(a)} onSubmit={lastStep ? submit : (e) => { e.preventDefault(); nextStep(); }} noValidate lang={lang}>
+      {decor}
+      {steps && (
+        <div className="bf-steps">
+          <div className="bf-steps-bar">{steps.map((st, i) => <i key={i} className={i < stepNo ? 'done' : i === stepNo ? 'cur' : ''} />)}</div>
+          <div className="bf-steps-meta"><span><b>{stepNo + 1}</b> / {steps.length} · {steps[stepNo].title}</span></div>
+        </div>
+      )}
       {a.titleOn === true && (s.title || s.description) && (
         <div className="bf-header">
           {s.title && <h2 className="bf-title">{s.title}</h2>}
@@ -449,8 +499,16 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      <div className="bf-fields">
-        {fields.filter((f) => vis[f.key]).map((f) => {
+      {steps && steps[stepNo].final && (
+        <div className="bf-recap" key="recap">
+          {fields.filter((f) => vis[f.key] && values[f.key] !== undefined && f.type !== 'dosya').map((f) => (
+            <div key={f.key}><span>{f.label}</span><b>{f.type === 'randevu' ? displayValue('randevu', values[f.key], cfg) : Array.isArray(values[f.key]) ? values[f.key].join(', ') : String(values[f.key])}</b></div>
+          ))}
+          <button type="button" className="bf-link" onClick={() => setStep(0)}>{t(lang, 'edit')}</button>
+        </div>
+      )}
+      <div className="bf-fields" key={steps ? `adim-${stepNo}` : 'tum'}>
+        {fields.filter((f) => vis[f.key] && inStep(f)).map((f) => {
           const id = `bf-${f.key}`;
           const err = errors[f.key];
           const wide = ['textarea', 'radio', 'checkbox', 'randevu', 'dosya'].includes(f.type);
@@ -462,7 +520,8 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               if (values[f.key] !== undefined && f.type !== 'dosya') setErrors((e) => ({ ...e, [f.key]: validateField(f, values[f.key], lang) || undefined }));
             }
           };
-          const ph = labelInside ? `${f.label}${f.required ? ' *' : ''}` : f.placeholder;
+          const isFloat = floating && ['text', 'email', 'tel', 'tc', 'number', 'textarea'].includes(f.type);
+          const ph = isFloat ? ' ' : labelInside ? `${f.label}${f.required ? ' *' : ''}` : f.placeholder;
           const showLabel = !labelInside || ['radio', 'checkbox', 'randevu', 'select', 'date', 'dosya'].includes(f.type);
           let control;
           switch (f.type) {
@@ -542,7 +601,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               );
           }
           return (
-            <div key={f.id} className={`bf-field ${wide ? 'bf-wide' : ''} ${err ? 'has-error' : ''}`}>
+            <div key={f.id} className={`bf-field ${wide ? 'bf-wide' : ''} ${err ? 'has-error' : ''} ${isFloat ? 'is-float' : ''}`}>
               <label htmlFor={id} id={`${id}-l`} className={showLabel ? 'bf-label' : 'sr-only'}>
                 {f.label}
                 {f.required && <span className="bf-req" aria-hidden="true"> *</span>}
@@ -561,7 +620,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         <input id="bf-website" name="website" type="text" tabIndex={-1} autoComplete="off" ref={honeypot} />
       </div>
 
-      {s.kvkk?.enabled && (
+      {lastStep && s.kvkk?.enabled && (
         <div className={`bf-kvkk ${kvkkError ? 'has-error' : ''}`}>
           <label className="bf-choice">
             <input id="bf-kvkk" type="checkbox" checked={kvkk} onChange={(e) => { setKvkk(e.target.checked); setKvkkError(''); }} aria-invalid={!!kvkkError} />
@@ -574,7 +633,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {s.consent?.enabled && (
+      {lastStep && s.consent?.enabled && (
         <div className={`bf-kvkk ${consentError ? 'has-error' : ''}`}>
           <label className="bf-choice">
             <input id="bf-consent" type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setConsentError(''); }} aria-invalid={!!consentError} />
@@ -601,11 +660,18 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {!preview && <Turnstile siteKey={turnstileKey} onToken={setTurnstileToken} />}
+      {!preview && lastStep && <Turnstile siteKey={turnstileKey} onToken={setTurnstileToken} />}
 
       {globalError && <div className="bf-global-error" role="alert">{globalError}</div>}
 
-      <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : a.buttonText || t(lang, 'submit')}</button>
+      {steps ? (
+        <div className="bf-nav">
+          {stepNo > 0 && <button type="button" className="bf-back" aria-label={t(lang, 'back')} onClick={() => { setErrors({}); setStep(stepNo - 1); }}>←</button>}
+          <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : lastStep ? a.buttonText || t(lang, 'submit') : `${t(lang, 'next')} →`}</button>
+        </div>
+      ) : (
+        <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : a.buttonText || t(lang, 'submit')}</button>
+      )}
     </form>
   );
 }

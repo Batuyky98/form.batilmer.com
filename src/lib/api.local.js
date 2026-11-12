@@ -14,6 +14,7 @@ import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue
 export { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue };
 import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from './availability.js';
 import { buildFormContent, DEFAULT_CONTROL } from './templates.js';
+import { applyFormStyle } from './formStyles.js';
 
 const SESSION_KEY = 'batilmer_session';
 const delay = (v) => new Promise((res) => setTimeout(() => res(v), 60));
@@ -389,7 +390,7 @@ export async function getForm(id) {
   }));
 }
 
-export async function createForm({ name, isletme, slug, templateId }) {
+export async function createForm({ name, isletme, slug, templateId, styleId }) {
   return delay(tx((db) => {
     const admin = requireAdmin(db);
     if (!name?.trim()) fail('Form adı zorunlu.');
@@ -398,6 +399,7 @@ export async function createForm({ name, isletme, slug, templateId }) {
     if (db.forms.some((f) => f.slug === s && !f.deletedAt)) fail('Bu form linki kullanılıyor, başka bir link seçin.');
     const content = buildFormContent(templateId);
     content.settings.title = name.trim();
+    if (styleId) content.appearance = applyFormStyle(content.appearance, styleId);
     const form = {
       id: uid('f_'),
       name: name.trim(),

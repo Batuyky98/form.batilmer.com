@@ -17,6 +17,7 @@ import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
 import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
+import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 
@@ -822,7 +823,7 @@ H.getForm = async (ctx, id) => {
   return { ...form, perms };
 };
 
-H.createForm = async (ctx, { name, isletme, slug, templateId } = {}) => {
+H.createForm = async (ctx, { name, isletme, slug, templateId, styleId } = {}) => {
   const admin = await requireAdmin(ctx);
   if (!str(name)) fail('Form adı zorunlu.');
   const s = slugify(slug || `${isletme || ''} ${name}`);
@@ -831,6 +832,7 @@ H.createForm = async (ctx, { name, isletme, slug, templateId } = {}) => {
     if ((await q('SELECT id FROM forms WHERE slug = ? AND deleted_at IS NULL', [s])).length) fail('Bu form linki kullanılıyor, başka bir link seçin.');
     const c = buildFormContent(templateId);
     c.settings.title = str(name, 200);
+    if (FORM_STYLES.some((x) => x.id === styleId)) c.appearance = applyFormStyle(c.appearance, styleId);
     const id = uid('f_');
     await q('INSERT INTO forms (id, name, isletme, slug, control, draft, published, published_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)', [
       id, str(name, 200), str(isletme, 200), s, S(DEFAULT_CONTROL), S(c), admin.id, now(), now()
@@ -873,6 +875,7 @@ function cleanDraft(draft, prev, user) {
   }
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
+  if (!FORM_STYLES.some((x) => x.id === next.appearance.style)) next.appearance.style = 'yuzen';
   next.settings.address = str(next.settings.address, 300);
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
