@@ -209,5 +209,10 @@ export const MIGRATIONS = [
         v TEXT NOT NULL
       )`
     ]
+  },
+  {
+    version: 3,
+    name: 'açık rıza onayı',
+    up: ['ALTER TABLE submissions ADD COLUMN consent_at BIGINT NULL']
   }
 ];

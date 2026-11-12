@@ -10,6 +10,7 @@ import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
 import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
+import { directionsUrl } from '../lib/shared.js';
 
 const TABS = [
   ['alanlar', 'Alanlar'],
@@ -416,6 +417,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         language: lang,
         successMessage: swap(s.successMessage, 'successMessage'),
         kvkk: { ...s.kvkk, label: swap(s.kvkk.label, 'kvkkLabel') },
+        consent: { ...s.consent, label: swap(s.consent?.label, 'consentLabel') },
         autoReply: { ...s.autoReply, subject: swap(s.autoReply.subject, 'autoReplySubject'), body: swap(s.autoReply.body, 'autoReplyBody') }
       }
     });
@@ -481,6 +483,17 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
+        <h3>İşletme adresi <span className="muted small">(isteğe bağlı)</span></h3>
+        <Field label="Adres" htmlFor="st-addr" hint="Müşteri randevu aldıktan sonraki ekranda ve iptal sayfasında adresi ve &quot;Yol tarifi al&quot; düğmesini görür; takvime eklenen randevuya da yazılır.">
+          <textarea id="st-addr" rows={2} placeholder="Örnek: Atatürk Cad. No:12, Kadıköy / İstanbul" value={s.address || ''} onChange={(e) => set({ address: e.target.value })} />
+        </Field>
+        <Field label="Google Haritalar linki (isteğe bağlı)" htmlFor="st-maps" hint="İşletmenin Haritalar'daki kaydını açmak isterseniz: Google Haritalar'da işletmeyi bulun → Paylaş → Bağlantıyı kopyala. Boş bırakılırsa adresle yol tarifi açılır.">
+          <input id="st-maps" type="url" placeholder="https://maps.app.goo.gl/..." value={s.mapsUrl || ''} onChange={(e) => set({ mapsUrl: e.target.value.trim() })} />
+        </Field>
+        {(s.address || s.mapsUrl) && directionsUrl(s) && <a className="link-sm" href={directionsUrl(s)} target="_blank" rel="noopener noreferrer">Yol tarifini dene ↗</a>}
+      </section>
+
+      <section className="sub-card stack">
         <h3>Gönderim</h3>
         <div className="pf-hint">Formun üstündeki başlık <b>Görünüm</b> sekmesinden eklenir ("Forma başlık ekle").</div>
         <Field label="Gönderdikten sonra">
@@ -532,15 +545,34 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
-        <h3>KVKK onayı {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
-        <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster" />
+        <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster (işaretlenmeden gönderilemez)" />
         {s.kvkk.enabled && (
           <>
-            <Field label="Onay metni"><input disabled={!isAdmin} value={s.kvkk.label} onChange={(e) => set({ kvkk: { ...s.kvkk, label: e.target.value } })} /></Field>
-            <Field label="Aydınlatma metni linki"><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.kvkk.url} onChange={(e) => set({ kvkk: { ...s.kvkk, url: e.target.value } })} /></Field>
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.kvkk.label} onChange={(e) => set({ kvkk: { ...s.kvkk, label: e.target.value } })} /></Field>
+            <Field label="Aydınlatma metni" hint="Metni buraya yapıştırın. Formda &quot;Aydınlatma metni&quot; bağlantısına basınca form içinde açılır. Veri sorumlusu işletmedir; metin işletmenin kendi metni olmalı.">
+              <textarea disabled={!isAdmin} rows={8} placeholder="Veri sorumlusu: ... &#10;İşlenen kişisel veriler: ... &#10;İşleme amaçları: ..." value={s.kvkk.text || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, text: e.target.value } })} />
+            </Field>
+            <Field label="ya da metnin linki (isteğe bağlı)" hint="Metin yazılıysa link yerine metin gösterilir."><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.kvkk.url} onChange={(e) => set({ kvkk: { ...s.kvkk, url: e.target.value } })} /></Field>
           </>
         )}
         {isAdmin && !s.kvkk.enabled && <div className="notice notice-warn">KVKK onayı kapalı. Kişisel veri topluyorsanız aydınlatma yükümlülüğünün başka şekilde karşılandığından emin olun.</div>}
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Açık rıza metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <Toggle id="st-ar2" disabled={!isAdmin} checked={!!s.consent?.enabled} onChange={(v) => set({ consent: { ...s.consent, enabled: v } })} label="Formda ayrı bir açık rıza kutusu göster" />
+        {s.consent?.enabled && (
+          <>
+            <Toggle id="st-ar3" disabled={!isAdmin} checked={s.consent.required !== false} onChange={(v) => set({ consent: { ...s.consent, required: v } })} label={s.consent.required !== false ? 'Zorunlu: işaretlenmeden form gönderilemez' : 'İsteğe bağlı: işaretlenmese de form gönderilir'} />
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.consent.label} onChange={(e) => set({ consent: { ...s.consent, label: e.target.value } })} /></Field>
+            <Field label="Açık rıza metni" hint="Formda &quot;Açık rıza metni&quot; bağlantısına basınca form içinde açılır. Onay zamanı kayıtla birlikte saklanır ve Excel'e çıkar.">
+              <textarea disabled={!isAdmin} rows={8} value={s.consent.text || ''} onChange={(e) => set({ consent: { ...s.consent, text: e.target.value } })} />
+            </Field>
+            <Field label="ya da metnin linki (isteğe bağlı)"><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.consent.url || ''} onChange={(e) => set({ consent: { ...s.consent, url: e.target.value } })} /></Field>
+            {s.consent.required !== false && <div className="pf-hint">Not: KVKK'ya göre açık rıza özgür iradeyle verilmeli; hizmetin şartı yapılması (işaretlemeyenin randevu alamaması) hukuken tartışmalıdır. Metinleri bir avukata kontrol ettirin.</div>}
+          </>
+        )}
       </section>
     </div>
   );

@@ -1016,7 +1016,7 @@ h2 { letter-spacing: -0.01em; }
 
 /* kayıt kartı: ara düğmesi */
 .sub-li { position: relative; }
-.scm-call { position: absolute; right: 14px; bottom: 9px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--blue-50); color: var(--blue); font-size: 13px; font-weight: 700; text-decoration: none; }
+
 .sub-li .scm-foot span { display: none; }
 
 /* telefonda sağ altta + düğmesi */
@@ -1049,3 +1049,26 @@ h2 { letter-spacing: -0.01em; }
   .calendar-day .cal-item .qa { padding: 0 14px 12px 88px; }
   .calendar-day .cal-item .qa:empty { display: none; }
 }
+/* ara + WhatsApp */
+.contact-btns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.qa-wa { color: #128c4b; background: rgba(37, 211, 102, 0.1); border-color: rgba(37, 211, 102, 0.35); }
+.qa-wa:hover { color: #0b6b39; border-color: #25d366; }
+:root[data-theme='dark'] .qa-wa { color: #4ade80; }
+.qa-compact .qa-wa { width: 30px; padding: 0; }
+.agenda-item .qa { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-width: 150px; }
+.dd-contact { display: flex; margin-top: 8px; }
+.scm-contact { position: absolute; right: 14px; bottom: 9px; }
+.scm-contact .qa-btn { min-height: 32px; padding: 0 12px; }
+.bf-dir { align-self: stretch; text-align: center; text-decoration: none; }
+/* KVKK / açık rıza metni penceresi (müşteri formu, iframe içinde de çalışır) */
+.bf { position: relative; }
+.bf-legal { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 23, 42, 0.5); display: grid; place-items: center; padding: 16px; }
+html.is-embedded .bf-legal { position: absolute; align-items: start; }
+.bf-legal-box { width: 100%; max-width: 620px; max-height: min(80vh, 720px); display: flex; flex-direction: column; gap: 12px; background: var(--bf-bg, #fff); color: var(--bf-text); border-radius: calc(var(--bf-radius) + 6px); padding: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3); }
+.bf-bg-seffaf .bf-legal-box { background: #fff; }
+.bf-dark .bf-legal-box { background: #111827; }
+.bf-legal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 16px; }
+.bf-legal-x { border: 0; background: none; color: var(--bf-muted); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+.bf-legal-text { overflow: auto; white-space: pre-wrap; font-size: 14px; line-height: 1.6; color: var(--bf-text); border-top: 1px solid var(--bf-border); border-bottom: 1px solid var(--bf-border); padding: 12px 2px; }
+.bf-legal .bf-btn { align-self: flex-end; }
+.bf-kvkk .bf-link { font-size: inherit; font-weight: 600; text-decoration: underline; }

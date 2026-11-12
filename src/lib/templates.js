@@ -68,12 +68,25 @@ export const DEFAULT_SETTINGS = {
   title: '',
   description: '',
   duplicateCheck: 'yok', // 'yok' | 'email' | 'tc' | 'tel'
+  // İşletme adresi: müşteriye "Yol tarifi al" düğmesiyle gösterilir (randevu sonrası ve iptal sayfasında)
+  address: '',
+  mapsUrl: '',
   // Müşteriye mail (randevu onayı, hatırlatma, otomatik cevap). Varsayılan KAPALI: ücretli ek özellik.
   // Yetkili kişilere bildirim mail ile değil, panel + telefon bildirimiyle gider.
   customerMails: false,
   kvkk: {
     enabled: true,
     label: 'Kişisel verilerimin işlenmesine ilişkin aydınlatma metnini okudum, onaylıyorum.',
+    url: '',
+    // Aydınlatma metninin kendisi (panelden yazılır; formda pencerede açılır). Boşsa sadece link kullanılır.
+    text: ''
+  },
+  // Açık rıza: ayrı kutu ve ayrı metin. required = işaretlenmeden form gönderilemez.
+  consent: {
+    enabled: false,
+    required: true,
+    label: 'Açık rıza metnini okudum; kişisel verilerimin metinde belirtilen amaçlarla işlenmesine açık rıza veriyorum.',
+    text: '',
     url: ''
   },
   afterSubmit: 'mesaj', // 'mesaj' | 'yonlendir'
@@ -121,6 +134,7 @@ export function normalizeContent(c) {
   if (!c) return c;
   const settings = { ...clone(DEFAULT_SETTINGS), ...(c.settings || {}) };
   settings.kvkk = { ...clone(DEFAULT_SETTINGS.kvkk), ...(c.settings?.kvkk || {}) };
+  settings.consent = { ...clone(DEFAULT_SETTINGS.consent), ...(c.settings?.consent || {}) };
   settings.autoReply = { ...clone(DEFAULT_SETTINGS.autoReply), ...(c.settings?.autoReply || {}) };
   // Eski sürümdeki "bildirim gidecek e-postalar" kaldırıldı (elle yazılan adreslere kişisel veri gitmesin)
   delete settings.notifyEmails;

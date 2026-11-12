@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../lib/api.js';
 import { Link } from '../router.jsx';
 import { Badge, Empty, Modal, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
+import ContactButtons from '../components/ContactButtons.jsx';
 import { buildXlsx } from '../lib/xlsx.js';
 import { dateOfMs, download, formatBytes, formatDateTime, maskTc, today } from '../lib/util.js';
 
@@ -63,11 +64,15 @@ function DetailModal({ sub, data, showTc, perms, onClose, onChanged, onDelete })
           {(s.order || Object.keys(s.values)).filter((k) => s.values[k] !== undefined).map((k) => (
             <div key={k}>
               <dt>{s.labels[k] || k}{!data.fields.some((f) => f.key === k) && <span className="muted small"> (eski alan)</span>}</dt>
-              <dd className="pre"><ValueCell type={s.types[k]} value={s.values[k]} randevu={data.randevu} showTc={showTc} /></dd>
+              <dd className="pre">
+                <ValueCell type={s.types[k]} value={s.values[k]} randevu={data.randevu} showTc={showTc} />
+                {s.types[k] === 'tel' && <ContactButtons phone={s.values[k]} className="dd-contact" />}
+              </dd>
             </div>
           ))}
           <div><dt>Kayıt zamanı</dt><dd>{formatDateTime(s.createdAt)}</dd></div>
           {s.kvkkAt && <div><dt>KVKK onayı</dt><dd>{formatDateTime(s.kvkkAt)} · {s.ip}</dd></div>}
+          {s.consentAt && <div><dt>Açık rıza</dt><dd>{formatDateTime(s.consentAt)}</dd></div>}
           {s.appointmentStatus && <div><dt>Randevu durumu</dt><dd><Badge tone={APPT_TONE[s.appointmentStatus]}>{api.STATUS_LABELS[s.appointmentStatus]}</Badge></dd></div>}
         </dl>
         <section className="stack-sm">
@@ -243,12 +248,7 @@ export default function Submissions({ id }) {
                   {lastNote && <div className="scm-note">“{lastNote.text}”</div>}
                   <div className="scm-foot">{formatDateTime(s.createdAt)}{s.manual ? ' · Manuel' : ''}<span aria-hidden="true">›</span></div>
                 </button>
-                {telCol && (
-                  <a className="scm-call" href={`tel:${String(s.values[telCol.key]).replace(/[^\d+]/g, '')}`} aria-label={`Ara: ${s.values[telCol.key]}`}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z" /></svg>
-                    Ara
-                  </a>
-                )}
+                {telCol && <ContactButtons phone={s.values[telCol.key]} className="scm-contact" />}
               </li>
             );
           })}

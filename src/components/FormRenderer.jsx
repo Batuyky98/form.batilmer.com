@@ -254,6 +254,28 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
   );
 }
 
+// ------------------------------------------------------------ KVKK / açık rıza metni bağlantısı
+// Metin panelden yazıldıysa form içinde pencerede açılır (iframe'de de çalışır); yoksa verilen link açılır.
+function LegalLink({ doc, title, onOpen }) {
+  if (doc?.text?.trim()) {
+    return (
+      <>
+        {' '}
+        <button type="button" className="bf-link" onClick={(e) => { e.preventDefault(); onOpen({ title, text: doc.text }); }}>{title}</button>
+      </>
+    );
+  }
+  if (doc?.url) {
+    return (
+      <>
+        {' '}
+        <a href={doc.url} target="_blank" rel="noreferrer">{title}</a>
+      </>
+    );
+  }
+  return null;
+}
+
 // ------------------------------------------------------------ randevu sonrası bilgi kartı
 // Müşteriye mail gitmediği için onay, iptal bağlantısı ve takvime ekleme bu ekranda.
 function AppointmentCard({ a, lang }) {
@@ -278,6 +300,7 @@ function AppointmentCard({ a, lang }) {
     a.service && a.service !== a.term ? [t(lang, 'service'), a.service] : null,
     a.resource ? [a.resourceLabel || t(lang, 'service'), a.resource] : null,
     a.partySize ? [t(lang, 'partySize'), t(lang, 'persons', { n: a.partySize })] : null,
+    a.address ? [t(lang, 'address'), a.address] : null,
     [t(lang, 'status'), t(lang, 'statusLabels')[a.status] || a.status]
   ].filter(Boolean);
   return (
@@ -289,6 +312,9 @@ function AppointmentCard({ a, lang }) {
         ))}
       </dl>
       {pending && <p className="bf-card-note">{t(lang, 'cardPendingNote')}</p>}
+      {a.directionsUrl && (
+        <a className="bf-btn bf-btn-light bf-dir" href={a.directionsUrl} target="_blank" rel="noopener noreferrer">📍 {t(lang, 'directions')}</a>
+      )}
       <div className="bf-card-actions">
         <a className="bf-btn" href={a.icsUrl} target="_blank" rel="noopener">📅 {t(lang, 'addToCalendar')}</a>
         <a className="bf-btn bf-btn-light" href={a.googleUrl} target="_blank" rel="noopener noreferrer">{t(lang, 'googleCalendar')}</a>
@@ -317,6 +343,9 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const [errors, setErrors] = useState({});
   const [kvkk, setKvkk] = useState(false);
   const [kvkkError, setKvkkError] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
   const [globalError, setGlobalError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
@@ -350,10 +379,12 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     for (const f of fields) if (f.type === 'dosya' && vis[f.key] && values[f.key] && !values[f.key].dataUrl && !errs[f.key]) errs[f.key] = validateField({ ...f, required: false }, values[f.key], lang) || t(lang, 'genericError');
     setErrors(errs);
     const kErr = s.kvkk?.enabled && !kvkk ? t(lang, 'consentRequired') : '';
+    const cErr = s.consent?.enabled && s.consent.required !== false && !consent ? t(lang, 'explicitConsentRequired') : '';
+    setConsentError(cErr);
     setKvkkError(kErr);
-    if (Object.keys(errs).length || kErr) {
+    if (Object.keys(errs).length || kErr || cErr) {
       const first = fields.find((f) => errs[f.key]);
-      const el = first ? document.getElementById(`bf-${first.key}`) : document.getElementById('bf-kvkk');
+      const el = first ? document.getElementById(`bf-${first.key}`) : document.getElementById(kErr ? 'bf-kvkk' : 'bf-consent');
       el?.focus?.();
       el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
       return;
@@ -366,7 +397,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     const payload = Object.fromEntries(Object.entries(values).filter(([k]) => vis[k]));
     setBusy(true);
     try {
-      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, turnstileToken });
+      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, turnstileToken });
       setDone(res);
       onDone?.(res);
     } catch (err) {
@@ -536,15 +567,37 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
             <input id="bf-kvkk" type="checkbox" checked={kvkk} onChange={(e) => { setKvkk(e.target.checked); setKvkkError(''); }} aria-invalid={!!kvkkError} />
             <span>
               {s.kvkk.label}
-              {s.kvkk.url && (
-                <>
-                  {' '}
-                  <a href={s.kvkk.url} target="_blank" rel="noreferrer">{t(lang, 'privacyLink')}</a>
-                </>
-              )}
+              <LegalLink lang={lang} doc={s.kvkk} title={t(lang, 'privacyLink')} onOpen={setLegal} />
             </span>
           </label>
           {kvkkError && <div className="bf-error" role="alert">{kvkkError}</div>}
+        </div>
+      )}
+
+      {s.consent?.enabled && (
+        <div className={`bf-kvkk ${consentError ? 'has-error' : ''}`}>
+          <label className="bf-choice">
+            <input id="bf-consent" type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setConsentError(''); }} aria-invalid={!!consentError} />
+            <span>
+              {s.consent.label}
+              {s.consent.required !== false && <span className="bf-req" aria-hidden="true"> *</span>}
+              <LegalLink lang={lang} doc={s.consent} title={t(lang, 'consentLink')} onOpen={setLegal} />
+            </span>
+          </label>
+          {consentError && <div className="bf-error" role="alert">{consentError}</div>}
+        </div>
+      )}
+
+      {legal && (
+        <div className="bf-legal" role="dialog" aria-modal="true" aria-label={legal.title} onMouseDown={(e) => e.target === e.currentTarget && setLegal(null)}>
+          <div className="bf-legal-box">
+            <div className="bf-legal-head">
+              <b>{legal.title}</b>
+              <button type="button" className="bf-legal-x" aria-label={t(lang, 'close')} onClick={() => setLegal(null)}>✕</button>
+            </div>
+            <div className="bf-legal-text">{legal.text}</div>
+            <button type="button" className="bf-btn" onClick={() => setLegal(null)}>{t(lang, 'close')}</button>
+          </div>
         </div>
       )}
 

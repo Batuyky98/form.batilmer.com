@@ -17,7 +17,7 @@ import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
 import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
-import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
+import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 
 // ---------------------------------------------------------------- hata
@@ -89,7 +89,7 @@ function mapSub(r) {
   return {
     id: r.id, formId: r.form_id, values: J(r.vals, {}), labels: J(r.labels, {}), types: J(r.types, {}), order: J(r.ord, []),
     status: r.status || 'yeni', notes: J(r.notes, []), appointmentId: r.appointment_id, manual: !!Number(r.manual),
-    kvkkAt: num(r.kvkk_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
+    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
   };
 }
 
@@ -169,7 +169,7 @@ async function addNotice(q, form, kind, appt = null, cfg = null) {
 }
 
 // Form gönderildikten sonra müşteriye gösterilen randevu kartı için bilgiler
-function appointmentCard(form, appt, cfg, lang) {
+function appointmentCard(form, appt, cfg, lang, settings = {}) {
   const biz = form.isletme || form.name;
   const term = appointmentTerm(cfg);
   const svc = serviceById(cfg, appt.serviceId)?.name || '';
@@ -180,6 +180,7 @@ function appointmentCard(form, appt, cfg, lang) {
     date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, resource: res, resourceLabel: cfg.resourceLabel || '',
     partySize: cfg.capacityMode === 'kisi' ? appt.partySize : null, term, isletme: biz,
     cancelUrl: cancel, cancelCutoffHours: Number(cfg.cancelCutoffHours || 0),
+    address: settings.address || '', directionsUrl: directionsUrl(settings),
     icsUrl: `${config.publicUrl}/api/ics/${appt.cancelToken}`,
     googleUrl: googleCalendarUrl({ date: appt.date, start: appt.start, end: appt.end, title, description: `${lang === 'en' ? 'Cancel' : 'İptal'}: ${cancel}` })
   };
@@ -193,11 +194,11 @@ export async function icsByToken(db, tok) {
   const form = await loadForm(db.query, a.formId);
   if (!form) return null;
   const c = content(form);
-  const card = appointmentCard(form, a, c.randevu, a.lang || 'tr');
+  const card = appointmentCard(form, a, c.randevu, a.lang || 'tr', c.settings);
   const title = `${card.isletme} – ${card.service && card.service !== card.term ? `${card.term}: ${card.service}` : card.term}`;
   return {
     filename: `${slugify(card.isletme) || 'randevu'}-${a.date}.ics`,
-    text: buildIcs({ uid: a.id, date: a.date, start: a.start, end: a.end, title, description: `${a.lang === 'en' ? 'Cancel' : 'İptal'}: ${card.cancelUrl}`, url: card.cancelUrl, lang: a.lang || 'tr' })
+    text: buildIcs({ uid: a.id, date: a.date, start: a.start, end: a.end, title, location: card.address, description: [card.directionsUrl ? `${a.lang === 'en' ? 'Directions' : 'Yol tarifi'}: ${card.directionsUrl}` : '', `${a.lang === 'en' ? 'Cancel' : 'İptal'}: ${card.cancelUrl}`].filter(Boolean).join('\n'), url: card.cancelUrl, lang: a.lang || 'tr' })
   };
 }
 
@@ -865,12 +866,18 @@ function cleanDraft(draft, prev, user) {
   // KVKK ayarlarını sadece Ana Admin değiştirebilir
   if (user.role !== 'admin') {
     next.settings.kvkk = clone(prev.settings.kvkk);
+    next.settings.consent = clone(prev.settings.consent);
     // Müşteriye mail ve SMS ücretli ek özellik: sadece Ana Admin açıp kapatır
     next.settings.customerMails = !!prev.settings.customerMails;
     next.randevu.sms = clone(prev.randevu.sms);
   }
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
+  next.settings.address = str(next.settings.address, 300);
+  next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
+  next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
+  for (const k of ['kvkk', 'consent']) if (next.settings[k].url && !/^https?:\/\//i.test(next.settings[k].url)) next.settings[k].url = '';
+  next.settings.mapsUrl = /^https:\/\/[^\s"'<>]{4,490}$/i.test(String(next.settings.mapsUrl || '').trim()) ? String(next.settings.mapsUrl).trim() : '';
   const keys = next.fields.map((x) => x.key);
   if (keys.some((k) => !/^[a-z0-9_]{1,60}$/.test(String(k)))) fail('Alan anahtarları sadece küçük harf, rakam ve alt çizgi içerebilir.');
   if (new Set(keys).size !== keys.length) fail('İki alanın teknik anahtarı aynı olamaz.');
@@ -1042,7 +1049,7 @@ H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize }
 };
 
 H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
-  const { honeypot = '', startedAt = 0, kvkkAccepted = false, turnstileToken = '' } = meta || {};
+  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, turnstileToken = '' } = meta || {};
   const pre = await formBySlug(ctx.db.query, slug);
   const lang = pre?.published?.settings?.language || 'tr';
   // Bot: gizli alan doluysa ya da 2 saniyeden hızlı gönderildiyse sessizce "başarılı" de, kaydetme
@@ -1097,6 +1104,9 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         throw e;
       }
       if (c.settings.kvkk?.enabled && !kvkkAccepted) fail(tt(lang, 'consentRequired'));
+      // Açık rıza zorunluysa işaretlenmeden kayıt alınmaz (tarayıcıya güvenilmez, burada kontrol edilir)
+      const consentOn = !!c.settings.consent?.enabled;
+      if (consentOn && c.settings.consent.required !== false && !consentAccepted) fail(tt(lang, 'explicitConsentRequired'), 'acik_riza');
 
       const vis = visibilityMap(fields, values);
       const clean = {};
@@ -1135,7 +1145,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         labels: Object.fromEntries(fields.map((f) => [f.key, f.label])),
         types: Object.fromEntries(fields.map((f) => [f.key, f.type])),
         order: fields.map((f) => f.key),
-        kvkkAt: c.settings.kvkk?.enabled ? now() : null, appointmentId: null
+        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, appointmentId: null
       };
 
       // Randevu: form satırı kilitli olduğu için aynı anda iki kişi aynı saati alamaz
@@ -1180,8 +1190,8 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         await q('INSERT INTO files (id, form_id, submission_id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [up.id, form.id, sub.id, up.name, up.mime, up.buffer.length, now()]);
       }
 
-      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)', [
-        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
+      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)', [
+        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
       ]);
 
       const ar = c.settings.autoReply;
@@ -1192,7 +1202,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
       await addNotice(q, form, 'yeni', appt, c.randevu);
       return {
         ok: true, afterSubmit: c.settings.afterSubmit, successMessage: c.settings.successMessage, redirectUrl: c.settings.redirectUrl,
-        appointment: appt && appointmentCard(form, appt, c.randevu, lang)
+        appointment: appt && appointmentCard(form, appt, c.randevu, lang, c.settings)
       };
     });
   } catch (e) {
@@ -1326,7 +1336,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       headers.push('Randevu durumu');
     } else headers.push(labels[k]);
   }
-  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı');
+  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı');
   const fmt = (ms) => (ms ? formatDateTime(ms) : '');
   const data = subs.map((s) => {
     const row = [fmt(s.createdAt)];
@@ -1341,7 +1351,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       } else row.push(displayValue(types[k], v, cfg));
     }
     const userNotes = (s.notes || []).filter((n) => !n.system);
-    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt));
+    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt));
     return row;
   });
   await log(q, user.id, `Excel indirdi (${subs.length} kayıt)`, form.name);
@@ -1580,7 +1590,8 @@ H.getAppointmentByToken = async (ctx, tok) => {
   return {
     date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(cfg, a.serviceId)?.name,
     isletme: form.isletme || form.name, slug: form.slug, lang: a.lang || c.settings.language || 'tr',
-    canCancel: ['bekliyor', 'onaylandi'].includes(a.status) && now() < cutoffMs, cutoffHours: cfg.cancelCutoffHours
+    canCancel: ['bekliyor', 'onaylandi'].includes(a.status) && now() < cutoffMs, cutoffHours: cfg.cancelCutoffHours,
+    address: c.settings.address || '', directionsUrl: directionsUrl(c.settings), icsUrl: a.status === 'iptal' ? '' : `${config.publicUrl}/api/ics/${a.cancelToken}`
   };
 };
 

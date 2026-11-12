@@ -39,7 +39,7 @@ function endMs(date, start, end) {
   return e;
 }
 
-export function buildIcs({ uid, date, start, end, title, description = '', url = '', lang = 'tr' }) {
+export function buildIcs({ uid, date, start, end, title, description = '', url = '', location = '', lang = 'tr' }) {
   const s = dateTimeToMs(date, start);
   const e = endMs(date, start, end);
   const remind = lang === 'en' ? 'Reminder' : 'Hatırlatma';
@@ -56,6 +56,7 @@ export function buildIcs({ uid, date, start, end, title, description = '', url =
     `DTEND:${utcStamp(e)}`,
     `SUMMARY:${esc(title)}`,
     description ? `DESCRIPTION:${esc(description)}` : null,
+    location ? `LOCATION:${esc(location)}` : null,
     url ? `URL:${url}` : null,
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
