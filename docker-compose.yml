@@ -1,0 +1,70 @@
+# Batilmer Form Paneli – canlı kurulum
+# Çalıştırma (sunucuda): docker compose --env-file sunucu.env up -d --build
+# Ayarlar sunucu.env dosyasında (deploy/kur.sh ilk kurulumda oluşturur).
+name: batilmer-form
+
+services:
+  app:
+    build: .
+    image: batilmer-form:latest
+    container_name: batilmer-form
+    restart: unless-stopped
+    env_file: sunucu.env
+    environment:
+      DB_DRIVER: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: batilmer_form
+      DB_USER: batilmer
+      # MySQL root şifresi panele verilmez (sadece veritabanı kabı kullanır)
+      DB_ROOT_PASSWORD: ''
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - uploads:/data
+    networks:
+      - internal
+      # Caddy'nin (site projesi) panele ulaşabilmesi için onun ağına da katılıyoruz
+      - site_default
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+  db:
+    image: mysql:8.4
+    container_name: batilmer-form-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: batilmer_form
+      MYSQL_USER: batilmer
+      MYSQL_PASSWORD: ${DB_PASSWORD:?sunucu.env içinde DB_PASSWORD yok}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?sunucu.env içinde DB_ROOT_PASSWORD yok}
+      TZ: Europe/Istanbul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=256M
+    volumes:
+      - mysql:/var/lib/mysql
+    # MySQL dışarıya kapalı: sadece panel görebilir
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+networks:
+  internal: {}
+  site_default:
+    external: true
+
+volumes:
+  mysql: {}
+  uploads: {}

@@ -1,0 +1,5 @@
+
+form.batilmer.com {
+	encode zstd gzip
+	reverse_proxy batilmer-form:3000
+}
