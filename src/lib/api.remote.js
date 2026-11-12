@@ -7,6 +7,17 @@ export function onSessionExpired(fn) {
   return () => listeners.delete(fn);
 }
 
+// Kişinin kendi yaptığı (arka plan olmayan) her başarılı işlem oturum süresini uzatır
+const activity = new Set();
+export function onActivity(fn) {
+  activity.add(fn);
+  return () => activity.delete(fn);
+}
+
+// Panelin kendi kendine yaptığı kontroller: sunucu bunlarla oturum süresini UZATMAZ
+const BACKGROUND = new Set(['pollNotifications', 'sessionInfo']);
+const NO_SESSION = new Set(['login', 'loginTotp', 'logout', 'publicConfig', 'getPublicForm', 'getAvailability', 'submitForm', 'getAppointmentByToken', 'cancelByToken', 'requestPasswordReset', 'resetPassword']);
+
 class ApiError extends Error {
   constructor(message, code, fields) {
     super(message);
@@ -21,7 +32,7 @@ async function rpc(name, args) {
     res = await fetch(`/api/rpc/${encodeURIComponent(name)}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-Batilmer': '1' },
+      headers: { 'Content-Type': 'application/json', 'X-Batilmer': '1', ...(BACKGROUND.has(name) ? { 'X-Batilmer-Bg': '1' } : {}) },
       body: JSON.stringify(args)
     });
   } catch {
@@ -39,6 +50,7 @@ async function rpc(name, args) {
     if (err.code === 'oturum' && name !== 'currentUser') listeners.forEach((fn) => fn());
     throw new ApiError(err.message || 'Bir hata oluştu, lütfen tekrar deneyin.', err.code || 'hata', err.fields);
   }
+  if (!BACKGROUND.has(name) && !NO_SESSION.has(name)) activity.forEach((fn) => fn());
   return data.result;
 }
 

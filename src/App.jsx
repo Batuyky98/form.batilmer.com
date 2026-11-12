@@ -17,6 +17,10 @@ import CancelPage from './pages/CancelPage.jsx';
 import EmbedTest from './pages/EmbedTest.jsx';
 import Stats from './pages/Stats.jsx';
 import AllCalendar from './pages/AllCalendar.jsx';
+import Security from './pages/Security.jsx';
+import NotificationSettings from './pages/NotificationSettings.jsx';
+import { registerWorker } from './lib/push.js';
+import { applyTheme } from './lib/theme.js';
 
 const PANEL_ROUTES = [
   ['/panel', Dashboard],
@@ -29,7 +33,9 @@ const PANEL_ROUTES = [
   ['/panel/cop-kutusu', Trash, true],
   ['/panel/islem-kayitlari', Logs, true],
   ['/panel/giden-mailler', Outbox, true],
-  ['/panel/sifre', ChangePassword]
+  ['/panel/sifre', ChangePassword],
+  ['/panel/guvenlik', Security],
+  ['/panel/bildirimler', NotificationSettings]
 ];
 
 function NotFound() {
@@ -72,6 +78,8 @@ function Routes() {
     if (!params) continue;
     if (!user) return <Redirect to="/giris" />;
     if (user.mustChange && pattern !== '/panel/sifre') return <Redirect to="/panel/sifre" />;
+    // Ana Admin: Authenticator kurulmadan panel açılmaz
+    if (!user.mustChange && user.twofaSetupRequired && pattern !== '/panel/guvenlik') return <Redirect to="/panel/guvenlik" />;
     if (adminOnly && user.role !== 'admin') return <Layout><NotFound /></Layout>;
     return (
       <Layout>
@@ -83,6 +91,21 @@ function Routes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Panel teması; müşteri sayfalarına (/f/, /iptal/) geçilince uygulanmaz
+    applyTheme();
+    const on = () => applyTheme();
+    window.addEventListener('batilmer-navigate', on);
+    window.addEventListener('popstate', on);
+    return () => {
+      window.removeEventListener('batilmer-navigate', on);
+      window.removeEventListener('popstate', on);
+    };
+  }, []);
+  useEffect(() => {
+    // Bildirim servis çalışanı sadece panelde (herkese açık formlarda gerekmez)
+    if (!window.location.pathname.startsWith('/f/') && !window.location.pathname.startsWith('/iptal/')) registerWorker();
+  }, []);
   useEffect(() => {
     try {
       runScheduler();

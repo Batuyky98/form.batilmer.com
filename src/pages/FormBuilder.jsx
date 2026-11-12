@@ -4,11 +4,13 @@ import { useAuth } from '../auth.jsx';
 import { Link } from '../router.jsx';
 import { Badge, Field, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
 import FormRenderer from '../components/FormRenderer.jsx';
-import { FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
+import { COLOR_FIELDS, FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
 import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
-import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid } from '../lib/util.js';
+import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
+import { APPOINTMENT_TERMS } from '../lib/calendar.js';
+import { directionsUrl } from '../lib/shared.js';
 
 const TABS = [
   ['alanlar', 'Alanlar'],
@@ -280,47 +282,115 @@ function FieldsTab({ draft, setDraft, formId }) {
 }
 
 // ======================================================= GÖRÜNÜM
+function ColorField({ label, hint, value, onChange, auto }) {
+  const isAuto = !value;
+  return (
+    <div className="color-field">
+      <div className="color-field-text">
+        <span className="pf-label">{label}</span>
+        {hint && <span className="pf-hint">{hint}</span>}
+      </div>
+      <div className="color-row">
+        <label className={`swatch ${isAuto ? 'is-auto' : ''}`} style={isAuto ? undefined : { background: value }} title={isAuto ? 'Otomatik' : value}>
+          <input type="color" value={value || auto || '#2f5bea'} onChange={(e) => onChange(e.target.value)} aria-label={`${label} rengi`} />
+        </label>
+        <input className="color-code" value={value} placeholder="Otomatik" onChange={(e) => onChange(e.target.value.trim())} aria-label={`${label} renk kodu`} />
+        {!isAuto && auto !== undefined && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange('')}>Otomatik</button>}
+      </div>
+    </div>
+  );
+}
+
+const PALETTES = [
+  { name: 'Batilmer', primary: '#2F5BEA', text: '#0F172A', colors: {} },
+  { name: 'Yeşil klinik', primary: '#0F9F6E', text: '#0B2E23', colors: { label: '#0B2E23', fieldBorder: '#B7E4D3', link: '#0F9F6E' } },
+  { name: 'Mor güzellik', primary: '#8B5CF6', text: '#2E1065', colors: { fieldBorder: '#DDD6FE', label: '#4C1D95' } },
+  { name: 'Turuncu kafe', primary: '#EA580C', text: '#431407', colors: { fieldBorder: '#FED7AA', fieldBg: '#FFFBF5' } },
+  { name: 'Siyah zarif', primary: '#111827', text: '#111827', colors: { fieldBorder: '#D1D5DB', selectedBg: '#111827' } }
+];
+
 function AppearanceTab({ draft, setDraft }) {
   const a = draft.appearance;
+  const s = draft.settings;
+  const colors = a.colors || {};
   const set = (patch) => setDraft({ ...draft, appearance: { ...a, ...patch } });
+  const setColor = (k, v) => set({ colors: { ...colors, [k]: v } });
+  const setSettings = (patch) => setDraft({ ...draft, settings: { ...s, ...patch } });
+  const autoOf = (k) => ({ title: a.text, label: a.text, fieldText: a.text, link: a.primary, selectedBg: a.primary, buttonText: '#ffffff', selectedText: '#ffffff', error: '#dc2626', help: '#475569', fieldBg: '#ffffff', fieldBorder: '#cbd5e1' }[k]);
   return (
     <div className="stack">
       <p className="muted">Form, müşterinin sitesine iframe ile gömülecek. Bu ayarlarla sitenin bir parçası gibi görünmesini sağlayın.</p>
-      <Field label="1. Arka plan">
-        <Segmented value={a.background} onChange={(v) => set({ background: v })} label="Arka plan" options={[{ value: 'seffaf', label: 'Şeffaf (site arka planı)' }, { value: 'beyaz', label: 'Beyaz kart' }, { value: 'ozel', label: 'Özel renk' }]} />
-        {a.background === 'ozel' && (
-          <div className="color-row mt-sm"><input type="color" value={a.bgColor} onChange={(e) => set({ bgColor: e.target.value })} aria-label="Arka plan rengi" /><input value={a.bgColor} onChange={(e) => set({ bgColor: e.target.value })} aria-label="Arka plan renk kodu" /></div>
+
+      <section className="sub-card stack">
+        <h3>Başlık</h3>
+        <Toggle id="ap-head" checked={a.titleOn === true} onChange={(v) => set({ titleOn: v })} label="Forma başlık ekle" />
+        {a.titleOn === true ? (
+          <>
+            <Field label="Başlık" htmlFor="ap-title"><input id="ap-title" value={s.title} placeholder="Örnek: Online randevu" onChange={(e) => setSettings({ title: e.target.value })} /></Field>
+            <Field label="Açıklama (isteğe bağlı)" htmlFor="ap-desc"><textarea id="ap-desc" rows={2} value={s.description} onChange={(e) => setSettings({ description: e.target.value })} /></Field>
+          </>
+        ) : (
+          <div className="pf-hint">Kapalıyken formun üstünde başlık görünmez; form doğrudan ilk alanla başlar (sitedeki sayfa başlığı yeterli olur).</div>
         )}
-      </Field>
-      <div className="grid-2">
-        <Field label="2. Ana renk (buton, seçim)">
-          <div className="color-row"><input type="color" value={a.primary} onChange={(e) => set({ primary: e.target.value })} aria-label="Ana renk" /><input value={a.primary} onChange={(e) => set({ primary: e.target.value })} aria-label="Ana renk kodu" /></div>
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Zemin ve ana renkler</h3>
+        <Field label="Arka plan">
+          <Segmented value={a.background} onChange={(v) => set({ background: v })} label="Arka plan" options={[{ value: 'seffaf', label: 'Şeffaf (site arka planı)' }, { value: 'beyaz', label: 'Beyaz kart' }, { value: 'ozel', label: 'Özel renk' }]} />
         </Field>
-        <Field label="Yazı rengi">
-          <div className="color-row"><input type="color" value={a.text} onChange={(e) => set({ text: e.target.value })} aria-label="Yazı rengi" /><input value={a.text} onChange={(e) => set({ text: e.target.value })} aria-label="Yazı renk kodu" /></div>
+        {a.background === 'ozel' && <ColorField label="Arka plan rengi" value={a.bgColor} onChange={(v) => set({ bgColor: v || '#FFFFFF' })} />}
+        <ColorField label="Ana renk" hint="Buton, seçimler, odak çerçevesi" value={a.primary} onChange={(v) => set({ primary: v || '#2F5BEA' })} />
+        <ColorField label="Yazı rengi" hint="Genel metin" value={a.text} onChange={(v) => set({ text: v || '#0F172A' })} />
+        <div>
+          <div className="pf-label">Hazır renk takımları</div>
+          <div className="palettes">
+            {PALETTES.map((p) => (
+              <button key={p.name} type="button" className="palette-chip" onClick={() => set({ primary: p.primary, text: p.text, colors: { ...Object.fromEntries(Object.keys(colors).map((k) => [k, ''])), ...p.colors } })}>
+                <span className="palette-dots"><i style={{ background: p.primary }} /><i style={{ background: p.text }} /><i style={{ background: p.colors.fieldBorder || '#cbd5e1' }} /></span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>Ayrıntılı renkler</h3>
+          {Object.values(colors).some(Boolean) && <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ colors: Object.fromEntries(Object.keys(colors).map((k) => [k, ''])) })}>Hepsini otomatiğe al</button>}
+        </div>
+        <div className="pf-hint">Formdaki her parçanın rengini ayrı seçebilirsiniz. "Otomatik" olanlar ana renk ve yazı renginden gelir. Sağdaki önizlemede hemen görünür.</div>
+        <div className="color-grid">
+          {COLOR_FIELDS.map(([k, label, hint]) => (
+            <ColorField key={k} label={label} hint={hint} value={colors[k] || ''} auto={autoOf(k)} onChange={(v) => setColor(k, v)} />
+          ))}
+        </div>
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Yazı ve şekil</h3>
+        <Field label="Yazı tipi" htmlFor="ap-font" hint="'Sitenin fontu' seçilirse iframe içinde tarayıcının varsayılan fontu kullanılır; siteyle aynı olması için sitenin fontunu seçin.">
+          <select id="ap-font" value={a.font} onChange={(e) => set({ font: e.target.value })}>
+            <option value="site">Sitenin fontu / varsayılan</option>
+            {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
         </Field>
-      </div>
-      <Field label="3. Yazı tipi" htmlFor="ap-font" hint="'Sitenin fontu' seçilirse iframe içinde tarayıcının varsayılan fontu kullanılır; siteyle aynı olması için sitenin fontunu seçin.">
-        <select id="ap-font" value={a.font} onChange={(e) => set({ font: e.target.value })}>
-          <option value="site">Sitenin fontu / varsayılan</option>
-          {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-      </Field>
-      <Field label="4. Köşeler">
-        <Segmented value={a.radius} onChange={(v) => set({ radius: v })} label="Köşeler" options={[{ value: 'keskin', label: 'Keskin' }, { value: 'hafif', label: 'Hafif yuvarlak' }, { value: 'tam', label: 'Tam yuvarlak' }]} />
-      </Field>
-      <Field label="5. Etiket yerleşimi">
-        <Segmented value={a.labelPosition} onChange={(v) => set({ labelPosition: v })} label="Etiket yerleşimi" options={[{ value: 'ust', label: 'Alanın üstünde' }, { value: 'ic', label: 'Alanın içinde' }]} />
-      </Field>
-      <Field label="6. Genişlik">
-        <Segmented value={a.width} onChange={(v) => set({ width: v })} label="Genişlik" options={[{ value: 'tam', label: 'Tam genişlik' }, { value: 'dar', label: 'Dar, ortalı' }, { value: 'iki', label: 'İki sütun (masaüstü)' }]} />
-      </Field>
-      <Toggle id="ap-head" checked={a.showHeader !== false} onChange={(v) => set({ showHeader: v })} label="7. Form başlığı ve açıklamasını göster" />
-      <Field label="8. Buton metni" htmlFor="ap-btn">
-        <input id="ap-btn" value={a.buttonText} onChange={(e) => set({ buttonText: e.target.value })} />
-      </Field>
-      <p className="muted small">9. Gönderim sonrası davranış <b>Ayarlar</b> sekmesinde.</p>
-      <Toggle id="ap-dark" checked={a.dark} onChange={(v) => set({ dark: v })} label="10. Koyu tema (koyu renkli siteler için)" />
+        <Field label="Köşeler">
+          <Segmented value={a.radius} onChange={(v) => set({ radius: v })} label="Köşeler" options={[{ value: 'keskin', label: 'Keskin' }, { value: 'hafif', label: 'Hafif yuvarlak' }, { value: 'tam', label: 'Tam yuvarlak' }]} />
+        </Field>
+        <Field label="Etiket yerleşimi">
+          <Segmented value={a.labelPosition} onChange={(v) => set({ labelPosition: v })} label="Etiket yerleşimi" options={[{ value: 'ust', label: 'Alanın üstünde' }, { value: 'ic', label: 'Alanın içinde' }]} />
+        </Field>
+        <Field label="Genişlik">
+          <Segmented value={a.width} onChange={(v) => set({ width: v })} label="Genişlik" options={[{ value: 'tam', label: 'Tam genişlik' }, { value: 'dar', label: 'Dar, ortalı' }, { value: 'iki', label: 'İki sütun (masaüstü)' }]} />
+        </Field>
+        <Field label="Buton metni" htmlFor="ap-btn">
+          <input id="ap-btn" value={a.buttonText} onChange={(e) => set({ buttonText: e.target.value })} />
+        </Field>
+        <Toggle id="ap-dark" checked={a.dark} onChange={(v) => set({ dark: v })} label="Koyu tema (koyu renkli siteler için)" />
+        <p className="muted small">Gönderim sonrası davranış <b>Ayarlar</b> sekmesinde.</p>
+      </section>
     </div>
   );
 }
@@ -333,9 +403,6 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
   const set = (patch) => setDraft({ ...draft, settings: { ...s, ...patch } });
   const [meta, setMeta] = useState({ name: form.name, isletme: form.isletme, slug: form.slug });
   const [control, setControl] = useState(form.control);
-  const [emails, setEmails] = useState((s.notifyEmails || []).join(', '));
-
-  useEffect(() => setEmails((s.notifyEmails || []).join(', ')), [s.notifyEmails]);
 
   // Dil değişince, hiç değiştirilmemiş varsayılan metinleri de yeni dile çevir
   function changeLang(lang) {
@@ -350,6 +417,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         language: lang,
         successMessage: swap(s.successMessage, 'successMessage'),
         kvkk: { ...s.kvkk, label: swap(s.kvkk.label, 'kvkkLabel') },
+        consent: { ...s.consent, label: swap(s.consent?.label, 'consentLabel') },
         autoReply: { ...s.autoReply, subject: swap(s.autoReply.subject, 'autoReplySubject'), body: swap(s.autoReply.body, 'autoReplyBody') }
       }
     });
@@ -415,9 +483,19 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
-        <h3>Başlık ve gönderim</h3>
-        <Field label="Form başlığı (formun üstünde)"><input value={s.title} onChange={(e) => set({ title: e.target.value })} /></Field>
-        <Field label="Açıklama"><textarea rows={2} value={s.description} onChange={(e) => set({ description: e.target.value })} /></Field>
+        <h3>İşletme adresi <span className="muted small">(isteğe bağlı)</span></h3>
+        <Field label="Adres" htmlFor="st-addr" hint="Müşteri randevu aldıktan sonraki ekranda ve iptal sayfasında adresi ve &quot;Yol tarifi al&quot; düğmesini görür; takvime eklenen randevuya da yazılır.">
+          <textarea id="st-addr" rows={2} placeholder="Örnek: Atatürk Cad. No:12, Kadıköy / İstanbul" value={s.address || ''} onChange={(e) => set({ address: e.target.value })} />
+        </Field>
+        <Field label="Google Haritalar linki (isteğe bağlı)" htmlFor="st-maps" hint="İşletmenin Haritalar'daki kaydını açmak isterseniz: Google Haritalar'da işletmeyi bulun → Paylaş → Bağlantıyı kopyala. Boş bırakılırsa adresle yol tarifi açılır.">
+          <input id="st-maps" type="url" placeholder="https://maps.app.goo.gl/..." value={s.mapsUrl || ''} onChange={(e) => set({ mapsUrl: e.target.value.trim() })} />
+        </Field>
+        {(s.address || s.mapsUrl) && directionsUrl(s) && <a className="link-sm" href={directionsUrl(s)} target="_blank" rel="noopener noreferrer">Yol tarifini dene ↗</a>}
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Gönderim</h3>
+        <div className="pf-hint">Formun üstündeki başlık <b>Görünüm</b> sekmesinden eklenir ("Forma başlık ekle").</div>
         <Field label="Gönderdikten sonra">
           <Segmented value={s.afterSubmit} onChange={(v) => set({ afterSubmit: v })} label="Gönderdikten sonra" options={[{ value: 'mesaj', label: 'Teşekkür mesajı göster' }, { value: 'yonlendir', label: 'Başka sayfaya yönlendir' }]} />
         </Field>
@@ -430,9 +508,9 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 
       <section className="sub-card stack">
         <h3>Bildirim ve kontrol</h3>
-        <Field label="Yeni kayıtta bildirim gidecek e-postalar" hint="Virgülle ayırın.">
-          <input value={emails} onChange={(e) => setEmails(e.target.value)} onBlur={() => set({ notifyEmails: emails.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean) })} />
-        </Field>
+        <div className="notice notice-info">
+          Yeni kayıt ve randevu bildirimleri <b>panel + telefon bildirimi</b> olarak gider. Kimin alacağını Ana Admin <b>Kullanıcılar</b> ekranında, bu formun satırındaki <b>"Bildirim"</b> tikiyle belirler. Bildirimde müşterinin adı ve telefonu yazmaz.
+        </div>
         <Field label="Mükerrer kayıt kontrolü">
           <Segmented value={s.duplicateCheck} onChange={(v) => set({ duplicateCheck: v })} label="Mükerrer kayıt" options={[{ value: 'yok', label: 'Yok' }, { value: 'email', label: 'Aynı e-posta' }, { value: 'tel', label: 'Aynı telefon' }, { value: 'tc', label: 'Aynı TC' }]} />
         </Field>
@@ -443,7 +521,16 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
+        <h3>Müşteriye mail <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
+        <Toggle id="st-cm" disabled={!isAdmin} checked={!!s.customerMails} onChange={(v) => set({ customerMails: v })} label={s.customerMails ? 'Açık: randevu onayı, değişiklik, iptal ve hatırlatma mailleri müşteriye gider' : 'Kapalı: müşteriye mail gitmez'} />
+        <div className="pf-hint">
+          Kapalıyken müşteri, formu gönderdiği ekranda randevu bilgilerini, <b>iptal bağlantısını</b> ve <b>"Takvimime ekle"</b> butonunu görür; hatırlatmayı kendi telefonunun takvimi yapar. Açmak için sunucuda mail servisinin (Brevo) ayarlı olması gerekir.
+        </div>
+      </section>
+
+      <section className="sub-card stack">
         <h3>Otomatik cevap maili</h3>
+        {!s.customerMails && <div className="notice notice-warn">"Müşteriye mail" kapalı olduğu için otomatik cevap gönderilmez.</div>}
         <Toggle id="st-ar" checked={s.autoReply.enabled} onChange={(v) => set({ autoReply: { ...s.autoReply, enabled: v } })} label="Formu dolduran kişiye otomatik mail gönder" />
         {s.autoReply.enabled && (
           <>
@@ -458,15 +545,34 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
-        <h3>KVKK onayı {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
-        <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster" />
+        <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster (işaretlenmeden gönderilemez)" />
         {s.kvkk.enabled && (
           <>
-            <Field label="Onay metni"><input disabled={!isAdmin} value={s.kvkk.label} onChange={(e) => set({ kvkk: { ...s.kvkk, label: e.target.value } })} /></Field>
-            <Field label="Aydınlatma metni linki"><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.kvkk.url} onChange={(e) => set({ kvkk: { ...s.kvkk, url: e.target.value } })} /></Field>
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.kvkk.label} onChange={(e) => set({ kvkk: { ...s.kvkk, label: e.target.value } })} /></Field>
+            <Field label="Aydınlatma metni" hint="Metni buraya yapıştırın. Formda &quot;Aydınlatma metni&quot; bağlantısına basınca form içinde açılır. Veri sorumlusu işletmedir; metin işletmenin kendi metni olmalı.">
+              <textarea disabled={!isAdmin} rows={8} placeholder="Veri sorumlusu: ... &#10;İşlenen kişisel veriler: ... &#10;İşleme amaçları: ..." value={s.kvkk.text || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, text: e.target.value } })} />
+            </Field>
+            <Field label="ya da metnin linki (isteğe bağlı)" hint="Metin yazılıysa link yerine metin gösterilir."><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.kvkk.url} onChange={(e) => set({ kvkk: { ...s.kvkk, url: e.target.value } })} /></Field>
           </>
         )}
         {isAdmin && !s.kvkk.enabled && <div className="notice notice-warn">KVKK onayı kapalı. Kişisel veri topluyorsanız aydınlatma yükümlülüğünün başka şekilde karşılandığından emin olun.</div>}
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Açık rıza metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <Toggle id="st-ar2" disabled={!isAdmin} checked={!!s.consent?.enabled} onChange={(v) => set({ consent: { ...s.consent, enabled: v } })} label="Formda ayrı bir açık rıza kutusu göster" />
+        {s.consent?.enabled && (
+          <>
+            <Toggle id="st-ar3" disabled={!isAdmin} checked={s.consent.required !== false} onChange={(v) => set({ consent: { ...s.consent, required: v } })} label={s.consent.required !== false ? 'Zorunlu: işaretlenmeden form gönderilemez' : 'İsteğe bağlı: işaretlenmese de form gönderilir'} />
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.consent.label} onChange={(e) => set({ consent: { ...s.consent, label: e.target.value } })} /></Field>
+            <Field label="Açık rıza metni" hint="Formda &quot;Açık rıza metni&quot; bağlantısına basınca form içinde açılır. Onay zamanı kayıtla birlikte saklanır ve Excel'e çıkar.">
+              <textarea disabled={!isAdmin} rows={8} value={s.consent.text || ''} onChange={(e) => set({ consent: { ...s.consent, text: e.target.value } })} />
+            </Field>
+            <Field label="ya da metnin linki (isteğe bağlı)"><input disabled={!isAdmin} type="url" placeholder="https://..." value={s.consent.url || ''} onChange={(e) => set({ consent: { ...s.consent, url: e.target.value } })} /></Field>
+            {s.consent.required !== false && <div className="pf-hint">Not: KVKK'ya göre açık rıza özgür iradeyle verilmeli; hizmetin şartı yapılması (işaretlemeyenin randevu alamaması) hukuken tartışmalıdır. Metinleri bir avukata kontrol ettirin.</div>}
+          </>
+        )}
       </section>
     </div>
   );
@@ -475,7 +581,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
 
-function RandevuTab({ draft, setDraft }) {
+function RandevuTab({ draft, setDraft, isAdmin }) {
   const cfg = draft.randevu || clone(DEFAULT_RANDEVU);
   const set = (patch) => setDraft({ ...draft, randevu: { ...cfg, ...patch } });
   const [closed, setClosed] = useState('');
@@ -488,6 +594,26 @@ function RandevuTab({ draft, setDraft }) {
   return (
     <div className="stack">
       {!hasField && <div className="notice notice-warn">Bu formda randevu alanı yok. Ayarlar kaydedilir ama formda görünmez. <b>Alanlar</b> sekmesinden "Randevu" alanı ekleyin.</div>}
+
+      <section className="sub-card stack">
+        <h3>Genel</h3>
+        <div className="grid-2">
+          <Field label="Nasıl adlandırılsın?" hint="Bildirimlerde ve müşterinin gördüğü bilgi kartında kullanılır.">
+            <select value={cfg.term || ''} onChange={(e) => set({ term: e.target.value })}>
+              {APPOINTMENT_TERMS.map((t) => <option key={t} value={t === 'Randevu' ? '' : t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Randevular şu tarihten itibaren açılsın" hint="Örnek: işletme 1 Aralık'ta açılıyorsa form bugünden yayında olur, ilk seçilebilen gün 1 Aralık olur. Boş = hemen.">
+            <div className="row">
+              <input type="date" min={today()} value={cfg.openFrom || ''} onChange={(e) => set({ openFrom: e.target.value })} />
+              {cfg.openFrom && <button type="button" className="btn btn-sm" onClick={() => set({ openFrom: '' })}>Temizle</button>}
+            </div>
+          </Field>
+        </div>
+        {cfg.openFrom && cfg.openFrom > today() && (
+          <div className="pf-hint">Müşteri formda "Randevular {formatDate(cfg.openFrom)} tarihinden itibaren alınmaktadır." yazısını görür. "En fazla kaç gün ileri" bu tarihten itibaren sayılır. Panelden manuel randevu bu tarihten önce de eklenebilir.</div>
+        )}
+      </section>
 
       <section className="sub-card stack">
         <h3>Hizmetler</h3>
@@ -602,19 +728,22 @@ function RandevuTab({ draft, setDraft }) {
           <Field label="En fazla kaç gün ileri"><input type="number" min="1" value={cfg.maxDaysAhead} onChange={(e) => set({ maxDaysAhead: Number(e.target.value) })} /></Field>
           <Field label="İptal en geç (randevudan kaç saat önce)"><input type="number" min="0" value={cfg.cancelCutoffHours} onChange={(e) => set({ cancelCutoffHours: Number(e.target.value) })} /></Field>
           <Field label="Kişi başı aktif randevu sınırı" hint="Aynı e-posta/telefon; 0 = sınırsız"><input type="number" min="0" value={cfg.perContactLimit} onChange={(e) => set({ perContactLimit: Number(e.target.value) })} /></Field>
-          <Field label="Hatırlatma maili (kaç saat önce)"><input type="number" min="1" value={cfg.reminderHours} onChange={(e) => set({ reminderHours: Number(e.target.value) })} /></Field>
+          {draft.settings.customerMails && <Field label="Hatırlatma maili (kaç saat önce)"><input type="number" min="1" value={cfg.reminderHours} onChange={(e) => set({ reminderHours: Number(e.target.value) })} /></Field>}
         </div>
         <Field label="Onay">
           <Segmented value={cfg.approval} onChange={(v) => set({ approval: v })} label="Onay modu" options={[{ value: 'auto', label: 'Otomatik onay' }, { value: 'manual', label: 'İşletme onaylasın' }]} />
         </Field>
+        {cfg.approval === 'manual' && !draft.settings.customerMails && (
+          <div className="pf-hint">Müşteriye mail kapalıyken müşteri onay durumunu, formdan sonra verilen bağlantıdaki sayfada görür. Gerekirse müşteriyi telefonla arayın.</div>
+        )}
       </section>
 
       <section className="sub-card stack">
-        <h3>SMS bildirimleri</h3>
-        <Toggle id="sms-c" checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
-        <Toggle id="sms-r" checked={cfg.sms?.reminder} onChange={(v) => set({ sms: { ...cfg.sms, reminder: v } })} label="Hatırlatmayı SMS ile de gönder" />
+        <h3>Müşteriye SMS <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
+        <Toggle id="sms-c" disabled={!isAdmin} checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
+        <Toggle id="sms-r" disabled={!isAdmin} checked={cfg.sms?.reminder} onChange={(v) => set({ sms: { ...cfg.sms, reminder: v } })} label="Hatırlatmayı SMS ile de gönder" />
         {!draft.fields.some((f) => f.type === 'tel') && (cfg.sms?.confirm || cfg.sms?.reminder) && <div className="notice notice-warn">Formda telefon alanı yok; SMS gönderilemez.</div>}
-        <div className="pf-hint">Yerel testte SMS'ler "Giden mailler" sayfasında görünür. Canlıda bir SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanacak; SMS ücretlidir.</div>
+        <div className="pf-hint">SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanana kadar SMS'ler gönderilmez, "Giden mailler" sayfasında görünür. SMS ücretlidir.</div>
       </section>
     </div>
   );
@@ -834,7 +963,7 @@ export default function FormBuilder({ id }) {
           {tab === 'alanlar' && <FieldsTab draft={draft} setDraft={setDraft} formId={id} />}
           {tab === 'gorunum' && <AppearanceTab draft={draft} setDraft={setDraft} />}
           {tab === 'ayarlar' && <SettingsTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} onMetaSaved={load} onControlSaved={(c) => setForm({ ...form, control: c })} />}
-          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} />}
+          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
           {tab === 'paylas' && <ShareTab form={form} />}
           {tab === 'gecmis' && <HistoryTab form={form} isAdmin={isAdmin} onRestored={load} />}
         </div>

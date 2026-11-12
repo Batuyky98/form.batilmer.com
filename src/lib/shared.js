@@ -58,3 +58,36 @@ export function passwordProblem(pw) {
   if (!/[A-ZÇĞİÖŞÜ]/.test(pw) || !/[a-zçğıöşü]/.test(pw) || !/\d/.test(pw)) return 'Şifre büyük harf, küçük harf ve rakam içermeli.';
   return null;
 }
+
+// Oturum kuralları (sunucu uygular, panel 5 dakika önce uyarır)
+export const SESSION_IDLE_MS = 2 * 3600000; // 2 saat hiçbir işlem yapılmazsa
+export const SESSION_MAX_MS = 12 * 3600000; // sürekli kullanılsa bile 12 saatte bir yeniden giriş
+export const SESSION_WARN_MS = 5 * 60000;
+
+// ---------------------------------------------------------------- telefon: ara / WhatsApp, adres: yol tarifi
+// Türkiye numaraları: "0532 111 22 33" / "532..." / "+90 532..." → 905321112233
+export function phoneIntl(raw) {
+  const s = String(raw || '').trim();
+  let d = s.replace(/\D/g, '');
+  if (!d) return '';
+  if (s.startsWith('+')) return d;
+  if (d.startsWith('00')) return d.slice(2);
+  if (d.length === 11 && d.startsWith('0')) return `90${d.slice(1)}`;
+  if (d.length === 10 && d.startsWith('5')) return `90${d}`;
+  return d;
+}
+export const telUrl = (raw) => {
+  const d = phoneIntl(raw);
+  return d ? `tel:+${d}` : '';
+};
+export const whatsappUrl = (raw) => {
+  const d = phoneIntl(raw);
+  return d.length >= 10 ? `https://wa.me/${d}` : '';
+};
+// Yol tarifi: işletmenin kendi harita linki varsa o, yoksa adresle Google Haritalar (telefonda uygulamada açılır)
+export function directionsUrl(settings) {
+  const own = String(settings?.mapsUrl || '').trim();
+  if (/^https:\/\//i.test(own)) return own;
+  const a = String(settings?.address || '').trim();
+  return a ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(a)}` : '';
+}

@@ -77,7 +77,7 @@ export default function PublicForm({ slug }) {
     return (
       <div className={`public-wrap ${isEmbedded ? 'embedded' : ''}`}>
         <div className={`bf bf-bg-${a.background} ${a.dark ? 'bf-dark' : ''} ${a.width === 'dar' ? 'bf-narrow' : ''}`} style={appearanceStyle(a)}>
-          {a.showHeader !== false && content.settings.title && <h2 className="bf-title">{content.settings.title}</h2>}
+          {a.titleOn === true && content.settings.title && <h2 className="bf-title">{content.settings.title}</h2>}
           <div className="bf-closed">{data.reason || t(data.lang, 'formClosed')}</div>
         </div>
       </div>

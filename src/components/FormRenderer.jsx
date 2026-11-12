@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FILE_TYPES, formatPhone, validateAll, validateField } from '../lib/validators.js';
-import { addDays, dayOfMonth, formatBytes, formatDateShort, monthShort, today, weekdayName, weekdayShort } from '../lib/util.js';
-import { isDateOpen, resourcesForService } from '../lib/availability.js';
+import { addDays, dayOfMonth, formatBytes, formatDate, formatDateShort, monthShort, weekdayName, weekdayShort } from '../lib/util.js';
+import { firstBookableDate, isDateOpen, resourcesForService } from '../lib/availability.js';
 import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
 
@@ -20,21 +20,28 @@ function useGoogleFont(font) {
   }, [font]);
 }
 
+const okColor = (v) => (/^#[0-9a-f]{3,8}$/i.test(String(v || '')) ? v : '');
+
 export function appearanceStyle(a) {
   const dark = !!a.dark;
+  const c = a.colors || {};
   let bg = 'transparent';
   if (a.background === 'beyaz') bg = dark ? '#111827' : '#FFFFFF';
   if (a.background === 'ozel') bg = a.bgColor || '#FFFFFF';
-  return {
+  const style = {
     '--bf-primary': a.primary || '#2F5BEA',
     '--bf-text': a.text || (dark ? '#F8FAFC' : '#0F172A'),
     '--bf-bg': bg,
     '--bf-radius': RADIUS[a.radius] || RADIUS.hafif,
-    '--bf-field-bg': dark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-    '--bf-border': dark ? 'rgba(255,255,255,0.22)' : '#CBD5E1',
-    '--bf-muted': dark ? 'rgba(248,250,252,0.72)' : '#475569',
+    '--bf-field-bg': okColor(c.fieldBg) || (dark ? 'rgba(255,255,255,0.06)' : '#FFFFFF'),
+    '--bf-border': okColor(c.fieldBorder) || (dark ? 'rgba(255,255,255,0.22)' : '#CBD5E1'),
+    '--bf-muted': okColor(c.help) || (dark ? 'rgba(248,250,252,0.72)' : '#475569'),
     fontFamily: a.font && a.font !== 'site' ? `'${a.font}', system-ui, sans-serif` : 'inherit'
   };
+  // Ayrıntılı renkler (boşsa CSS'teki varsayılan kullanılır)
+  const map = { title: '--bf-title', label: '--bf-label', fieldText: '--bf-field-text', buttonText: '--bf-btn-text', link: '--bf-link', error: '--bf-error', selectedBg: '--bf-sel-bg', selectedText: '--bf-sel-text' };
+  for (const [k, v] of Object.entries(map)) if (okColor(c[k])) style[v] = c[k];
+  return style;
 }
 
 // ------------------------------------------------------------ Cloudflare Turnstile (anahtar tanımlıysa)
@@ -126,15 +133,16 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
   const [daysShown, setDaysShown] = useState(14);
   const stripRef = useRef(null);
 
+  const first = firstBookableDate(cfg);
   const days = useMemo(() => {
     const out = [];
     const max = Number(cfg.maxDaysAhead || 30);
     for (let i = 0; i <= max && out.length < daysShown; i++) {
-      const d = addDays(today(), i);
+      const d = addDays(first, i);
       out.push({ date: d, open: isDateOpen(cfg, d) });
     }
     return out;
-  }, [cfg, daysShown]);
+  }, [cfg, daysShown, first]);
 
   const set = (patch) => onChange({ ...v, serviceId, partySize, ...patch });
 
@@ -195,6 +203,7 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
         )}
       </div>
 
+      {cfg.openFrom && first === cfg.openFrom && <div className="bf-help">{t(lang, 'opensFrom', { d: formatDate(cfg.openFrom, lang) })}</div>}
       <div className="bf-days-wrap">
         <button type="button" className="bf-arrow" aria-label={t(lang, 'prevDays')} onClick={() => scroll(-1)}>‹</button>
         <div className="bf-days" role="radiogroup" aria-label={t(lang, 'pickDate')} ref={stripRef}>
@@ -245,6 +254,86 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
   );
 }
 
+// ------------------------------------------------------------ KVKK / açık rıza metni bağlantısı
+// Metin panelden yazıldıysa form içinde pencerede açılır (iframe'de de çalışır); yoksa verilen link açılır.
+function LegalLink({ doc, title, onOpen }) {
+  if (doc?.text?.trim()) {
+    return (
+      <>
+        {' '}
+        <button type="button" className="bf-link" onClick={(e) => { e.preventDefault(); onOpen({ title, text: doc.text }); }}>{title}</button>
+      </>
+    );
+  }
+  if (doc?.url) {
+    return (
+      <>
+        {' '}
+        <a href={doc.url} target="_blank" rel="noreferrer">{title}</a>
+      </>
+    );
+  }
+  return null;
+}
+
+// ------------------------------------------------------------ randevu sonrası bilgi kartı
+// Müşteriye mail gitmediği için onay, iptal bağlantısı ve takvime ekleme bu ekranda.
+function AppointmentCard({ a, lang }) {
+  const [copied, setCopied] = useState(false);
+  if (!a.cancelUrl) {
+    // Eski biçim / önizleme
+    return <p className="bf-muted">{t(lang, 'yourAppointment', { d: `${formatDateShort(a.date, lang)} ${a.start}` })}{a.status === 'bekliyor' ? ` ${t(lang, 'pending')}` : ''}</p>;
+  }
+  const pending = a.status === 'bekliyor';
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(a.cancelUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.prompt('', a.cancelUrl);
+    }
+  }
+  const rows = [
+    [t(lang, 'business'), a.isletme],
+    [t(lang, 'date'), `${weekdayName(a.date, lang)}, ${formatDate(a.date, lang)} · ${a.start}${a.end ? `–${a.end}` : ''}`],
+    a.service && a.service !== a.term ? [t(lang, 'service'), a.service] : null,
+    a.resource ? [a.resourceLabel || t(lang, 'service'), a.resource] : null,
+    a.partySize ? [t(lang, 'partySize'), t(lang, 'persons', { n: a.partySize })] : null,
+    a.address ? [t(lang, 'address'), a.address] : null,
+    [t(lang, 'status'), t(lang, 'statusLabels')[a.status] || a.status]
+  ].filter(Boolean);
+  return (
+    <div className="bf-card">
+      <div className="bf-card-title">{t(lang, 'cardHeading', { t: a.term || 'Randevu' })}</div>
+      <dl className="bf-card-rows">
+        {rows.map(([k, v]) => (
+          <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+        ))}
+      </dl>
+      {pending && <p className="bf-card-note">{t(lang, 'cardPendingNote')}</p>}
+      {a.directionsUrl && (
+        <a className="bf-btn bf-btn-light bf-dir" href={a.directionsUrl} target="_blank" rel="noopener noreferrer">📍 {t(lang, 'directions')}</a>
+      )}
+      <div className="bf-card-actions">
+        <a className="bf-btn" href={a.icsUrl} target="_blank" rel="noopener">📅 {t(lang, 'addToCalendar')}</a>
+        <a className="bf-btn bf-btn-light" href={a.googleUrl} target="_blank" rel="noopener noreferrer">{t(lang, 'googleCalendar')}</a>
+      </div>
+      <p className="bf-help">{t(lang, 'calendarHint')}</p>
+      <div className="bf-card-cancel">
+        <div className="bf-card-sub">{t(lang, 'cancelLinkTitle')}</div>
+        <div className="bf-card-link">
+          <a href={a.cancelUrl} target="_blank" rel="noopener">{a.cancelUrl.replace(/^https?:\/\//, '')}</a>
+        </div>
+        <div className="bf-card-actions">
+          <button type="button" className="bf-btn bf-btn-light" onClick={copy}>{copied ? t(lang, 'copied') : t(lang, 'copyLink')}</button>
+        </div>
+        <p className="bf-help">{a.cancelCutoffHours > 0 ? t(lang, 'cancelLinkHint', { n: a.cancelCutoffHours }) : t(lang, 'cancelLinkHint0')}</p>
+      </div>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------ ana bileşen
 export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '' }) {
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
@@ -254,6 +343,9 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const [errors, setErrors] = useState({});
   const [kvkk, setKvkk] = useState(false);
   const [kvkkError, setKvkkError] = useState('');
+  const [consent, setConsent] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
   const [globalError, setGlobalError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
@@ -287,10 +379,12 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     for (const f of fields) if (f.type === 'dosya' && vis[f.key] && values[f.key] && !values[f.key].dataUrl && !errs[f.key]) errs[f.key] = validateField({ ...f, required: false }, values[f.key], lang) || t(lang, 'genericError');
     setErrors(errs);
     const kErr = s.kvkk?.enabled && !kvkk ? t(lang, 'consentRequired') : '';
+    const cErr = s.consent?.enabled && s.consent.required !== false && !consent ? t(lang, 'explicitConsentRequired') : '';
+    setConsentError(cErr);
     setKvkkError(kErr);
-    if (Object.keys(errs).length || kErr) {
+    if (Object.keys(errs).length || kErr || cErr) {
       const first = fields.find((f) => errs[f.key]);
-      const el = first ? document.getElementById(`bf-${first.key}`) : document.getElementById('bf-kvkk');
+      const el = first ? document.getElementById(`bf-${first.key}`) : document.getElementById(kErr ? 'bf-kvkk' : 'bf-consent');
       el?.focus?.();
       el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
       return;
@@ -303,7 +397,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     const payload = Object.fromEntries(Object.entries(values).filter(([k]) => vis[k]));
     setBusy(true);
     try {
-      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, turnstileToken });
+      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, turnstileToken });
       setDone(res);
       onDone?.(res);
     } catch (err) {
@@ -336,12 +430,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         <div className="bf-success" role="status">
           <div className="bf-success-icon" aria-hidden="true">✓</div>
           <p>{done.successMessage || t(lang, 'thanks')}</p>
-          {done.appointment && (
-            <p className="bf-muted">
-              {t(lang, 'yourAppointment', { d: `${formatDateShort(done.appointment.date, lang)} ${done.appointment.start}` })}
-              {done.appointment.status === 'bekliyor' ? ` ${t(lang, 'pending')}` : ''}
-            </p>
-          )}
+          {done.appointment && <AppointmentCard a={done.appointment} lang={lang} />}
           {done.preview && <p className="bf-muted">{t(lang, 'previewNote')}</p>}
           {preview && (
             <button type="button" className="bf-btn bf-btn-light" onClick={() => setDone(null)}>{t(lang, 'showAgain')}</button>
@@ -353,7 +442,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
 
   return (
     <form className={className} style={appearanceStyle(a)} onSubmit={submit} noValidate lang={lang}>
-      {a.showHeader !== false && (s.title || s.description) && (
+      {a.titleOn === true && (s.title || s.description) && (
         <div className="bf-header">
           {s.title && <h2 className="bf-title">{s.title}</h2>}
           {s.description && <p className="bf-desc">{s.description}</p>}
@@ -478,15 +567,37 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
             <input id="bf-kvkk" type="checkbox" checked={kvkk} onChange={(e) => { setKvkk(e.target.checked); setKvkkError(''); }} aria-invalid={!!kvkkError} />
             <span>
               {s.kvkk.label}
-              {s.kvkk.url && (
-                <>
-                  {' '}
-                  <a href={s.kvkk.url} target="_blank" rel="noreferrer">{t(lang, 'privacyLink')}</a>
-                </>
-              )}
+              <LegalLink lang={lang} doc={s.kvkk} title={t(lang, 'privacyLink')} onOpen={setLegal} />
             </span>
           </label>
           {kvkkError && <div className="bf-error" role="alert">{kvkkError}</div>}
+        </div>
+      )}
+
+      {s.consent?.enabled && (
+        <div className={`bf-kvkk ${consentError ? 'has-error' : ''}`}>
+          <label className="bf-choice">
+            <input id="bf-consent" type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setConsentError(''); }} aria-invalid={!!consentError} />
+            <span>
+              {s.consent.label}
+              {s.consent.required !== false && <span className="bf-req" aria-hidden="true"> *</span>}
+              <LegalLink lang={lang} doc={s.consent} title={t(lang, 'consentLink')} onOpen={setLegal} />
+            </span>
+          </label>
+          {consentError && <div className="bf-error" role="alert">{consentError}</div>}
+        </div>
+      )}
+
+      {legal && (
+        <div className="bf-legal" role="dialog" aria-modal="true" aria-label={legal.title} onMouseDown={(e) => e.target === e.currentTarget && setLegal(null)}>
+          <div className="bf-legal-box">
+            <div className="bf-legal-head">
+              <b>{legal.title}</b>
+              <button type="button" className="bf-legal-x" aria-label={t(lang, 'close')} onClick={() => setLegal(null)}>✕</button>
+            </div>
+            <div className="bf-legal-text">{legal.text}</div>
+            <button type="button" className="bf-btn" onClick={() => setLegal(null)}>{t(lang, 'close')}</button>
+          </div>
         </div>
       )}
 

@@ -7,14 +7,18 @@ import { config } from './config.js';
 import { hashPassword, verifyPassword, burnTime, randomToken, sha256, uid, rateLimit } from './security.js';
 import { decodeDataUrl, removeUploads, sniffMatches, writeUpload } from './files.js';
 import { verifyTurnstile } from './turnstile.js';
+import { newSecret, verifyTotp, otpauthUrl, newBackupCodes, normBackup } from './totp.js';
+import { endpointAllowed } from './webpush.js';
+import { sendTestPush, vapidPublicKey } from './notifier.js';
 
-import { today, addDays, dateTimeToMs, dateOfMs, dayOfWeek, formatDateTime, slugify } from '../../src/lib/util.js';
+import { today, addDays, dateTimeToMs, dateOfMs, dayOfWeek, formatDateTime, formatDateShort, weekdayShort, slugify } from '../../src/lib/util.js';
 import { validateAll, fileExt } from '../../src/lib/validators.js';
 import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
 import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
-import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem } from '../../src/lib/shared.js';
+import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
+import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 
 // ---------------------------------------------------------------- hata
 export class ApiError extends Error {
@@ -46,17 +50,27 @@ const str = (v, max = 500) => String(v ?? '').trim().slice(0, max);
 const ACTIVE_SQL = "('bekliyor','onaylandi','geldi')";
 const PENDING_SQL = "('bekliyor','onaylandi')";
 
-const NO_PERMS = { view: false, excel: false, delete: false, edit: false, randevu: false };
-const ALL_PERMS = { view: true, excel: true, delete: true, edit: true, randevu: true };
+// notify: "bu formdan bildirim alsın" (Ana Admin belirler; kullanıcı sadece kendi cihazında açıp kapatır)
+const NO_PERMS = { view: false, excel: false, delete: false, edit: false, randevu: false, notify: false };
+const ALL_PERMS = { view: true, excel: true, delete: true, edit: true, randevu: true, notify: false };
 
 function mapUser(r) {
   if (!r) return null;
   return {
     id: r.id, name: r.name, email: r.email, passHash: r.pass_hash, role: r.role,
-    mustChange: !!Number(r.must_change), active: !!Number(r.active), createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
+    mustChange: !!Number(r.must_change), active: !!Number(r.active), createdAt: num(r.created_at), deletedAt: num(r.deleted_at),
+    notifyEnabled: r.notify_enabled === undefined || r.notify_enabled === null ? true : !!Number(r.notify_enabled),
+    notifSeenAt: num(r.notif_seen_at), totpSecret: r.totp_secret || null, totpEnabled: !!Number(r.totp_enabled || 0),
+    totpLastStep: num(r.totp_last_step), backupCodes: J(r.backup_codes, [])
   };
 }
-const publicUser = (u) => u && { id: u.id, name: u.name, email: u.email, role: u.role, mustChange: !!u.mustChange, active: u.active };
+const publicUser = (u) =>
+  u && {
+    id: u.id, name: u.name, email: u.email, role: u.role, mustChange: !!u.mustChange, active: u.active,
+    notifyEnabled: u.notifyEnabled !== false, twofaEnabled: !!u.totpEnabled,
+    // Ana Admin hesaplarında Authenticator zorunlu
+    twofaSetupRequired: u.role === 'admin' && !u.totpEnabled
+  };
 
 function mapForm(r) {
   if (!r) return null;
@@ -75,7 +89,7 @@ function mapSub(r) {
   return {
     id: r.id, formId: r.form_id, values: J(r.vals, {}), labels: J(r.labels, {}), types: J(r.types, {}), order: J(r.ord, []),
     status: r.status || 'yeni', notes: J(r.notes, []), appointmentId: r.appointment_id, manual: !!Number(r.manual),
-    kvkkAt: num(r.kvkk_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
+    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
   };
 }
 
@@ -127,6 +141,67 @@ async function sms(q, phone, text) {
 
 const cancelUrl = (appt) => `${config.publicUrl}/iptal/${appt.cancelToken}`;
 
+// Müşteriye mail: varsayılan KAPALI (ücretli ek özellik, form bazında sadece Ana Admin açar)
+const customerMails = (c) => !!c?.settings?.customerMails;
+
+// Panel + telefon bildirimi. İçerikte kişisel veri yok (ad, telefon, TC gönderilmez);
+// detaylar ancak panele giriş yapınca görünür. Telefona gönderimi notifier.js yapar.
+async function addNotice(q, form, kind, appt = null, cfg = null) {
+  const biz = form.isletme || form.name;
+  let title;
+  let body;
+  let url;
+  if (appt) {
+    const term = appointmentTerm(cfg);
+    const svc = serviceById(cfg, appt.serviceId)?.name;
+    const res = (cfg.resources || []).find((r) => r.id === appt.resourceId)?.name;
+    title = kind === 'iptal' ? `${term} iptal edildi` : `Yeni ${term.toLocaleLowerCase('tr')}${appt.status === 'bekliyor' ? ' (onay bekliyor)' : ''}`;
+    body = [biz, `${weekdayShort(appt.date)} ${formatDateShort(appt.date)} ${appt.start}`, svc, res, cfg.capacityMode === 'kisi' ? `${appt.partySize} kişi` : null].filter(Boolean).join(' · ');
+    url = `/panel/formlar/${form.id}/randevular?tarih=${appt.date}`;
+  } else {
+    title = 'Yeni kayıt';
+    body = biz === form.name ? form.name : `${biz} · ${form.name}`;
+    url = `/panel/formlar/${form.id}/kayitlar`;
+  }
+  await q('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+    uid('n_'), form.id, appt ? (kind === 'iptal' ? 'iptal' : 'randevu') : 'kayit', str(title, 200), str(body, 500), url, now()
+  ]);
+}
+
+// Form gönderildikten sonra müşteriye gösterilen randevu kartı için bilgiler
+function appointmentCard(form, appt, cfg, lang, settings = {}) {
+  const biz = form.isletme || form.name;
+  const term = appointmentTerm(cfg);
+  const svc = serviceById(cfg, appt.serviceId)?.name || '';
+  const res = (cfg.resources || []).find((r) => r.id === appt.resourceId)?.name || '';
+  const title = `${biz} – ${svc && svc !== term ? `${term}: ${svc}` : term}`;
+  const cancel = cancelUrl(appt);
+  return {
+    date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, resource: res, resourceLabel: cfg.resourceLabel || '',
+    partySize: cfg.capacityMode === 'kisi' ? appt.partySize : null, term, isletme: biz,
+    cancelUrl: cancel, cancelCutoffHours: Number(cfg.cancelCutoffHours || 0),
+    address: settings.address || '', directionsUrl: directionsUrl(settings),
+    icsUrl: `${config.publicUrl}/api/ics/${appt.cancelToken}`,
+    googleUrl: googleCalendarUrl({ date: appt.date, start: appt.start, end: appt.end, title, description: `${lang === 'en' ? 'Cancel' : 'İptal'}: ${cancel}` })
+  };
+}
+
+// "Takvimime ekle" dosyası (/api/ics/<iptal-kodu>)
+export async function icsByToken(db, tok) {
+  if (!/^[a-f0-9]{32}$/.test(String(tok || ''))) return null;
+  const a = mapAppt((await db.query('SELECT * FROM appointments WHERE cancel_token = ?', [tok]))[0]);
+  if (!a || a.status === 'iptal') return null;
+  const form = await loadForm(db.query, a.formId);
+  if (!form) return null;
+  const c = content(form);
+  const card = appointmentCard(form, a, c.randevu, a.lang || 'tr', c.settings);
+  const title = `${card.isletme} – ${card.service && card.service !== card.term ? `${card.term}: ${card.service}` : card.term}`;
+  return {
+    filename: `${slugify(card.isletme) || 'randevu'}-${a.date}.ics`,
+    text: buildIcs({ uid: a.id, date: a.date, start: a.start, end: a.end, title, location: card.address, description: [card.directionsUrl ? `${a.lang === 'en' ? 'Directions' : 'Yol tarifi'}: ${card.directionsUrl}` : '', `${a.lang === 'en' ? 'Cancel' : 'İptal'}: ${card.cancelUrl}`].filter(Boolean).join('\n'), url: card.cancelUrl, lang: a.lang || 'tr' })
+  };
+}
+
 function appointmentMailBody(form, appt, cfg, status, lang = 'tr') {
   const svc = serviceById(cfg, appt.serviceId);
   const res = (cfg.resources || []).find((r) => r.id === appt.resourceId);
@@ -143,19 +218,43 @@ function appointmentMailBody(form, appt, cfg, status, lang = 'tr') {
 }
 
 // ---------------------------------------------------------------- oturum / yetki
+// Oturum: 2 saat hiçbir işlem yapılmazsa ya da girişten 12 saat sonra kapanır.
+// Panelin arka planda yaptığı otomatik kontroller (yeni bildirim var mı?) süreyi UZATMAZ;
+// sadece kişinin kendi yaptığı işlemler uzatır (X-Batilmer-Bg başlığı olmayan istekler).
 const SESSION_COOKIE = 'bf_sess';
-const SESSION_DAYS = 7;
 
 async function sessionUser(ctx) {
   if (ctx._user !== undefined) return ctx._user;
+  ctx._session = null;
   const tok = ctx.cookies[SESSION_COOKIE];
   if (!tok || !/^[a-f0-9]{64}$/.test(tok)) return (ctx._user = null);
+  const hash = sha256(tok);
   const rows = await ctx.db.query(
-    'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL AND u.active = 1',
-    [sha256(tok), now()]
+    'SELECT u.*, s.created_at AS s_created, s.last_seen AS s_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.deleted_at IS NULL AND u.active = 1',
+    [hash]
   );
+  if (!rows[0]) return (ctx._user = null);
+  const t = now();
+  const created = Number(rows[0].s_created);
+  let seen = Number(rows[0].s_seen ?? created);
+  if (t - created >= SESSION_MAX_MS || t - seen >= SESSION_IDLE_MS) {
+    await ctx.db.query('DELETE FROM sessions WHERE token_hash = ?', [hash]);
+    return (ctx._user = null);
+  }
+  if (!ctx.background && t - seen > 15000) {
+    seen = t;
+    await ctx.db.query('UPDATE sessions SET last_seen = ? WHERE token_hash = ?', [t, hash]);
+  }
+  ctx._session = { hash, created, seen };
   ctx._user = mapUser(rows[0]);
   return ctx._user;
+}
+
+function sessionState(ctx) {
+  const s = ctx._session;
+  if (!s) return null;
+  const t = now();
+  return { idleLeftMs: Math.max(0, s.seen + SESSION_IDLE_MS - t), absLeftMs: Math.max(0, s.created + SESSION_MAX_MS - t) };
 }
 
 async function requireUser(ctx) {
@@ -163,6 +262,8 @@ async function requireUser(ctx) {
   if (!u) fail('Oturum süresi doldu, lütfen tekrar giriş yapın.', 'oturum', 401);
   // İlk girişte şifre değiştirilmeden başka işlem yapılamaz
   if (u.mustChange && !ctx.allowMustChange) fail('Devam etmeden önce şifrenizi değiştirmeniz gerekiyor.', 'sifre', 403);
+  // Ana Admin, Authenticator'ı kurmadan başka işlem yapamaz
+  if (!u.mustChange && u.role === 'admin' && !u.totpEnabled && !ctx.allowTwofaSetup) fail('Devam etmeden önce iki adımlı doğrulamayı (Authenticator) açmanız gerekiyor.', '2fa_kurulum', 403);
   return u;
 }
 
@@ -174,9 +275,11 @@ async function requireAdmin(ctx) {
 
 async function permsFor(q, user, formId) {
   if (!user) return { ...NO_PERMS };
-  if (user.role === 'admin') return { ...ALL_PERMS };
   const rows = await q('SELECT perms FROM permissions WHERE user_id = ? AND form_id = ?', [user.id, formId]);
-  return rows[0] ? { ...NO_PERMS, ...J(rows[0].perms, {}) } : { ...NO_PERMS };
+  const saved = rows[0] ? J(rows[0].perms, {}) : {};
+  // Ana Admin her şeyi görür; bildirimi ise sadece kendisi tik attığı formlardan alır (varsayılan kapalı)
+  if (user.role === 'admin') return { ...ALL_PERMS, notify: !!saved.notify };
+  return { ...NO_PERMS, ...saved };
 }
 
 async function loadForm(q, formId, { lock = false } = {}) {
@@ -233,12 +336,31 @@ async function formIsOpen(q, form) {
 // =====================================================================
 const H = {};
 // Giriş yapmadan çağrılabilen işlemler
-export const PUBLIC = new Set(['login', 'logout', 'currentUser', 'requestPasswordReset', 'resetPassword', 'getPublicForm', 'getAvailability', 'submitForm', 'getAppointmentByToken', 'cancelByToken']);
+export const PUBLIC = new Set(['login', 'loginTotp', 'logout', 'currentUser', 'publicConfig', 'requestPasswordReset', 'resetPassword', 'getPublicForm', 'getAvailability', 'submitForm', 'getAppointmentByToken', 'cancelByToken']);
 // İlk girişte şifre değiştirmeden önce de çağrılabilenler
-const MUST_CHANGE_OK = new Set(['changePassword', 'currentUser', 'logout']);
+const MUST_CHANGE_OK = new Set(['changePassword', 'currentUser', 'logout', 'sessionInfo', 'touchSession']);
+// Ana Admin Authenticator'ı kurmadan önce çağrılabilenler
+const TWOFA_SETUP_OK = new Set([...MUST_CHANGE_OK, 'totpStatus', 'totpSetupStart', 'totpSetupConfirm']);
 export const BIG_BODY = new Set(['submitForm']);
 
 // ---------------------------------------------------------------- oturum
+// Şifre doğru, Authenticator kodu bekleniyor: 5 dakika geçerli, en fazla 5 deneme
+const tickets = new Map();
+setInterval(() => {
+  for (const [k, v] of tickets) if (now() > v.exp) tickets.delete(k);
+}, 60000).unref();
+
+async function startSession(ctx, user) {
+  const tok = randomToken(32);
+  const t = now();
+  await ctx.db.query('DELETE FROM sessions WHERE user_id = ? AND (expires_at < ? OR created_at < ?)', [user.id, t, t - SESSION_MAX_MS]);
+  await ctx.db.query('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)', [sha256(tok), user.id, t, t + SESSION_MAX_MS, t]);
+  await log(ctx.db.query, user.id, 'Giriş yaptı', ctx.ip);
+  sessionCookie(ctx, tok, Math.floor(SESSION_MAX_MS / 1000));
+  ctx._session = { hash: sha256(tok), created: t, seen: t };
+  return publicUser(user);
+}
+
 H.login = async (ctx, email, password) => {
   const e = str(email, 190).toLowerCase();
   if (!rateLimit(`login:ip:${ctx.ip}`, 20, 15 * 60000) || !rateLimit(`login:mail:${e}`, 8, 15 * 60000)) {
@@ -250,22 +372,66 @@ H.login = async (ctx, email, password) => {
     fail('E-posta veya şifre hatalı.');
   }
   if (!(await verifyPassword(password, user.passHash)) || !user.active) fail('E-posta veya şifre hatalı.');
-  const tok = randomToken(32);
-  await ctx.db.query('DELETE FROM sessions WHERE user_id = ? AND expires_at < ?', [user.id, now()]);
-  await ctx.db.query('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', [sha256(tok), user.id, now(), now() + SESSION_DAYS * 864e5]);
-  await log(ctx.db.query, user.id, 'Giriş yaptı', ctx.ip);
-  sessionCookie(ctx, tok, SESSION_DAYS * 86400);
-  return publicUser(user);
+  if (user.totpEnabled) {
+    const ticket = randomToken(24);
+    tickets.set(ticket, { userId: user.id, exp: now() + 5 * 60000, tries: 0 });
+    return { twofa: true, ticket };
+  }
+  return startSession(ctx, user);
 };
 
-H.logout = async (ctx) => {
+H.loginTotp = async (ctx, ticket, code) => {
+  const tk = tickets.get(String(ticket || ''));
+  if (!tk || now() > tk.exp) fail('Süre doldu, lütfen e-posta ve şifrenizle tekrar giriş yapın.', 'bilet');
+  if (!rateLimit(`totp:ip:${ctx.ip}`, 20, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.', 'sinir', 429);
+  tk.tries += 1;
+  if (tk.tries > 5) {
+    tickets.delete(String(ticket));
+    fail('Çok fazla hatalı kod girildi. Lütfen tekrar giriş yapın.', 'bilet');
+  }
+  const user = mapUser((await ctx.db.query('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL AND active = 1', [tk.userId]))[0]);
+  if (!user || !user.totpEnabled) fail('Lütfen tekrar giriş yapın.', 'bilet');
+  const c = String(code || '').trim();
+  const step = verifyTotp(user.totpSecret, c, { lastStep: user.totpLastStep });
+  if (step !== null) {
+    await ctx.db.query('UPDATE users SET totp_last_step = ? WHERE id = ?', [step, user.id]);
+  } else {
+    // Yedek kod (tek kullanımlık)
+    const h = sha256(`bk:${normBackup(c)}`);
+    if (normBackup(c).length !== 8 || !user.backupCodes.includes(h)) fail('Kod hatalı. Telefonunuzdaki uygulamada görünen 6 haneli kodu girin.');
+    const rest = user.backupCodes.filter((x) => x !== h);
+    await ctx.db.query('UPDATE users SET backup_codes = ? WHERE id = ?', [S(rest), user.id]);
+    await log(ctx.db.query, user.id, `Yedek kodla giriş yaptı (${rest.length} kod kaldı)`, ctx.ip);
+  }
+  tickets.delete(String(ticket));
+  return startSession(ctx, user);
+};
+
+H.logout = async (ctx, endpoint) => {
   const tok = ctx.cookies[SESSION_COOKIE];
-  if (tok) await ctx.db.query('DELETE FROM sessions WHERE token_hash = ?', [sha256(tok)]);
+  if (tok && /^[a-f0-9]{64}$/.test(tok)) {
+    const row = (await ctx.db.query('SELECT user_id FROM sessions WHERE token_hash = ?', [sha256(tok)]))[0];
+    // "Çıkış yap" denince bu cihazın bildirimleri de durur
+    if (row && endpoint) await ctx.db.query('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint_hash = ?', [row.user_id, sha256(String(endpoint))]);
+    await ctx.db.query('DELETE FROM sessions WHERE token_hash = ?', [sha256(tok)]);
+  }
   sessionCookie(ctx, '', 0);
   return true;
 };
 
 H.currentUser = async (ctx) => publicUser(await sessionUser(ctx));
+
+H.sessionInfo = async (ctx) => {
+  await requireUser(ctx);
+  return sessionState(ctx);
+};
+// Kişi panelde bir şey yaptı (tıklama, yazma): süreyi uzatır
+H.touchSession = async (ctx) => {
+  await requireUser(ctx);
+  return sessionState(ctx);
+};
+
+H.publicConfig = async () => ({ mailEnabled: config.mail.provider !== 'none' });
 
 function checkStrong(pw) {
   const p = passwordProblem(pw);
@@ -318,21 +484,212 @@ H.resetPassword = async (ctx, resetToken, newPassword) => {
   return true;
 };
 
+// ---------------------------------------------------------------- iki adımlı doğrulama (Authenticator)
+H.totpSetupStart = async (ctx) => {
+  const user = await requireUser(ctx);
+  if (user.totpEnabled) fail('İki adımlı doğrulama zaten açık.');
+  const secret = newSecret();
+  await ctx.db.query('UPDATE users SET totp_secret = ? WHERE id = ?', [secret, user.id]);
+  return { secret, url: otpauthUrl(secret, user.email) };
+};
+
+H.totpSetupConfirm = async (ctx, code) => {
+  const user = await requireUser(ctx);
+  if (!rateLimit(`totpsetup:${user.id}`, 10, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen biraz bekleyin.', 'sinir', 429);
+  if (user.totpEnabled) fail('İki adımlı doğrulama zaten açık.');
+  if (!user.totpSecret) fail('Önce kurulumu başlatın.');
+  const step = verifyTotp(user.totpSecret, code);
+  if (step === null) fail('Kod hatalı. Uygulamadaki güncel 6 haneli kodu girin (kodlar 30 saniyede bir değişir).');
+  const codes = newBackupCodes();
+  await ctx.db.tx(async (q) => {
+    await q('UPDATE users SET totp_enabled = 1, totp_last_step = ?, backup_codes = ? WHERE id = ?', [step, S(codes.map((c) => sha256(`bk:${normBackup(c)}`))), user.id]);
+    await log(q, user.id, 'İki adımlı doğrulamayı açtı');
+  });
+  return { backupCodes: codes };
+};
+
+H.totpStatus = async (ctx) => {
+  const user = await requireUser(ctx);
+  return { enabled: user.totpEnabled, required: user.role === 'admin', backupLeft: user.backupCodes.length };
+};
+
+async function checkPasswordAndCode(user, password, code) {
+  if (!rateLimit(`totpchg:${user.id}`, 10, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen biraz bekleyin.', 'sinir', 429);
+  if (!(await verifyPassword(password, user.passHash))) fail('Şifre hatalı.');
+  const step = verifyTotp(user.totpSecret, code, { lastStep: user.totpLastStep });
+  if (step === null) fail('Authenticator kodu hatalı.');
+  return step;
+}
+
+H.regenerateBackupCodes = async (ctx, password, code) => {
+  const user = await requireUser(ctx);
+  if (!user.totpEnabled) fail('Önce iki adımlı doğrulamayı açın.');
+  const step = await checkPasswordAndCode(user, password, code);
+  const codes = newBackupCodes();
+  await ctx.db.query('UPDATE users SET totp_last_step = ?, backup_codes = ? WHERE id = ?', [step, S(codes.map((c) => sha256(`bk:${normBackup(c)}`))), user.id]);
+  await log(ctx.db.query, user.id, 'Yeni yedek kodlar oluşturdu');
+  return { backupCodes: codes };
+};
+
+H.totpDisable = async (ctx, password, code) => {
+  const user = await requireUser(ctx);
+  if (user.role === 'admin') fail('Ana Admin hesaplarında iki adımlı doğrulama zorunludur, kapatılamaz.');
+  if (!user.totpEnabled) return true;
+  await checkPasswordAndCode(user, password, code);
+  await ctx.db.query('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, backup_codes = NULL WHERE id = ?', [user.id]);
+  await log(ctx.db.query, user.id, 'İki adımlı doğrulamayı kapattı');
+  return true;
+};
+
+// Telefonu kaybeden kullanıcı için: Ana Admin sıfırlar, kişi bir sonraki girişte yeniden kurar
+H.adminResetTotp = async (ctx, id) => {
+  const admin = await requireAdmin(ctx);
+  if (id === admin.id) fail('Kendi iki adımlı doğrulamanızı buradan sıfırlayamazsınız; yedek kodlarınızı kullanın ya da başka bir Ana Admin\'den isteyin.');
+  return ctx.db.tx(async (q) => {
+    const u = mapUser((await q('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL', [id]))[0]);
+    if (!u) fail('Kullanıcı bulunamadı.', 'yok', 404);
+    await q('UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = NULL, backup_codes = NULL WHERE id = ?', [id]);
+    await q('DELETE FROM sessions WHERE user_id = ?', [id]);
+    await log(q, admin.id, 'İki adımlı doğrulamayı sıfırladı', u.email);
+    return true;
+  });
+};
+
+// ---------------------------------------------------------------- bildirimler
+// Bir kullanıcının bildirim alacağı formlar: Ana Admin'in "Bildirim" tiki attığı formlar
+async function notifyFormIds(q, user) {
+  const rows = await q('SELECT p.form_id, p.perms FROM permissions p JOIN forms f ON f.id = p.form_id WHERE p.user_id = ? AND f.deleted_at IS NULL', [user.id]);
+  const out = {};
+  for (const r of rows) {
+    const p = J(r.perms, {});
+    if (!p.notify) continue;
+    if (user.role === 'admin') out[r.form_id] = { view: true, randevu: true };
+    else if (p.view) out[r.form_id] = { view: true, randevu: !!p.randevu };
+  }
+  return out;
+}
+
+H.pushConfig = async (ctx) => {
+  await requireUser(ctx);
+  return { publicKey: await vapidPublicKey(ctx.db) };
+};
+
+H.savePushSubscription = async (ctx, sub = {}, label = '') => {
+  const user = await requireUser(ctx);
+  const endpoint = String(sub?.endpoint || '');
+  const p256dh = String(sub?.keys?.p256dh || '');
+  const auth = String(sub?.keys?.auth || '');
+  if (!endpointAllowed(endpoint) || endpoint.length > 2000) fail('Bu tarayıcının bildirim adresi desteklenmiyor.');
+  if (!/^[A-Za-z0-9_-]{80,100}$/.test(p256dh) || !/^[A-Za-z0-9_-]{16,40}$/.test(auth)) fail('Geçersiz bildirim anahtarı.');
+  if (!rateLimit(`pushsub:${user.id}`, 20, 60 * 60000)) fail('Çok fazla deneme yaptınız.', 'sinir', 429);
+  const hash = sha256(endpoint);
+  await ctx.db.tx(async (q) => {
+    // Aynı cihaz başka bir hesapla kayıtlıysa o kaydı bu hesaba devret
+    await q('DELETE FROM push_subscriptions WHERE endpoint_hash = ?', [hash]);
+    await q('INSERT INTO push_subscriptions (id, user_id, endpoint_hash, endpoint, p256dh, auth, label, created_at, fail_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)', [
+      uid('p_'), user.id, hash, endpoint, p256dh, auth, str(label, 150), now()
+    ]);
+    // Kişi başı en fazla 10 cihaz
+    const all = await q('SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC', [user.id]);
+    for (const r of all.slice(10)) await q('DELETE FROM push_subscriptions WHERE id = ?', [r.id]);
+    await log(q, user.id, 'Bildirimleri açtı', str(label, 150));
+  });
+  return true;
+};
+
+H.deletePushSubscription = async (ctx, endpoint) => {
+  const user = await requireUser(ctx);
+  await ctx.db.query('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint_hash = ?', [user.id, sha256(String(endpoint || ''))]);
+  return true;
+};
+
+H.myNotificationSettings = async (ctx, endpoint = '') => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const ids = await notifyFormIds(q, user);
+  const formIds = Object.keys(ids);
+  const forms = formIds.length ? await q(`SELECT id, name, isletme FROM forms WHERE deleted_at IS NULL AND id IN (${ph(formIds)}) ORDER BY name`, formIds) : [];
+  const devices = await q('SELECT id, endpoint_hash, label, created_at, last_ok_at, fail_count FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC', [user.id]);
+  const mine = endpoint ? sha256(String(endpoint)) : '';
+  return {
+    enabled: user.notifyEnabled,
+    forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })),
+    devices: devices.map((d) => ({ id: d.id, label: d.label, createdAt: num(d.created_at), lastOkAt: num(d.last_ok_at), failing: Number(d.fail_count) > 0, thisDevice: d.endpoint_hash === mine }))
+  };
+};
+
+H.setNotifyEnabled = async (ctx, enabled) => {
+  const user = await requireUser(ctx);
+  await ctx.db.query('UPDATE users SET notify_enabled = ? WHERE id = ?', [enabled ? 1 : 0, user.id]);
+  await log(ctx.db.query, user.id, enabled ? 'Bildirimlerini açtı' : 'Bildirimlerini kapattı');
+  return !!enabled;
+};
+
+H.deleteMyDevice = async (ctx, id) => {
+  const user = await requireUser(ctx);
+  await ctx.db.query('DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?', [String(id || ''), user.id]);
+  return true;
+};
+
+H.sendTestNotification = async (ctx) => {
+  const user = await requireUser(ctx);
+  if (!rateLimit(`pushtest:${user.id}`, 5, 10 * 60000)) fail('Çok fazla deneme bildirimi gönderdiniz. Lütfen biraz bekleyin.', 'sinir', 429);
+  return sendTestPush(ctx.db, user.id);
+};
+
+// Panel açıkken 15 saniyede bir çağrılır (arka plan isteği: oturum süresini uzatmaz)
+H.pollNotifications = async (ctx, since = 0) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const ids = await notifyFormIds(q, user);
+  const formIds = Object.keys(ids);
+  let items = [];
+  let unread = 0;
+  if (formIds.length) {
+    const from = Math.max(Number(since) || 0, now() - 30 * 864e5);
+    const rows = await q(`SELECT * FROM notifications WHERE form_id IN (${ph(formIds)}) AND created_at > ? ORDER BY created_at DESC LIMIT 50`, [...formIds, from]);
+    const allowed = (r) => (r.kind === 'kayit' ? ids[r.form_id].view : ids[r.form_id].randevu);
+    items = rows.filter(allowed).map((r) => ({ id: r.id, formId: r.form_id, kind: r.kind, title: r.title, body: r.body, url: r.url, at: num(r.created_at) }));
+    const seen = Math.max(user.notifSeenAt || 0, now() - 7 * 864e5);
+    const unreadRows = await q(`SELECT form_id, kind FROM notifications WHERE form_id IN (${ph(formIds)}) AND created_at > ? LIMIT 100`, [...formIds, seen]);
+    unread = unreadRows.filter(allowed).length;
+  }
+  return { items, unread, enabled: user.notifyEnabled, hasForms: formIds.length > 0, session: sessionState(ctx), serverTime: now() };
+};
+
+H.markNotificationsSeen = async (ctx) => {
+  const user = await requireUser(ctx);
+  await ctx.db.query('UPDATE users SET notif_seen_at = ? WHERE id = ?', [now(), user.id]);
+  return true;
+};
+
 // ---------------------------------------------------------------- kullanıcılar (Ana Admin)
 H.listUsers = async (ctx) => {
   await requireAdmin(ctx);
   const users = (await ctx.db.query('SELECT * FROM users WHERE deleted_at IS NULL ORDER BY created_at')).map(mapUser);
   const perms = await ctx.db.query('SELECT user_id, perms FROM permissions');
-  return users.map((u) => ({
-    ...publicUser(u),
-    createdAt: u.createdAt,
-    formCount: perms.filter((p) => p.user_id === u.id && Object.values(J(p.perms, {})).some(Boolean)).length
-  }));
+  const devices = Object.fromEntries((await ctx.db.query('SELECT user_id, COUNT(*) AS c FROM push_subscriptions GROUP BY user_id')).map((r) => [r.user_id, Number(r.c)]));
+  return users.map((u) => {
+    const mine = perms.filter((p) => p.user_id === u.id).map((p) => J(p.perms, {}));
+    return {
+      ...publicUser(u),
+      createdAt: u.createdAt,
+      formCount: mine.filter((p) => p.view).length,
+      notifyFormCount: mine.filter((p) => p.notify && (u.role === 'admin' || p.view)).length,
+      pushDevices: devices[u.id] || 0
+    };
+  });
 };
+
+// En az bir aktif Ana Admin her zaman kalmalı
+async function mustKeepAnotherAdmin(q, exceptId) {
+  const rows = await q("SELECT id FROM users WHERE role = 'admin' AND active = 1 AND deleted_at IS NULL AND id <> ?", [exceptId]);
+  if (!rows.length) fail('En az bir aktif Ana Admin kalmalı.');
+}
 
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 
-H.createUser = async (ctx, { name, email, password } = {}) => {
+H.createUser = async (ctx, { name, email, password, role } = {}) => {
   const admin = await requireAdmin(ctx);
   const e = str(email, 190).toLowerCase();
   if (!str(name)) fail('Ad Soyad zorunlu.');
@@ -341,9 +698,10 @@ H.createUser = async (ctx, { name, email, password } = {}) => {
   const hash = await hashPassword(password);
   return ctx.db.tx(async (q) => {
     if ((await q('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL', [e])).length) fail('Bu e-posta ile bir kullanıcı zaten var.');
-    const u = { id: uid('u_'), name: str(name, 150), email: e, role: 'user', mustChange: true, active: true };
-    await q('INSERT INTO users (id, name, email, pass_hash, role, must_change, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [u.id, u.name, e, hash, 'user', 1, 1, now()]);
-    await log(q, admin.id, 'Kullanıcı ekledi', e);
+    const r = role === 'admin' ? 'admin' : 'user';
+    const u = { id: uid('u_'), name: str(name, 150), email: e, role: r, mustChange: true, active: true };
+    await q('INSERT INTO users (id, name, email, pass_hash, role, must_change, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [u.id, u.name, e, hash, r, 1, 1, now()]);
+    await log(q, admin.id, r === 'admin' ? 'Ana Admin ekledi' : 'Kullanıcı ekledi', e);
     await mail(q, e, 'Batilmer Form Paneli hesabınız açıldı', `Merhaba ${u.name},\n\nPanel adresi: ${config.publicUrl}/giris\nKullanıcı adınız: ${e}\nGeçici şifreniz size ayrıca iletilecektir. İlk girişte şifrenizi değiştirmeniz istenecek.`, 'hesap');
     return publicUser(u);
   });
@@ -354,7 +712,10 @@ H.updateUser = async (ctx, id, { name, email, active } = {}) => {
   return ctx.db.tx(async (q) => {
     const u = mapUser((await q('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL', [id]))[0]);
     if (!u) fail('Kullanıcı bulunamadı.', 'yok', 404);
-    if (u.role === 'admin' && active === false) fail('Ana Admin pasif yapılamaz.');
+    if (u.role === 'admin' && active === false) {
+      if (u.id === admin.id) fail('Kendi hesabınızı pasif yapamazsınız.');
+      await mustKeepAnotherAdmin(q, u.id);
+    }
     if (email !== undefined) {
       const e = str(email, 190).toLowerCase();
       if (!emailOk(e)) fail('Geçerli bir e-posta girin.');
@@ -389,8 +750,12 @@ H.deleteUser = async (ctx, id) => {
   return ctx.db.tx(async (q) => {
     const u = mapUser((await q('SELECT * FROM users WHERE id = ? AND deleted_at IS NULL', [id]))[0]);
     if (!u) fail('Kullanıcı bulunamadı.', 'yok', 404);
-    if (u.role === 'admin') fail('Ana Admin silinemez.');
+    if (u.role === 'admin') {
+      if (u.id === admin.id) fail('Kendi hesabınızı silemezsiniz.');
+      await mustKeepAnotherAdmin(q, u.id);
+    }
     await q('UPDATE users SET deleted_at = ?, active = 0 WHERE id = ?', [now(), id]);
+    await q('DELETE FROM push_subscriptions WHERE user_id = ?', [id]);
     await q('DELETE FROM sessions WHERE user_id = ?', [id]);
     await log(q, admin.id, 'Kullanıcıyı sildi (çöp kutusu)', u.email);
     return true;
@@ -412,8 +777,13 @@ H.setPermission = async (ctx, userId, formId, perms = {}) => {
     const f = await loadForm(q, formId);
     if (!u || !f) fail('Kullanıcı veya form bulunamadı.', 'yok', 404);
     const cleanPerms = {};
-    for (const k of Object.keys(NO_PERMS)) cleanPerms[k] = !!perms[k];
-    if (!cleanPerms.view) Object.keys(cleanPerms).forEach((k) => (cleanPerms[k] = false));
+    if (u.role === 'admin') {
+      // Ana Admin her formu zaten görür; burada sadece "bildirim alsın" tiki saklanır
+      cleanPerms.notify = !!perms.notify;
+    } else {
+      for (const k of Object.keys(NO_PERMS)) cleanPerms[k] = !!perms[k];
+      if (!cleanPerms.view) Object.keys(cleanPerms).forEach((k) => (cleanPerms[k] = false));
+    }
     await q('DELETE FROM permissions WHERE user_id = ? AND form_id = ?', [userId, formId]);
     await q('INSERT INTO permissions (user_id, form_id, perms) VALUES (?, ?, ?)', [userId, formId, S(cleanPerms)]);
     await log(q, admin.id, 'Yetki güncelledi', `${u.email} → ${f.name}`);
@@ -494,7 +864,20 @@ function cleanDraft(draft, prev, user) {
   if (S(draft).length > 2_000_000) fail('Form içeriği çok büyük.');
   const next = normalizeContent(clone(draft));
   // KVKK ayarlarını sadece Ana Admin değiştirebilir
-  if (user.role !== 'admin') next.settings.kvkk = clone(prev.settings.kvkk);
+  if (user.role !== 'admin') {
+    next.settings.kvkk = clone(prev.settings.kvkk);
+    next.settings.consent = clone(prev.settings.consent);
+    // Müşteriye mail ve SMS ücretli ek özellik: sadece Ana Admin açıp kapatır
+    next.settings.customerMails = !!prev.settings.customerMails;
+    next.randevu.sms = clone(prev.randevu.sms);
+  }
+  if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
+  next.randevu.term = str(next.randevu.term, 40);
+  next.settings.address = str(next.settings.address, 300);
+  next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
+  next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
+  for (const k of ['kvkk', 'consent']) if (next.settings[k].url && !/^https?:\/\//i.test(next.settings[k].url)) next.settings[k].url = '';
+  next.settings.mapsUrl = /^https:\/\/[^\s"'<>]{4,490}$/i.test(String(next.settings.mapsUrl || '').trim()) ? String(next.settings.mapsUrl).trim() : '';
   const keys = next.fields.map((x) => x.key);
   if (keys.some((k) => !/^[a-z0-9_]{1,60}$/.test(String(k)))) fail('Alan anahtarları sadece küçük harf, rakam ve alt çizgi içerebilir.');
   if (new Set(keys).size !== keys.length) fail('İki alanın teknik anahtarı aynı olamaz.');
@@ -543,7 +926,7 @@ H.publishForm = async (ctx, id, { note = '', cancelAffected = false } = {}) => {
       const affected = await findAffectedAppointments(q, form, pub.randevu);
       for (const a of affected) {
         await q("UPDATE appointments SET status = 'iptal', cancelled_by = 'isletme' WHERE id = ?", [a.id]);
-        if (a.contact?.email) {
+        if (a.contact?.email && customerMails(pub)) {
           const lang = a.lang || 'tr';
           await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: form.isletme || form.name }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
         }
@@ -666,7 +1049,7 @@ H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize }
 };
 
 H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
-  const { honeypot = '', startedAt = 0, kvkkAccepted = false, turnstileToken = '' } = meta || {};
+  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, turnstileToken = '' } = meta || {};
   const pre = await formBySlug(ctx.db.query, slug);
   const lang = pre?.published?.settings?.language || 'tr';
   // Bot: gizli alan doluysa ya da 2 saniyeden hızlı gönderildiyse sessizce "başarılı" de, kaydetme
@@ -721,6 +1104,9 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         throw e;
       }
       if (c.settings.kvkk?.enabled && !kvkkAccepted) fail(tt(lang, 'consentRequired'));
+      // Açık rıza zorunluysa işaretlenmeden kayıt alınmaz (tarayıcıya güvenilmez, burada kontrol edilir)
+      const consentOn = !!c.settings.consent?.enabled;
+      if (consentOn && c.settings.consent.required !== false && !consentAccepted) fail(tt(lang, 'explicitConsentRequired'), 'acik_riza');
 
       const vis = visibilityMap(fields, values);
       const clean = {};
@@ -759,7 +1145,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         labels: Object.fromEntries(fields.map((f) => [f.key, f.label])),
         types: Object.fromEntries(fields.map((f) => [f.key, f.type])),
         order: fields.map((f) => f.key),
-        kvkkAt: c.settings.kvkk?.enabled ? now() : null, appointmentId: null
+        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, appointmentId: null
       };
 
       // Randevu: form satırı kilitli olduğu için aynı anda iki kişi aynı saati alamaz
@@ -790,7 +1176,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         sub.appointmentId = appt.id;
         clean[rField.key] = { ...r, serviceId: svc.id, resourceId: check.resourceId };
         const pending = appt.status === 'bekliyor';
-        if (contact.email) {
+        if (contact.email && customerMails(c)) {
           await mail(q, contact.email, tt(lang, pending ? 'mailRequestSubject' : 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, pending ? tt(lang, 'mailPendingText') : tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
         }
         if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, pending ? 'smsPending' : 'smsConfirm', { x: biz, d: `${appt.date} ${appt.start}`, u: cancelUrl(appt) }));
@@ -804,22 +1190,19 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         await q('INSERT INTO files (id, form_id, submission_id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [up.id, form.id, sub.id, up.name, up.mime, up.buffer.length, now()]);
       }
 
-      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)', [
-        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
+      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)', [
+        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
       ]);
 
       const ar = c.settings.autoReply;
-      if (ar?.enabled && contact.email && !appt) {
+      if (ar?.enabled && contact.email && !appt && customerMails(c)) {
         await mail(q, contact.email, fillTemplate(ar.subject, sub.labels, clean, c.randevu), fillTemplate(ar.body, sub.labels, clean, c.randevu), 'otomatik-cevap');
       }
-      const notify = c.settings.notifyEmails || [];
-      if (notify.length) {
-        const body = sub.order.filter((k) => clean[k] !== undefined).map((k) => `${sub.labels[k]}: ${displayValue(sub.types[k], clean[k], c.randevu)}`).join('\n');
-        await mail(q, notify, `Yeni kayıt: ${form.name}`, `${body}\n\nPanel: ${config.publicUrl}/panel/formlar/${form.id}/kayitlar`, 'bildirim');
-      }
+      // Yetkili kişilere panel + telefon bildirimi (içerikte kişisel veri yok)
+      await addNotice(q, form, 'yeni', appt, c.randevu);
       return {
         ok: true, afterSubmit: c.settings.afterSubmit, successMessage: c.settings.successMessage, redirectUrl: c.settings.redirectUrl,
-        appointment: appt && { date: appt.date, start: appt.start, status: appt.status }
+        appointment: appt && appointmentCard(form, appt, c.randevu, lang, c.settings)
       };
     });
   } catch (e) {
@@ -953,7 +1336,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       headers.push('Randevu durumu');
     } else headers.push(labels[k]);
   }
-  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı');
+  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı');
   const fmt = (ms) => (ms ? formatDateTime(ms) : '');
   const data = subs.map((s) => {
     const row = [fmt(s.createdAt)];
@@ -968,7 +1351,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       } else row.push(displayValue(types[k], v, cfg));
     }
     const userNotes = (s.notes || []).filter((n) => !n.system);
-    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt));
+    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt));
     return row;
   });
   await log(q, user.id, `Excel indirdi (${subs.length} kayıt)`, form.name);
@@ -1041,7 +1424,7 @@ H.listAllAppointments = async (ctx, { from, to } = {}) => {
     items: appts.map((a) => {
       const cfg = content(forms.find((f) => f.id === a.formId)).randevu;
       return {
-        id: a.id, formId: a.formId, date: a.date, start: a.start, end: a.end, status: a.status, partySize: a.partySize, name: a.contact?.name || '',
+        id: a.id, formId: a.formId, date: a.date, start: a.start, end: a.end, status: a.status, partySize: a.partySize, name: a.contact?.name || '', phone: a.contact?.phone || '',
         service: serviceById(cfg, a.serviceId)?.name || '', resource: (cfg.resources || []).find((r) => r.id === a.resourceId)?.name || ''
       };
     })
@@ -1080,7 +1463,7 @@ H.setAppointmentStatus = async (ctx, id, status) => {
     const prev = a.status;
     await q('UPDATE appointments SET status = ?, cancelled_by = ? WHERE id = ?', [status, status === 'iptal' ? 'isletme' : a.cancelledBy, id]);
     if (prev !== status) {
-      if (a.contact?.email) {
+      if (a.contact?.email && customerMails(c)) {
         if (status === 'onaylandi') await mail(q, a.contact.email, tt(lang, 'mailApprovedSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
         if (status === 'iptal') await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: biz }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
       }
@@ -1122,7 +1505,7 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
         await q('UPDATE submissions SET vals = ? WHERE id = ?', [S(sub.values), sub.id]);
       }
     }
-    if (a.contact?.email) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu');
+    if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu');
     if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }));
     await log(q, user.id, 'Randevu taşıdı', `${form.name} ${old} → ${date} ${time}`);
     return true;
@@ -1164,7 +1547,7 @@ H.createManualAppointment = async (ctx, formId, { name, phone, email, note, date
       subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now()
     ]);
     const biz = form.isletme || form.name;
-    if (contact.email) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
+    if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
     if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${date} ${time}`, u: cancelUrl(appt) }));
     await log(q, user.id, 'Manuel randevu ekledi', `${form.name} ${date} ${time}`);
     return appt.id;
@@ -1207,7 +1590,8 @@ H.getAppointmentByToken = async (ctx, tok) => {
   return {
     date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(cfg, a.serviceId)?.name,
     isletme: form.isletme || form.name, slug: form.slug, lang: a.lang || c.settings.language || 'tr',
-    canCancel: ['bekliyor', 'onaylandi'].includes(a.status) && now() < cutoffMs, cutoffHours: cfg.cancelCutoffHours
+    canCancel: ['bekliyor', 'onaylandi'].includes(a.status) && now() < cutoffMs, cutoffHours: cfg.cancelCutoffHours,
+    address: c.settings.address || '', directionsUrl: directionsUrl(c.settings), icsUrl: a.status === 'iptal' ? '' : `${config.publicUrl}/api/ics/${a.cancelToken}`
   };
 };
 
@@ -1227,7 +1611,7 @@ H.cancelByToken = async (ctx, tok) => {
     if (!['bekliyor', 'onaylandi'].includes(a.status)) fail(tt(lang, 'alreadyCancelled'));
     if (now() >= cutoffMs) fail(tt(lang, 'cutoffPassed', { n: cfg.cancelCutoffHours }));
     await q("UPDATE appointments SET status = 'iptal', cancelled_by = 'musteri' WHERE id = ?", [a.id]);
-    await mail(q, c.settings.notifyEmails || [], `Randevu iptal edildi: ${form.name}`, `${a.contact?.name || 'Müşteri'} ${a.date} ${a.start} randevusunu iptal etti. Saat yeniden açıldı.`, 'bildirim');
+    await addNotice(q, form, 'iptal', a, cfg);
     await log(q, null, 'Müşteri randevuyu iptal etti', `${form.name} ${a.date} ${a.start}`);
     return true;
   });
@@ -1280,7 +1664,7 @@ H.purgeItem = async (ctx, kind, id) => {
     if (kind === 'form') {
       if (!(await q('SELECT id FROM forms WHERE id = ? AND deleted_at IS NOT NULL', [id])).length) fail('Bulunamadı.', 'yok', 404);
       files = (await q('SELECT id FROM files WHERE form_id = ?', [id])).map((r) => r.id);
-      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
+      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
       await q('DELETE FROM forms WHERE id = ?', [id]);
     } else if (kind === 'submission') {
       const s = (await q('SELECT * FROM submissions WHERE id = ? AND deleted_at IS NOT NULL', [id]))[0];
@@ -1293,6 +1677,7 @@ H.purgeItem = async (ctx, kind, id) => {
       if (!(await q("SELECT id FROM users WHERE id = ? AND deleted_at IS NOT NULL AND role <> 'admin'", [id])).length) fail('Bulunamadı.', 'yok', 404);
       await q('DELETE FROM permissions WHERE user_id = ?', [id]);
       await q('DELETE FROM sessions WHERE user_id = ?', [id]);
+      await q('DELETE FROM push_subscriptions WHERE user_id = ?', [id]);
       await q('DELETE FROM users WHERE id = ?', [id]);
     } else fail('Geçersiz tür.');
     await log(q, admin.id, 'Kalıcı olarak sildi', kind);
@@ -1338,8 +1723,9 @@ export async function dispatch(ctx, name, args) {
   const fn = Object.prototype.hasOwnProperty.call(H, name) ? H[name] : null;
   if (!fn) fail('Bilinmeyen işlem.', 'yok', 404);
   ctx.allowMustChange = MUST_CHANGE_OK.has(name) || PUBLIC.has(name);
+  ctx.allowTwofaSetup = TWOFA_SETUP_OK.has(name) || PUBLIC.has(name);
   return fn(ctx, ...(Array.isArray(args) ? args : []));
 }
 
 export const handlerNames = () => Object.keys(H);
-export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl };
+export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, J };

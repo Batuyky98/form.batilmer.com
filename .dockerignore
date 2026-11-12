@@ -5,6 +5,7 @@ server/data
 .env
 .env.*
 sunucu.env
+sunucu-test.env
 yedekler
 *.zip
 *.log

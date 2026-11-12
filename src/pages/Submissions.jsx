@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../lib/api.js';
 import { Link } from '../router.jsx';
-import { Badge, Empty, Modal, Spinner, useConfirm, useToast } from '../components/ui.jsx';
+import { Badge, Empty, Modal, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
+import ContactButtons from '../components/ContactButtons.jsx';
 import { buildXlsx } from '../lib/xlsx.js';
 import { dateOfMs, download, formatBytes, formatDateTime, maskTc, today } from '../lib/util.js';
 
@@ -63,11 +64,15 @@ function DetailModal({ sub, data, showTc, perms, onClose, onChanged, onDelete })
           {(s.order || Object.keys(s.values)).filter((k) => s.values[k] !== undefined).map((k) => (
             <div key={k}>
               <dt>{s.labels[k] || k}{!data.fields.some((f) => f.key === k) && <span className="muted small"> (eski alan)</span>}</dt>
-              <dd className="pre"><ValueCell type={s.types[k]} value={s.values[k]} randevu={data.randevu} showTc={showTc} /></dd>
+              <dd className="pre">
+                <ValueCell type={s.types[k]} value={s.values[k]} randevu={data.randevu} showTc={showTc} />
+                {s.types[k] === 'tel' && <ContactButtons phone={s.values[k]} className="dd-contact" />}
+              </dd>
             </div>
           ))}
           <div><dt>Kayıt zamanı</dt><dd>{formatDateTime(s.createdAt)}</dd></div>
           {s.kvkkAt && <div><dt>KVKK onayı</dt><dd>{formatDateTime(s.kvkkAt)} · {s.ip}</dd></div>}
+          {s.consentAt && <div><dt>Açık rıza</dt><dd>{formatDateTime(s.consentAt)}</dd></div>}
           {s.appointmentStatus && <div><dt>Randevu durumu</dt><dd><Badge tone={APPT_TONE[s.appointmentStatus]}>{api.STATUS_LABELS[s.appointmentStatus]}</Badge></dd></div>}
         </dl>
         <section className="stack-sm">
@@ -131,6 +136,8 @@ export default function Submissions({ id }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, q, from, to, status]);
 
+  const mobile = useIsMobile();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const columns = useMemo(() => (data?.fields || []).filter((f) => !['textarea', 'dosya'].includes(f.type)).slice(0, 4), [data]);
 
   async function exportExcel() {
@@ -173,8 +180,8 @@ export default function Submissions({ id }) {
       <div className="page-head">
         <div>
           <Link to="/panel" className="back">← Formlar</Link>
-          <h1>{form.name} <span className="muted">· Kayıtlar</span></h1>
-          <div className="small muted">{form.isletme}</div>
+          <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
+          <h1>Kayıtlar</h1>
         </div>
         <div className="row">
           <Link to={`/panel/formlar/${id}/istatistik`} className="btn">İstatistik</Link>
@@ -192,7 +199,15 @@ export default function Submissions({ id }) {
       </div>
 
       <div className="filters card">
-        <input type="search" placeholder="Kayıtlarda ve notlarda ara…" aria-label="Kayıtlarda ara" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="filter-search">
+          <input type="search" placeholder="Kayıtlarda ve notlarda ara…" aria-label="Kayıtlarda ara" value={q} onChange={(e) => setQ(e.target.value)} />
+          {mobile && (
+            <button type="button" className={`btn ${filtersOpen || status || from || to ? 'btn-primary' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((o) => !o)}>
+              Filtreler{status || from || to ? ' •' : ''}
+            </button>
+          )}
+        </div>
+        {(!mobile || filtersOpen) && (<>
         <select aria-label="Durum filtresi" value={status} onChange={(e) => setStatus(e.target.value)} className="auto-w">
           <option value="">Tüm durumlar</option>
           {api.SUBMISSION_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label} ({data.counts[s.value] || 0})</option>)}
@@ -201,10 +216,43 @@ export default function Submissions({ id }) {
         <label className="inline-field"><span>Bitiş</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
         {filtered && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setQ(''); setFrom(''); setTo(''); setStatus(''); }}>Filtreyi temizle</button>}
         {hasTc && <label className="inline-check"><input type="checkbox" checked={showTc} onChange={(e) => setShowTc(e.target.checked)} /> TC'yi açık göster</label>}
+        </>)}
       </div>
 
       {!data.rows.length ? (
         <Empty title={filtered ? 'Filtreye uyan kayıt yok' : 'Henüz kayıt yok'}>Form doldurulduğunda kayıtlar burada görünecek.</Empty>
+      ) : mobile ? (
+        // Telefonda tablo yerine kartlar
+        <ul className="sub-cards">
+          {data.rows.map((s) => {
+            const titleCol = columns.find((c) => c.type === 'text') || columns[0];
+            const rest = columns.filter((c) => c !== titleCol);
+            const lastNote = (s.notes || []).filter((n) => !n.system).slice(-1)[0];
+            const telCol = data.fields.find((f) => f.type === 'tel' && s.values[f.key]);
+            return (
+              <li key={s.id} className="sub-li">
+                <button type="button" className={`sub-card-m tone-${statusTone(s.status)}`} onClick={() => setDetailId(s.id)}>
+                  <div className="scm-top">
+                    <b className="scm-title">{titleCol ? <ValueCell type={titleCol.type} value={s.values[titleCol.key]} randevu={data.randevu} showTc={showTc} /> : 'Kayıt'}</b>
+                    <Badge tone={statusTone(s.status)}>{api.submissionStatusLabel(s.status)}</Badge>
+                  </div>
+                  {rest.map((c) => s.values[c.key] !== undefined && (
+                    <div key={c.key} className="scm-row">
+                      <span>{c.label}</span>
+                      <span>
+                        <ValueCell type={c.type} value={s.values[c.key]} randevu={data.randevu} showTc={showTc} />
+                        {c.type === 'randevu' && s.appointmentStatus && <> <Badge tone={APPT_TONE[s.appointmentStatus]}>{api.STATUS_LABELS[s.appointmentStatus]}</Badge></>}
+                      </span>
+                    </div>
+                  ))}
+                  {lastNote && <div className="scm-note">“{lastNote.text}”</div>}
+                  <div className="scm-foot">{formatDateTime(s.createdAt)}{s.manual ? ' · Manuel' : ''}<span aria-hidden="true">›</span></div>
+                </button>
+                {telCol && <ContactButtons phone={s.values[telCol.key]} className="scm-contact" />}
+              </li>
+            );
+          })}
+        </ul>
       ) : (
         <div className="table-wrap card">
           <table className="tbl tbl-hover">

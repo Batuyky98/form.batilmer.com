@@ -49,7 +49,14 @@ export default function CancelPage({ token }) {
               <div><dt>{t(lang, 'service')}</dt><dd>{appt.service}</dd></div>
               <div><dt>{t(lang, 'date')}</dt><dd>{formatDate(appt.date, lang)} · {appt.start}–{appt.end}</dd></div>
               <div><dt>{t(lang, 'status')}</dt><dd>{t(lang, 'statusLabels')[appt.status]}</dd></div>
+              {appt.address && <div><dt>{t(lang, 'address')}</dt><dd>{appt.address}</dd></div>}
             </dl>
+            {(appt.directionsUrl || (appt.icsUrl && appt.status !== 'iptal')) && (
+              <div className="row">
+                {appt.directionsUrl && <a className="btn" href={appt.directionsUrl} target="_blank" rel="noopener noreferrer">📍 {t(lang, 'directions')}</a>}
+                {appt.icsUrl && <a className="btn" href={appt.icsUrl} target="_blank" rel="noopener">📅 {t(lang, 'addToCalendar')}</a>}
+              </div>
+            )}
             {appt.canCancel ? (
               <button type="button" className="btn btn-danger" onClick={cancel}>{t(lang, 'cancelBtn')}</button>
             ) : appt.status === 'iptal' ? (

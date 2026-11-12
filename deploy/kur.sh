@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
 # =====================================================================
 #  Batilmer Form Paneli – sunucu kurulum / güncelleme scripti
-#  Kullanım (sunucuda, proje klasöründe):   bash deploy/kur.sh
+#  Kullanım (sunucuda, proje klasöründe):
+#     bash deploy/kur.sh                 → canlı (form.batilmer.com)
+#     ORTAM=test bash deploy/kur.sh      → test (test.form.batilmer.com, ayrı veritabanı)
 #  Tekrar çalıştırmak güvenlidir: mevcut şifreleri ve verileri korur.
+#  Her güncellemede bir önceki sürüm saklanır: sorun olursa  bash deploy/geri-al.sh
 # =====================================================================
 set -euo pipefail
 
-DOMAIN="${DOMAIN:-form.batilmer.com}"
-CADDY="${CADDY_CONTAINER:-site-caddy-1}"
+ORTAM="${ORTAM:-canli}"
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="$APP_DIR/sunucu.env"
+if [ "$ORTAM" = "test" ]; then
+  DOMAIN="${DOMAIN:-test.form.batilmer.com}"
+  APP_NAME="batilmer-form-test"
+  ENV_FILE_NAME="sunucu-test.env"
+else
+  ORTAM="canli"
+  DOMAIN="${DOMAIN:-form.batilmer.com}"
+  APP_NAME="batilmer-form"
+  ENV_FILE_NAME="sunucu.env"
+fi
+export APP_NAME ENV_FILE_NAME
+CADDY="${CADDY_CONTAINER:-site-caddy-1}"
+ENV_FILE="$APP_DIR/$ENV_FILE_NAME"
+DC=(docker compose -p "$APP_NAME" --env-file "$ENV_FILE")
 cd "$APP_DIR"
 
 say()  { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -40,11 +55,11 @@ fi
 
 # ------------------------------------------------------------------ 2) ayar dosyası
 if [ ! -f "$ENV_FILE" ]; then
-  say "Ayar dosyası oluşturuluyor (sunucu.env)"
+  say "Ayar dosyası oluşturuluyor ($ENV_FILE_NAME)"
   ADMIN_PW="Bf-$(rand 6)-$(rand 6)-$(rand 4)7"
   umask 077
   cat >"$ENV_FILE" <<EOF
-# Batilmer Form Paneli – canlı ayarlar. BU DOSYAYI KİMSEYLE PAYLAŞMAYIN, GIT'E EKLEMEYİN.
+# Batilmer Form Paneli – $ORTAM ayarları. BU DOSYAYI KİMSEYLE PAYLAŞMAYIN, GIT'E EKLEMEYİN.
 PUBLIC_URL=https://$DOMAIN
 
 # Veritabanı (otomatik üretildi; değiştirirseniz MySQL verisi açılmaz)
@@ -69,25 +84,38 @@ TURNSTILE_SECRET=
 
 MAX_UPLOAD_MB=10
 TRUST_PROXY=1
+
+# Yedeklerin sunucu dışına (şifreli) kopyası. rclone kurulup ayarlandıktan sonra doldurun, örnek:
+# RCLONE_HEDEF=gdrive-sifreli:batilmer-form   (ayrıntı: KURULUM.md → "Sunucu dışı yedek")
+RCLONE_HEDEF=
 EOF
   chmod 600 "$ENV_FILE"
   FIRST_INSTALL=1
-  ok "sunucu.env oluşturuldu"
+  ok "$ENV_FILE_NAME oluşturuldu"
 else
   FIRST_INSTALL=0
-  ok "Mevcut sunucu.env kullanılıyor (şifreler korunuyor)"
+  ok "Mevcut $ENV_FILE_NAME kullanılıyor (şifreler korunuyor)"
 fi
 
 # ------------------------------------------------------------------ 3) uygulamayı derle ve başlat
+# Geri dönüş için şu an çalışan sürümü sakla
+if docker image inspect "$APP_NAME:latest" >/dev/null 2>&1; then
+  docker tag "$APP_NAME:latest" "$APP_NAME:onceki"
+  ok "Önceki sürüm saklandı ($APP_NAME:onceki). Sorun olursa: bash deploy/geri-al.sh"
+fi
 say "Panel derleniyor ve başlatılıyor (ilk seferde birkaç dakika sürebilir)"
-docker compose --env-file "$ENV_FILE" up -d --build
+"${DC[@]}" up -d --build
 say "Panelin hazır olması bekleniyor"
 for i in $(seq 1 60); do
-  STATUS="$(docker inspect -f '{{.State.Health.Status}}' batilmer-form 2>/dev/null || echo yok)"
+  STATUS="$(docker inspect -f '{{.State.Health.Status}}' "$APP_NAME" 2>/dev/null || echo yok)"
   [ "$STATUS" = "healthy" ] && break
   sleep 3
 done
-[ "${STATUS:-}" = "healthy" ] || { docker compose --env-file "$ENV_FILE" logs --tail=50 app; die "Panel başlamadı. Yukarıdaki kayıtlara bakın."; }
+if [ "${STATUS:-}" != "healthy" ]; then
+  "${DC[@]}" logs --tail=50 app
+  warn "Panel başlamadı. Önceki sürüme dönmek için: $( [ "$ORTAM" = test ] && echo 'ORTAM=test ' )bash deploy/geri-al.sh"
+  die "Yukarıdaki kayıtlara bakın."
+fi
 ok "Panel çalışıyor"
 
 # ------------------------------------------------------------------ 4) Caddy'ye form.batilmer.com ekle
@@ -105,7 +133,12 @@ else
   cp -p "$CADDYFILE" "$BACKUP"
   ok "Caddyfile yedeklendi: $BACKUP"
   # Not: '>>' ile ekliyoruz (dosyanın kimliği değişmesin, Caddy kabı görmeye devam etsin)
-  printf '\n%s {\n\tencode zstd gzip\n\treverse_proxy batilmer-form:3000\n}\n' "$DOMAIN" >>"$CADDYFILE"
+  if [ "$ORTAM" = "test" ]; then
+    # Test sitesi arama motorlarında görünmesin
+    printf '\n%s {\n\tencode zstd gzip\n\theader X-Robots-Tag "noindex, nofollow"\n\treverse_proxy %s:3000\n}\n' "$DOMAIN" "$APP_NAME" >>"$CADDYFILE"
+  else
+    printf '\n%s {\n\tencode zstd gzip\n\treverse_proxy %s:3000\n}\n' "$DOMAIN" "$APP_NAME" >>"$CADDYFILE"
+  fi
   if ! docker exec "$CADDY" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
     cat "$BACKUP" >"$CADDYFILE"
     die "Caddy ayarı doğrulanamadı; eski hali geri yüklendi. Hiçbir site etkilenmedi."
@@ -116,15 +149,18 @@ docker exec -w /etc/caddy "$CADDY" caddy reload --config /etc/caddy/Caddyfile --
   && ok "Caddy yeniden yüklendi (siteler kesintisiz)" \
   || warn "Caddy yeniden yüklenemedi. 'docker restart $CADDY' deneyin."
 
-# ------------------------------------------------------------------ 5) gece yedeği
-say "Günlük veritabanı yedeği"
-chmod +x "$APP_DIR/deploy/yedek.sh"
-cat >/etc/cron.d/batilmer-form-yedek <<EOF
+# ------------------------------------------------------------------ 5) gece yedeği (sadece canlı)
+chmod +x "$APP_DIR"/deploy/*.sh
+if [ "$ORTAM" = "canli" ]; then
+  say "Günlük veritabanı yedeği"
+  cat >/etc/cron.d/batilmer-form-yedek <<EOF
 # Her gece 03:30 (sunucu saati) Batilmer Form yedeği
 30 3 * * * root $APP_DIR/deploy/yedek.sh >>/var/log/batilmer-form-yedek.log 2>&1
 EOF
-chmod 644 /etc/cron.d/batilmer-form-yedek
-ok "Her gece yedek alınacak: $APP_DIR/yedekler (son 14 gün saklanır)"
+  chmod 644 /etc/cron.d/batilmer-form-yedek
+  ok "Her gece yedek alınacak: $APP_DIR/yedekler (son 14 gün saklanır)"
+  if grep -qE '^RCLONE_HEDEF=.+' "$ENV_FILE"; then ok "Yedekler sunucu dışına da kopyalanacak"; else warn "Sunucu dışı yedek ayarlı değil (KURULUM.md → Sunucu dışı yedek)"; fi
+fi
 
 # ------------------------------------------------------------------ bitti
 say "Kurulum tamam"
@@ -138,3 +174,4 @@ if [ "$FIRST_INSTALL" = "1" ]; then
 fi
 echo
 echo "SSL sertifikası ilk açılışta birkaç saniye içinde otomatik alınır."
+echo "Bir sorun olursa önceki sürüme dönmek için: $( [ "$ORTAM" = test ] && echo 'ORTAM=test ' )bash deploy/geri-al.sh"

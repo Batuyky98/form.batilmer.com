@@ -157,5 +157,62 @@ export const MIGRATIONS = [
       )`,
       'CREATE INDEX idx_outbox_status ON outbox (status, at)'
     ]
+  },
+  {
+    version: 2,
+    name: 'oturum süresi, bildirimler, iki adımlı doğrulama',
+    up: [
+      // 2 saat işlem yapılmazsa oturum kapanır: son hareket zamanı
+      'ALTER TABLE sessions ADD COLUMN last_seen BIGINT NULL',
+      // Kullanıcının kendi açıp kapattığı bildirim anahtarı ve "okundu" zamanı
+      'ALTER TABLE users ADD COLUMN notify_enabled TINYINT NOT NULL DEFAULT 1',
+      'ALTER TABLE users ADD COLUMN notif_seen_at BIGINT NULL',
+      // Authenticator (TOTP)
+      'ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) NULL',
+      'ALTER TABLE users ADD COLUMN totp_enabled TINYINT NOT NULL DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN totp_last_step BIGINT NULL',
+      'ALTER TABLE users ADD COLUMN backup_codes TEXT NULL',
+
+      // Telefon / tarayıcı bildirim abonelikleri (cihaz başına bir satır)
+      `CREATE TABLE push_subscriptions (
+        id VARCHAR(40) PRIMARY KEY,
+        user_id VARCHAR(40) NOT NULL,
+        endpoint_hash CHAR(64) NOT NULL,
+        endpoint TEXT NOT NULL,
+        p256dh VARCHAR(200) NOT NULL,
+        auth VARCHAR(100) NOT NULL,
+        label VARCHAR(150) NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL,
+        last_ok_at BIGINT NULL,
+        fail_count INT NOT NULL DEFAULT 0
+      )`,
+      'CREATE UNIQUE INDEX idx_push_endpoint ON push_subscriptions (endpoint_hash)',
+      'CREATE INDEX idx_push_user ON push_subscriptions (user_id)',
+
+      // Panel içi bildirim akışı. Kişisel veri YOK: sadece tarih/saat/hizmet ve form adı.
+      `CREATE TABLE notifications (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        kind VARCHAR(20) NOT NULL,
+        title VARCHAR(200) NOT NULL,
+        body VARCHAR(500) NOT NULL,
+        url VARCHAR(300) NOT NULL,
+        push_done TINYINT NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_notif_form_at ON notifications (form_id, created_at)',
+      'CREATE INDEX idx_notif_push ON notifications (push_done, created_at)',
+
+      // Uygulama ayarları (bildirim anahtarları gibi)
+      `CREATE TABLE app_settings (
+        k VARCHAR(60) PRIMARY KEY,
+        v TEXT NOT NULL
+      )`
+    ]
+  },
+  {
+    version: 3,
+    name: 'açık rıza onayı',
+    up: ['ALTER TABLE submissions ADD COLUMN consent_at BIGINT NULL']
   }
 ];

@@ -85,8 +85,8 @@ export default function Stats({ id }) {
       <div className="page-head">
         <div>
           <Link to={`/panel/formlar/${id}/kayitlar`} className="back">← Kayıtlar</Link>
-          <h1>{data.form.name} <span className="muted">· İstatistik</span></h1>
-          <div className="small muted">{data.form.isletme}</div>
+          <div className="eyebrow">{[data.form.isletme, data.form.name].filter(Boolean).join(' · ')}</div>
+          <h1>İstatistik</h1>
         </div>
         <Segmented value={days} onChange={setDays} label="Zaman aralığı" options={[{ value: 7, label: 'Son 7 gün' }, { value: 30, label: 'Son 30 gün' }, { value: 90, label: 'Son 90 gün' }]} />
       </div>

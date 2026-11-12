@@ -18,6 +18,10 @@ export const DEFAULT_RANDEVU = {
     0: []
   },
   closedDates: [],
+  // Randevular şu tarihten itibaren alınsın (örnek: işletme 1 Aralık'ta açılıyor). Boş = hemen.
+  openFrom: '',
+  // Formda ve bildirimlerde nasıl adlandırılsın: Randevu / Rezervasyon / Seans / Görüşme ... (boş = Randevu)
+  term: '',
   interval: 30,
   capacityMode: 'randevu', // 'randevu' | 'kisi'
   capacity: 1,
@@ -71,10 +75,19 @@ function fits(cfg, { date, startMin, duration, buffer, resourceId, partySize, ap
   return count < cap;
 }
 
-export function isDateOpen(cfg, date) {
+// Randevu alınabilecek ilk gün: bugün ya da "şu tarihten itibaren" ayarı (hangisi ileriyse)
+export function firstBookableDate(cfg) {
+  const t = today();
+  return cfg?.openFrom && cfg.openFrom > t ? cfg.openFrom : t;
+}
+
+// staff = true: panelden manuel randevu (açılış tarihi beklenmez)
+export function isDateOpen(cfg, date, { staff = false } = {}) {
   if ((cfg.closedDates || []).includes(date)) return false;
   if (date < today()) return false;
-  if (date > addDays(today(), Number(cfg.maxDaysAhead || 30))) return false;
+  const base = staff ? today() : firstBookableDate(cfg);
+  if (date < base) return false;
+  if (date > addDays(base, Number(cfg.maxDaysAhead || 30))) return false;
   const ranges = cfg.hours?.[dayOfWeek(date)] || [];
   return ranges.length > 0;
 }
@@ -83,7 +96,7 @@ export function isDateOpen(cfg, date) {
  * Bir gün için uygun saatleri döner: [{ time: '09:30', resources: ['r1', ...] }]
  */
 export function getSlots(cfg, appointments, blocks, { date, serviceId, resourceId = null, partySize = 1, nowMs = Date.now(), excludeId = null, ignoreNotice = false }) {
-  if (!cfg || !date || !isDateOpen(cfg, date)) return [];
+  if (!cfg || !date || !isDateOpen(cfg, date, { staff: ignoreNotice })) return [];
   const service = serviceById(cfg, serviceId);
   if (!service) return [];
   const duration = Number(service.duration || 30);
