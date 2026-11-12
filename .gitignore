@@ -6,4 +6,5 @@ dist
 server/node_modules
 server/data
 sunucu.env
+sunucu-test.env
 yedekler

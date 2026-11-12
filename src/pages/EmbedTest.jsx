@@ -49,7 +49,7 @@ export default function EmbedTest() {
             scrolling="no"
           />
         ) : (
-          <p>Yukarıya bir form linki yazın (örnek: vital-veteriner-randevu).</p>
+          <p>Yukarıya bir form linki yazın (örnek: isletme-adi-randevu).</p>
         )}
       </main>
       <footer className="fake-footer">© Örnek İşletme · Adres · Telefon</footer>

@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
 import { Badge, Empty, Field, Modal, Spinner, Toggle, copyText, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import { formatDateTime } from '../lib/util.js';
+import { useAuth } from '../auth.jsx';
 
+// [anahtar, tam ad, tablo başlığı]
 const PERMS = [
-  ['view', 'Kayıtları görüntüle'],
-  ['excel', 'Excel indir'],
-  ['delete', 'Kayıt sil'],
-  ['edit', 'Formu düzenle'],
-  ['randevu', 'Randevuları yönet']
+  ['view', 'Kayıtları görüntüle', 'Görüntüle'],
+  ['excel', 'Excel indir', 'Excel'],
+  ['delete', 'Kayıt sil', 'Sil'],
+  ['edit', 'Formu düzenle', 'Düzenle'],
+  ['randevu', 'Randevuları yönet', 'Randevular'],
+  ['notify', 'Bildirim', 'Bildirim 🔔']
 ];
 
 function genPassword() {
@@ -25,6 +28,7 @@ function UserModal({ user, onClose, onDone }) {
   const [email, setEmail] = useState(user?.email || '');
   const [active, setActive] = useState(user?.active ?? true);
   const [password, setPassword] = useState(isNew ? genPassword() : '');
+  const [role, setRole] = useState('user');
   const [error, setError] = useState('');
 
   async function submit(e) {
@@ -32,7 +36,7 @@ function UserModal({ user, onClose, onDone }) {
     setError('');
     try {
       if (isNew) {
-        await api.createUser({ name, email, password });
+        await api.createUser({ name, email, password, role });
         toast('Kullanıcı eklendi. Geçici şifreyi kullanıcıya iletin.');
       } else {
         await api.updateUser(user.id, { name, email, active });
@@ -57,7 +61,15 @@ function UserModal({ user, onClose, onDone }) {
             <button type="button" className="btn btn-sm" disabled={!password} onClick={async () => toast((await copyText(password)) ? 'Kopyalandı.' : 'Kopyalanamadı.')}>Kopyala</button>
           </div>
         </Field>
-        {!isNew && user.role !== 'admin' && <Toggle id="um-a" checked={active} onChange={setActive} label={active ? 'Aktif (giriş yapabilir)' : 'Pasif (giriş yapamaz)'} />}
+        {isNew && (
+          <Field label="Hesap türü" hint={role === 'admin' ? 'Ana Admin tüm formları, kullanıcıları ve ayarları yönetir. İlk girişte Authenticator kurması zorunludur.' : 'Sadece yetki verdiğiniz formları görür.'}>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="user">Kullanıcı (işletme çalışanı)</option>
+              <option value="admin">Ana Admin (Batilmer ekibi)</option>
+            </select>
+          </Field>
+        )}
+        {!isNew && <Toggle id="um-a" checked={active} onChange={setActive} label={active ? 'Aktif (giriş yapabilir)' : 'Pasif (giriş yapamaz)'} />}
         {error && <div className="notice notice-err" role="alert">{error}</div>}
         <div className="row-end"><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button className="btn btn-primary">{isNew ? 'Ekle' : 'Kaydet'}</button></div>
       </form>
@@ -75,8 +87,10 @@ function PermissionMatrix({ user, forms }) {
   async function toggle(formId, key, value) {
     const current = perms[formId] || {};
     const next = { ...current, [key]: value };
-    if (key !== 'view' && value) next.view = true; // diğer yetkiler görüntülemeyi gerektirir
-    if (key === 'view' && !value) Object.keys(next).forEach((k) => (next[k] = false));
+    if (user.role !== 'admin') {
+      if (key !== 'view' && value) next.view = true; // diğer yetkiler görüntülemeyi gerektirir
+      if (key === 'view' && !value) Object.keys(next).forEach((k) => (next[k] = false));
+    }
     setPerms((p) => ({ ...p, [formId]: next })); // anında göster
     try {
       const saved = await api.setPermission(user.id, formId, next);
@@ -88,16 +102,35 @@ function PermissionMatrix({ user, forms }) {
     }
   }
 
-  if (user.role === 'admin') return <div className="notice notice-info">Ana Admin tüm formlarda tüm yetkilere sahiptir.</div>;
   if (!perms) return <Spinner />;
   if (!forms.length) return <Empty title="Henüz form yok" />;
+  if (user.role === 'admin') {
+    return (
+      <div className="stack">
+        <div className="notice notice-info">Ana Admin tüm formlarda tüm yetkilere sahiptir. <b>Bildirimler varsayılan olarak kapalıdır</b>; sadece aşağıda tik atılan formlardan bildirim alır (100 formun bildirimi size yağmasın diye).</div>
+        <div className="table-wrap">
+          <table className="tbl perm-table">
+            <thead><tr><th>Form</th><th className="center">Bildirim</th></tr></thead>
+            <tbody>
+              {forms.map((f) => (
+                <tr key={f.id}>
+                  <td><b>{f.name}</b><div className="muted small">{f.isletme}</div></td>
+                  <td className="center"><input type="checkbox" aria-label={`${f.name}: Bildirim`} checked={!!perms[f.id]?.notify} onChange={(e) => toggle(f.id, 'notify', e.target.checked)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="table-wrap">
       <table className="tbl perm-table">
         <thead>
           <tr>
             <th>Form</th>
-            {PERMS.map(([k, label]) => <th key={k} className="center">{label}</th>)}
+            {PERMS.map(([k, label, short]) => <th key={k} className="center" title={label}>{short}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -116,12 +149,19 @@ function PermissionMatrix({ user, forms }) {
           })}
         </tbody>
       </table>
-      <p className="muted small mt-sm">"Kayıtları görüntüle" kapatılırsa o formdaki diğer yetkiler de kapanır. "Formu düzenle" ile kullanıcı alanları, seçenekleri ve görünümü değiştirebilir; form silme, link değiştirme, KVKK ayarları ve yetki verme yalnızca Ana Admin'dedir.</p>
+      <p className="muted small mt-sm"><b>Bildirim:</b> o formda yeni kayıt/randevu olunca kişiye panelde sesli uyarı ve telefon bildirimi gider (randevu bildirimi için "Randevuları yönet" de açık olmalı). Kişi telefonunda bir kez "İzin ver" demeli; tiki kaldırdığınız anda bildirimler durur.<br />"Kayıtları görüntüle" kapatılırsa o formdaki diğer yetkiler de kapanır. "Formu düzenle" ile kullanıcı alanları, seçenekleri ve görünümü değiştirebilir; form silme, link değiştirme, KVKK ayarları ve yetki verme yalnızca Ana Admin'dedir.</p>
     </div>
   );
 }
 
+function NotifyStatus({ u }) {
+  if (!u.notifyFormCount) return null;
+  if (!u.notifyEnabled) return <Badge tone="gray">Bildirimlerini kapatmış</Badge>;
+  return u.pushDevices ? <Badge tone="green">Bildirim: {u.pushDevices} cihazda açık</Badge> : <Badge tone="amber">Bildirim: telefonda henüz açılmadı</Badge>;
+}
+
 export default function Users() {
+  const { user: me } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
   const { data: users, reload } = useAsync(() => api.listUsers(), []);
@@ -131,10 +171,26 @@ export default function Users() {
 
   const sel = users?.find((u) => u.id === selected) || users?.find((u) => u.role !== 'admin') || users?.[0];
 
+  async function resetTotp(u) {
+    const ok = await confirm({ title: 'İki adımlı doğrulamayı sıfırla', message: `${u.name} telefonunu kaybettiyse ya da değiştirdiyse kullanın. Tüm oturumları kapanır; bir sonraki girişte Authenticator'ı yeniden kurması ${u.role === 'admin' ? 'gerekir' : 'istenmez (isteğe bağlı)'}.`, confirmText: 'Sıfırla', danger: true });
+    if (!ok) return;
+    try {
+      await api.adminResetTotp(u.id);
+      toast('İki adımlı doğrulama sıfırlandı.');
+      reload();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  }
+
   async function remove(u) {
     const ok = await confirm({ title: 'Kullanıcıyı sil', message: `${u.name} silinecek ve tüm oturumları kapanacak. Çöp kutusundan geri alınabilir.`, confirmText: 'Sil', danger: true });
     if (!ok) return;
-    await api.deleteUser(u.id);
+    try {
+      await api.deleteUser(u.id);
+    } catch (e) {
+      return toast(e.message, 'err');
+    }
     toast('Kullanıcı silindi.');
     setSelected(null);
     reload();
@@ -170,13 +226,18 @@ export default function Users() {
               <div>
                 <h2>{sel.name}</h2>
                 <div className="muted small">{sel.email} · Eklenme: {formatDateTime(sel.createdAt)}{sel.mustChange ? ' · İlk girişte şifre değiştirecek' : ''}</div>
+                <div className="row mt-sm">
+                  {sel.twofaEnabled ? <Badge tone="green">Authenticator açık</Badge> : <Badge tone={sel.role === 'admin' ? 'amber' : 'gray'}>{sel.role === 'admin' ? 'Authenticator kurulmadı (ilk girişte zorunlu)' : 'Authenticator kapalı'}</Badge>}
+                  <NotifyStatus u={sel} />
+                </div>
               </div>
               <div className="row">
                 <button type="button" className="btn btn-sm" onClick={() => setModal({ user: sel })}>Düzenle</button>
-                {sel.role !== 'admin' && <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => remove(sel)}>Sil</button>}
+                {sel.twofaEnabled && sel.id !== me?.id && <button type="button" className="btn btn-sm" onClick={() => resetTotp(sel)}>2FA sıfırla</button>}
+                {sel.id !== me?.id && <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => remove(sel)}>Sil</button>}
               </div>
             </div>
-            <h3>Form yetkileri</h3>
+            <h3>{sel.role === 'admin' ? 'Bildirim alacağı formlar' : 'Form yetkileri'}</h3>
             <PermissionMatrix user={sel} forms={forms} />
           </div>
         )}

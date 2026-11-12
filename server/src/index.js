@@ -1,6 +1,7 @@
 // Batilmer Form Paneli – HTTP sunucusu
 //   /api/rpc/<işlem>   panel ve formların çağırdığı işlemler (JSON)
 //   /api/files/<id>    yüklenen dosyayı indir (giriş + yetki gerekir)
+//   /api/ics/<kod>     müşterinin "Takvimime ekle" dosyası (randevu iptal koduyla)
 //   /api/health        Docker sağlık kontrolü
 //   diğer her şey      derlenmiş ön yüz (dist/), tek sayfa uygulaması
 import http from 'node:http';
@@ -9,16 +10,17 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config, isHttps } from './config.js';
 import { connect } from './db.js';
-import { ApiError, dispatch, seedAdmin, authorizeFile, BIG_BODY } from './handlers.js';
+import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, BIG_BODY } from './handlers.js';
 import { ensureDirs, filePath } from './files.js';
 import { startMailer } from './mailer.js';
 import { startScheduler } from './scheduler.js';
+import { startNotifier } from './notifier.js';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.ico': 'image/x-icon',
   '.json': 'application/json', '.woff2': 'font/woff2', '.woff': 'font/woff', '.txt': 'text/plain; charset=utf-8', '.map': 'application/json',
-  '.webp': 'image/webp'
+  '.webp': 'image/webp', '.webmanifest': 'application/manifest+json'
 };
 const SAFE_INLINE = new Set(['image/png', 'image/jpeg', 'application/pdf']);
 
@@ -84,6 +86,8 @@ function makeCtx(db, req, res) {
     db,
     req,
     ip: clientIp(req),
+    // Panelin arka planda yaptığı otomatik kontroller oturum süresini uzatmaz
+    background: req.headers['x-batilmer-bg'] === '1',
     userAgent: String(req.headers['user-agent'] || ''),
     cookies,
     setCookie(name, value, { maxAge }) {
@@ -145,6 +149,36 @@ async function handleFile(db, req, res, id) {
   }
 }
 
+async function handleIcs(db, req, res, tok) {
+  if (!rateLimitIcs(req)) {
+    res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Çok fazla istek.');
+  }
+  const ics = await icsByToken(db, tok);
+  if (!ics) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Randevu bulunamadı veya iptal edilmiş.');
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/calendar; charset=utf-8',
+    // inline: iPhone'da doğrudan "Takvime ekle" penceresi açılır
+    'Content-Disposition': `inline; filename="${ics.filename.replace(/[^A-Za-z0-9._-]/g, '')}"`,
+    'Cache-Control': 'private, no-store',
+    'X-Robots-Tag': 'noindex'
+  });
+  res.end(ics.text);
+}
+const icsHits = new Map();
+function rateLimitIcs(req) {
+  const ip = clientIp(req);
+  const t = Date.now();
+  const list = (icsHits.get(ip) || []).filter((x) => t - x < 600000);
+  list.push(t);
+  icsHits.set(ip, list);
+  if (icsHits.size > 5000) icsHits.clear();
+  return list.length <= 30;
+}
+
 let indexHtml = null;
 async function serveStatic(req, res, pathname) {
   const root = config.staticDir;
@@ -163,7 +197,13 @@ async function serveStatic(req, res, pathname) {
     const st = await fsp.stat(full);
     if (st.isFile()) {
       const ext = path.extname(full).toLowerCase();
-      const cache = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : rel === '/embed.js' ? 'public, max-age=3600' : 'public, max-age=300';
+      const cache = rel.startsWith('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : rel === '/embed.js'
+          ? 'public, max-age=3600'
+          : rel === '/sw.js' || rel === '/manifest.webmanifest'
+            ? 'no-cache'
+            : 'public, max-age=300';
       res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Content-Length': st.size, 'Cache-Control': cache });
       if (req.method === 'HEAD') return res.end();
       return fs.createReadStream(full).pipe(res);
@@ -190,6 +230,7 @@ async function main() {
   await seedAdmin(db);
   const stopMailer = startMailer(db);
   const stopScheduler = startScheduler(db);
+  const stopNotifier = startNotifier(db);
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -200,6 +241,7 @@ async function main() {
       let m;
       if ((m = /^\/api\/rpc\/([A-Za-z]+)$/.exec(pathname))) return await handleRpc(db, req, res, m[1]);
       if ((m = /^\/api\/files\/([a-z0-9_]+)$/i.exec(pathname)) && req.method === 'GET') return await handleFile(db, req, res, m[1]);
+      if ((m = /^\/api\/ics\/([a-f0-9]{32})$/.exec(pathname)) && req.method === 'GET') return await handleIcs(db, req, res, m[1]);
       if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: { message: 'Bulunamadı.', code: 'yok' } });
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.writeHead(405);
@@ -220,6 +262,7 @@ async function main() {
     console.log(`[sunucu] ${sig} alındı, kapanıyor…`);
     stopMailer();
     stopScheduler();
+    stopNotifier();
     server.close(async () => {
       await db.close();
       process.exit(0);

@@ -58,3 +58,8 @@ export function passwordProblem(pw) {
   if (!/[A-ZÇĞİÖŞÜ]/.test(pw) || !/[a-zçğıöşü]/.test(pw) || !/\d/.test(pw)) return 'Şifre büyük harf, küçük harf ve rakam içermeli.';
   return null;
 }
+
+// Oturum kuralları (sunucu uygular, panel 5 dakika önce uyarır)
+export const SESSION_IDLE_MS = 2 * 3600000; // 2 saat hiçbir işlem yapılmazsa
+export const SESSION_MAX_MS = 12 * 3600000; // sürekli kullanılsa bile 12 saatte bir yeniden giriş
+export const SESSION_WARN_MS = 5 * 60000;

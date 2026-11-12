@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useAuth } from '../auth.jsx';
+import { useEffect, useState } from 'react';
+import { EXPIRED_KEY, useAuth } from '../auth.jsx';
 import * as api from '../lib/api.js';
 import { Link, navigate } from '../router.jsx';
 import { Field, useToast } from '../components/ui.jsx';
@@ -25,13 +25,32 @@ function AuthCard({ title, subtitle, children }) {
 }
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginTotp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [forgot, setForgot] = useState(false);
   const [sent, setSent] = useState(false);
+  const [ticket, setTicket] = useState(null);
+  const [code, setCode] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
+  const [mailEnabled, setMailEnabled] = useState(true);
+  const [expired] = useState(() => {
+    try {
+      const v = sessionStorage.getItem(EXPIRED_KEY);
+      sessionStorage.removeItem(EXPIRED_KEY);
+      return !!v;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    api.publicConfig().then((c) => setMailEnabled(!!c?.mailEnabled)).catch(() => {});
+  }, []);
+
+  const go = (u) => navigate(u.mustChange ? '/panel/sifre' : u.twofaSetupRequired ? '/panel/guvenlik' : '/panel');
 
   async function submit(e) {
     e.preventDefault();
@@ -41,11 +60,20 @@ export default function Login() {
       if (forgot) {
         await api.requestPasswordReset(email);
         setSent(true);
+      } else if (ticket) {
+        go(await loginTotp(ticket, code));
       } else {
-        const u = await login(email, password);
-        navigate(u.mustChange ? '/panel/sifre' : '/panel');
+        const r = await login(email, password);
+        if (r?.twofa) {
+          setTicket(r.ticket);
+          setCode('');
+        } else go(r);
       }
     } catch (err) {
+      if (err.code === 'bilet') {
+        setTicket(null);
+        setPassword('');
+      }
       setError(err.message);
     } finally {
       setBusy(false);
@@ -54,11 +82,13 @@ export default function Login() {
 
   if (forgot) {
     return (
-      <AuthCard title="Şifremi unuttum" subtitle="E-posta adresinizi yazın, size şifre sıfırlama bağlantısı gönderelim.">
-        {sent ? (
-          <div className="notice notice-ok">
-            Hesap kayıtlıysa sıfırlama bağlantısı gönderildi. (Yerel testte bağlantıyı Ana Admin hesabıyla <b>Giden mailler</b> sayfasında görebilirsiniz.)
+      <AuthCard title="Şifremi unuttum" subtitle={mailEnabled ? 'E-posta adresinizi yazın, size şifre sıfırlama bağlantısı gönderelim.' : undefined}>
+        {!mailEnabled ? (
+          <div className="notice notice-info">
+            Şifrenizi unuttuysanız <b>panel yöneticinize</b> başvurun. Yönetici, Kullanıcılar ekranından size yeni bir geçici şifre verir; ilk girişte kendi şifrenizi belirlersiniz.
           </div>
+        ) : sent ? (
+          <div className="notice notice-ok">Hesap kayıtlıysa sıfırlama bağlantısı e-posta adresinize gönderildi.</div>
         ) : (
           <form onSubmit={submit} className="stack">
             <Field label="E-posta" htmlFor="fe">
@@ -73,8 +103,31 @@ export default function Login() {
     );
   }
 
+  if (ticket) {
+    return (
+      <AuthCard title="Doğrulama kodu" subtitle={useBackup ? 'Yedek kodlarınızdan birini girin (örnek: k7m2-p9qx). Her kod bir kez kullanılabilir.' : 'Telefonunuzdaki Authenticator uygulamasında görünen 6 haneli kodu girin.'}>
+        <form onSubmit={submit} className="stack">
+          <Field label={useBackup ? 'Yedek kod' : 'Kod'} htmlFor="tc">
+            {useBackup ? (
+              <input id="tc" required autoComplete="off" autoCapitalize="none" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
+            ) : (
+              <input id="tc" required className="otp-input" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/[^\d]/g, ''))} />
+            )}
+          </Field>
+          {error && <div className="notice notice-err" role="alert">{error}</div>}
+          <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Kontrol ediliyor…' : 'Giriş yap'}</button>
+        </form>
+        <button type="button" className="link-sm mt" onClick={() => { setUseBackup((b) => !b); setCode(''); setError(''); }}>
+          {useBackup ? 'Authenticator koduyla gir' : 'Telefonum yanımda değil – yedek kod kullan'}
+        </button>
+        <button type="button" className="link-sm mt" onClick={() => { setTicket(null); setPassword(''); setError(''); }}>← Girişe dön</button>
+      </AuthCard>
+    );
+  }
+
   return (
     <AuthCard title="Giriş yap" subtitle="Formlarınızı ve kayıtlarınızı yönetmek için giriş yapın.">
+      {expired && <div className="notice notice-warn mb">Güvenliğiniz için oturumunuz kapatıldı (2 saat işlem yapılmadı ya da 12 saatlik süre doldu). Lütfen tekrar giriş yapın.</div>}
       <form onSubmit={submit} className="stack">
         <Field label="E-posta" htmlFor="le">
           <input id="le" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -110,7 +163,7 @@ export function ChangePassword() {
       await api.changePassword(oldPw, pw);
       await refresh();
       toast('Şifreniz değiştirildi.');
-      navigate('/panel');
+      navigate(user?.twofaSetupRequired ? '/panel/guvenlik' : '/panel');
     } catch (err) {
       setError(err.message);
     }

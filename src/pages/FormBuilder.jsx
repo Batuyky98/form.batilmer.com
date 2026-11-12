@@ -8,7 +8,8 @@ import { FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../l
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
 import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
-import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid } from '../lib/util.js';
+import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
+import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 
 const TABS = [
   ['alanlar', 'Alanlar'],
@@ -333,9 +334,6 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
   const set = (patch) => setDraft({ ...draft, settings: { ...s, ...patch } });
   const [meta, setMeta] = useState({ name: form.name, isletme: form.isletme, slug: form.slug });
   const [control, setControl] = useState(form.control);
-  const [emails, setEmails] = useState((s.notifyEmails || []).join(', '));
-
-  useEffect(() => setEmails((s.notifyEmails || []).join(', ')), [s.notifyEmails]);
 
   // Dil değişince, hiç değiştirilmemiş varsayılan metinleri de yeni dile çevir
   function changeLang(lang) {
@@ -430,9 +428,9 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 
       <section className="sub-card stack">
         <h3>Bildirim ve kontrol</h3>
-        <Field label="Yeni kayıtta bildirim gidecek e-postalar" hint="Virgülle ayırın.">
-          <input value={emails} onChange={(e) => setEmails(e.target.value)} onBlur={() => set({ notifyEmails: emails.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean) })} />
-        </Field>
+        <div className="notice notice-info">
+          Yeni kayıt ve randevu bildirimleri <b>panel + telefon bildirimi</b> olarak gider. Kimin alacağını Ana Admin <b>Kullanıcılar</b> ekranında, bu formun satırındaki <b>"Bildirim"</b> tikiyle belirler. Bildirimde müşterinin adı ve telefonu yazmaz.
+        </div>
         <Field label="Mükerrer kayıt kontrolü">
           <Segmented value={s.duplicateCheck} onChange={(v) => set({ duplicateCheck: v })} label="Mükerrer kayıt" options={[{ value: 'yok', label: 'Yok' }, { value: 'email', label: 'Aynı e-posta' }, { value: 'tel', label: 'Aynı telefon' }, { value: 'tc', label: 'Aynı TC' }]} />
         </Field>
@@ -443,7 +441,16 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
+        <h3>Müşteriye mail <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
+        <Toggle id="st-cm" disabled={!isAdmin} checked={!!s.customerMails} onChange={(v) => set({ customerMails: v })} label={s.customerMails ? 'Açık: randevu onayı, değişiklik, iptal ve hatırlatma mailleri müşteriye gider' : 'Kapalı: müşteriye mail gitmez'} />
+        <div className="pf-hint">
+          Kapalıyken müşteri, formu gönderdiği ekranda randevu bilgilerini, <b>iptal bağlantısını</b> ve <b>"Takvimime ekle"</b> butonunu görür; hatırlatmayı kendi telefonunun takvimi yapar. Açmak için sunucuda mail servisinin (Brevo) ayarlı olması gerekir.
+        </div>
+      </section>
+
+      <section className="sub-card stack">
         <h3>Otomatik cevap maili</h3>
+        {!s.customerMails && <div className="notice notice-warn">"Müşteriye mail" kapalı olduğu için otomatik cevap gönderilmez.</div>}
         <Toggle id="st-ar" checked={s.autoReply.enabled} onChange={(v) => set({ autoReply: { ...s.autoReply, enabled: v } })} label="Formu dolduran kişiye otomatik mail gönder" />
         {s.autoReply.enabled && (
           <>
@@ -475,7 +482,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
 
-function RandevuTab({ draft, setDraft }) {
+function RandevuTab({ draft, setDraft, isAdmin }) {
   const cfg = draft.randevu || clone(DEFAULT_RANDEVU);
   const set = (patch) => setDraft({ ...draft, randevu: { ...cfg, ...patch } });
   const [closed, setClosed] = useState('');
@@ -488,6 +495,26 @@ function RandevuTab({ draft, setDraft }) {
   return (
     <div className="stack">
       {!hasField && <div className="notice notice-warn">Bu formda randevu alanı yok. Ayarlar kaydedilir ama formda görünmez. <b>Alanlar</b> sekmesinden "Randevu" alanı ekleyin.</div>}
+
+      <section className="sub-card stack">
+        <h3>Genel</h3>
+        <div className="grid-2">
+          <Field label="Nasıl adlandırılsın?" hint="Bildirimlerde ve müşterinin gördüğü bilgi kartında kullanılır.">
+            <select value={cfg.term || ''} onChange={(e) => set({ term: e.target.value })}>
+              {APPOINTMENT_TERMS.map((t) => <option key={t} value={t === 'Randevu' ? '' : t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Randevular şu tarihten itibaren açılsın" hint="Örnek: işletme 1 Aralık'ta açılıyorsa form bugünden yayında olur, ilk seçilebilen gün 1 Aralık olur. Boş = hemen.">
+            <div className="row">
+              <input type="date" min={today()} value={cfg.openFrom || ''} onChange={(e) => set({ openFrom: e.target.value })} />
+              {cfg.openFrom && <button type="button" className="btn btn-sm" onClick={() => set({ openFrom: '' })}>Temizle</button>}
+            </div>
+          </Field>
+        </div>
+        {cfg.openFrom && cfg.openFrom > today() && (
+          <div className="pf-hint">Müşteri formda "Randevular {formatDate(cfg.openFrom)} tarihinden itibaren alınmaktadır." yazısını görür. "En fazla kaç gün ileri" bu tarihten itibaren sayılır. Panelden manuel randevu bu tarihten önce de eklenebilir.</div>
+        )}
+      </section>
 
       <section className="sub-card stack">
         <h3>Hizmetler</h3>
@@ -602,19 +629,22 @@ function RandevuTab({ draft, setDraft }) {
           <Field label="En fazla kaç gün ileri"><input type="number" min="1" value={cfg.maxDaysAhead} onChange={(e) => set({ maxDaysAhead: Number(e.target.value) })} /></Field>
           <Field label="İptal en geç (randevudan kaç saat önce)"><input type="number" min="0" value={cfg.cancelCutoffHours} onChange={(e) => set({ cancelCutoffHours: Number(e.target.value) })} /></Field>
           <Field label="Kişi başı aktif randevu sınırı" hint="Aynı e-posta/telefon; 0 = sınırsız"><input type="number" min="0" value={cfg.perContactLimit} onChange={(e) => set({ perContactLimit: Number(e.target.value) })} /></Field>
-          <Field label="Hatırlatma maili (kaç saat önce)"><input type="number" min="1" value={cfg.reminderHours} onChange={(e) => set({ reminderHours: Number(e.target.value) })} /></Field>
+          {draft.settings.customerMails && <Field label="Hatırlatma maili (kaç saat önce)"><input type="number" min="1" value={cfg.reminderHours} onChange={(e) => set({ reminderHours: Number(e.target.value) })} /></Field>}
         </div>
         <Field label="Onay">
           <Segmented value={cfg.approval} onChange={(v) => set({ approval: v })} label="Onay modu" options={[{ value: 'auto', label: 'Otomatik onay' }, { value: 'manual', label: 'İşletme onaylasın' }]} />
         </Field>
+        {cfg.approval === 'manual' && !draft.settings.customerMails && (
+          <div className="pf-hint">Müşteriye mail kapalıyken müşteri onay durumunu, formdan sonra verilen bağlantıdaki sayfada görür. Gerekirse müşteriyi telefonla arayın.</div>
+        )}
       </section>
 
       <section className="sub-card stack">
-        <h3>SMS bildirimleri</h3>
-        <Toggle id="sms-c" checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
-        <Toggle id="sms-r" checked={cfg.sms?.reminder} onChange={(v) => set({ sms: { ...cfg.sms, reminder: v } })} label="Hatırlatmayı SMS ile de gönder" />
+        <h3>Müşteriye SMS <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
+        <Toggle id="sms-c" disabled={!isAdmin} checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
+        <Toggle id="sms-r" disabled={!isAdmin} checked={cfg.sms?.reminder} onChange={(v) => set({ sms: { ...cfg.sms, reminder: v } })} label="Hatırlatmayı SMS ile de gönder" />
         {!draft.fields.some((f) => f.type === 'tel') && (cfg.sms?.confirm || cfg.sms?.reminder) && <div className="notice notice-warn">Formda telefon alanı yok; SMS gönderilemez.</div>}
-        <div className="pf-hint">Yerel testte SMS'ler "Giden mailler" sayfasında görünür. Canlıda bir SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanacak; SMS ücretlidir.</div>
+        <div className="pf-hint">SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanana kadar SMS'ler gönderilmez, "Giden mailler" sayfasında görünür. SMS ücretlidir.</div>
       </section>
     </div>
   );
@@ -834,7 +864,7 @@ export default function FormBuilder({ id }) {
           {tab === 'alanlar' && <FieldsTab draft={draft} setDraft={setDraft} formId={id} />}
           {tab === 'gorunum' && <AppearanceTab draft={draft} setDraft={setDraft} />}
           {tab === 'ayarlar' && <SettingsTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} onMetaSaved={load} onControlSaved={(c) => setForm({ ...form, control: c })} />}
-          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} />}
+          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
           {tab === 'paylas' && <ShareTab form={form} />}
           {tab === 'gecmis' && <HistoryTab form={form} isAdmin={isAdmin} onRestored={load} />}
         </div>

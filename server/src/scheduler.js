@@ -1,6 +1,6 @@
 // Zamanlanmış işler: randevu hatırlatmaları, saklama süresi dolan kayıtların silinmesi, eski oturumların temizliği
 import { removeUploads } from './files.js';
-import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl } from './handlers.js';
+import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails } from './handlers.js';
 import { today, addDays, dateTimeToMs } from '../../src/lib/util.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { STATUS_LABELS } from '../../src/lib/shared.js';
@@ -24,7 +24,7 @@ async function reminders(db) {
       // Aynı hatırlatma iki kez gitmesin
       const r = await q("UPDATE appointments SET reminder_sent = 1 WHERE id = ? AND reminder_sent = 0 AND status = 'onaylandi'", [a.id]);
       if (!r.affectedRows) return;
-      if (a.contact?.email) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma');
+      if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma');
       if (cfg.sms?.reminder && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsReminder', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }));
     });
   }
@@ -58,6 +58,9 @@ async function cleanup(db) {
   // 90 günden eski gönderilmiş mail geçmişi ve 1 yıldan eski loglar
   await db.query("DELETE FROM outbox WHERE status <> 'bekliyor' AND at < ?", [Date.now() - 90 * 864e5]);
   await db.query('DELETE FROM logs WHERE at < ?', [Date.now() - 365 * 864e5]);
+  // Panel bildirim akışı 30 gün tutulur
+  await db.query('DELETE FROM notifications WHERE created_at < ?', [Date.now() - 30 * 864e5]);
+  await db.query('DELETE FROM sessions WHERE created_at < ?', [Date.now() - 24 * 3600000]);
 }
 
 export function startScheduler(db) {

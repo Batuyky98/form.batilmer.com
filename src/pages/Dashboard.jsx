@@ -3,7 +3,7 @@ import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
-import { TEMPLATES } from '../lib/templates.js';
+import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
 import { formatDateTime, slugify, formBaseUrl } from '../lib/util.js';
 
 function StatusBadge({ f }) {
@@ -20,6 +20,7 @@ function NewFormModal({ onClose }) {
   const [slugTouched, setSlugTouched] = useState(false);
   const [templateId, setTemplateId] = useState('iletisim');
   const [error, setError] = useState('');
+  const [tq, setTq] = useState('');
   const autoSlug = slugify(`${isletme} ${name}`);
   const finalSlug = slugTouched ? slug : autoSlug;
 
@@ -39,7 +40,7 @@ function NewFormModal({ onClose }) {
     <Modal title="Yeni form" onClose={onClose} wide>
       <form onSubmit={submit} className="stack" id="new-form">
         <div className="grid-2">
-          <Field label="İşletme adı" htmlFor="nf-i" hint="Örnek: Vital Veteriner">
+          <Field label="İşletme adı" htmlFor="nf-i" hint="Örnek: Vital Veteriner, Kuaför Ali, Mavi Kafe">
             <input id="nf-i" value={isletme} onChange={(e) => setIsletme(e.target.value)} />
           </Field>
           <Field label="Form adı" htmlFor="nf-n" hint="Örnek: Randevu formu">
@@ -52,16 +53,30 @@ function NewFormModal({ onClose }) {
             <input id="nf-s" value={finalSlug} onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)); }} />
           </div>
         </Field>
-        <div>
-          <div className="pf-label">Şablon</div>
-          <div className="template-grid" role="radiogroup" aria-label="Şablon">
-            {TEMPLATES.map((t) => (
-              <button type="button" key={t.id} role="radio" aria-checked={templateId === t.id} className={`template ${templateId === t.id ? 'is-on' : ''}`} onClick={() => setTemplateId(t.id)}>
-                <span className="template-sector">{t.sector}</span>
-                <span className="template-name">{t.name}</span>
-              </button>
-            ))}
+        <div className="stack-sm">
+          <div className="row-between">
+            <div className="pf-label">Şablon <span className="muted small">(sonradan her alan değiştirilebilir)</span></div>
+            <input className="search" type="search" placeholder="Sektör ara…" aria-label="Şablon ara" value={tq} onChange={(e) => setTq(e.target.value)} />
           </div>
+          {TEMPLATE_SECTORS.map((sector) => {
+            const q = tq.toLocaleLowerCase('tr');
+            const list = TEMPLATES.filter((t) => t.sector === sector && (!q || `${t.sector} ${t.name}`.toLocaleLowerCase('tr').includes(q)));
+            if (!list.length) return null;
+            return (
+              <div key={sector}>
+                <div className="template-group">{sector}</div>
+                <div className="template-grid" role="radiogroup" aria-label={sector}>
+                  {list.map((t) => (
+                    <button type="button" key={t.id} role="radio" aria-checked={templateId === t.id} className={`template ${templateId === t.id ? 'is-on' : ''}`} onClick={() => setTemplateId(t.id)}>
+                      <span className="template-name">{t.name}</span>
+                      <span className="template-sector">{t.fields().some((f) => f.type === 'randevu') ? 'Randevu / rezervasyon' : 'Bilgi toplama'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <div className="pf-hint">Listede sektörünüz yoksa "Boş form" ya da "Genel iletişim formu" ile başlayın; randevu gerekiyorsa Alanlar'dan "Randevu" alanı ekleyin.</div>
         </div>
         {error && <div className="notice notice-err" role="alert">{error}</div>}
         <div className="row-end">

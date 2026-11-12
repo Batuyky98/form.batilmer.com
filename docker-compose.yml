@@ -1,18 +1,21 @@
 # Batilmer Form Paneli – canlı kurulum
 # Çalıştırma (sunucuda): docker compose --env-file sunucu.env up -d --build
 # Ayarlar sunucu.env dosyasında (deploy/kur.sh ilk kurulumda oluşturur).
+# Test ortamı (test.form.batilmer.com) aynı dosyayla, APP_NAME=batilmer-form-test ve
+# "-p batilmer-form-test" ile ayrı kutular ve ayrı veritabanıyla çalışır: ORTAM=test bash deploy/kur.sh
 name: batilmer-form
 
 services:
   app:
     build: .
-    image: batilmer-form:latest
-    container_name: batilmer-form
+    image: ${APP_NAME:-batilmer-form}:latest
+    container_name: ${APP_NAME:-batilmer-form}
     restart: unless-stopped
-    env_file: sunucu.env
+    env_file: ${ENV_FILE_NAME:-sunucu.env}
     environment:
       DB_DRIVER: mysql
-      DB_HOST: db
+      # Kutunun kendi adı: aynı ağdaki başka projelerin "db" isimli servisleriyle karışmasın
+      DB_HOST: ${APP_NAME:-batilmer-form}-db
       DB_PORT: 3306
       DB_NAME: batilmer_form
       DB_USER: batilmer
@@ -33,7 +36,7 @@ services:
 
   db:
     image: mysql:8.4
-    container_name: batilmer-form-db
+    container_name: ${APP_NAME:-batilmer-form}-db
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: batilmer_form

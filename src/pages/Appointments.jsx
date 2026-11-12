@@ -206,7 +206,11 @@ function DetailModal({ appt, cfg, formId, onClose, onDone }) {
 
 export default function Appointments({ id }) {
   const toast = useToast();
-  const [anchor, setAnchor] = useState(today());
+  // Bildirimden gelindiyse (?tarih=2026-11-14) o güne git
+  const [anchor, setAnchor] = useState(() => {
+    const d = new URLSearchParams(window.location.search).get('tarih');
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : today();
+  });
   const [view, setView] = useState('hafta');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');

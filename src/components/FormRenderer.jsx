@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FILE_TYPES, formatPhone, validateAll, validateField } from '../lib/validators.js';
-import { addDays, dayOfMonth, formatBytes, formatDateShort, monthShort, today, weekdayName, weekdayShort } from '../lib/util.js';
-import { isDateOpen, resourcesForService } from '../lib/availability.js';
+import { addDays, dayOfMonth, formatBytes, formatDate, formatDateShort, monthShort, weekdayName, weekdayShort } from '../lib/util.js';
+import { firstBookableDate, isDateOpen, resourcesForService } from '../lib/availability.js';
 import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
 
@@ -126,15 +126,16 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
   const [daysShown, setDaysShown] = useState(14);
   const stripRef = useRef(null);
 
+  const first = firstBookableDate(cfg);
   const days = useMemo(() => {
     const out = [];
     const max = Number(cfg.maxDaysAhead || 30);
     for (let i = 0; i <= max && out.length < daysShown; i++) {
-      const d = addDays(today(), i);
+      const d = addDays(first, i);
       out.push({ date: d, open: isDateOpen(cfg, d) });
     }
     return out;
-  }, [cfg, daysShown]);
+  }, [cfg, daysShown, first]);
 
   const set = (patch) => onChange({ ...v, serviceId, partySize, ...patch });
 
@@ -195,6 +196,7 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
         )}
       </div>
 
+      {cfg.openFrom && first === cfg.openFrom && <div className="bf-help">{t(lang, 'opensFrom', { d: formatDate(cfg.openFrom, lang) })}</div>}
       <div className="bf-days-wrap">
         <button type="button" className="bf-arrow" aria-label={t(lang, 'prevDays')} onClick={() => scroll(-1)}>‹</button>
         <div className="bf-days" role="radiogroup" aria-label={t(lang, 'pickDate')} ref={stripRef}>
@@ -241,6 +243,60 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
       )}
       {error && <div className="bf-error" role="alert">{error}</div>}
       {field.help && <div className="bf-help">{field.help}</div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ randevu sonrası bilgi kartı
+// Müşteriye mail gitmediği için onay, iptal bağlantısı ve takvime ekleme bu ekranda.
+function AppointmentCard({ a, lang }) {
+  const [copied, setCopied] = useState(false);
+  if (!a.cancelUrl) {
+    // Eski biçim / önizleme
+    return <p className="bf-muted">{t(lang, 'yourAppointment', { d: `${formatDateShort(a.date, lang)} ${a.start}` })}{a.status === 'bekliyor' ? ` ${t(lang, 'pending')}` : ''}</p>;
+  }
+  const pending = a.status === 'bekliyor';
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(a.cancelUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.prompt('', a.cancelUrl);
+    }
+  }
+  const rows = [
+    [t(lang, 'business'), a.isletme],
+    [t(lang, 'date'), `${weekdayName(a.date, lang)}, ${formatDate(a.date, lang)} · ${a.start}${a.end ? `–${a.end}` : ''}`],
+    a.service && a.service !== a.term ? [t(lang, 'service'), a.service] : null,
+    a.resource ? [a.resourceLabel || t(lang, 'service'), a.resource] : null,
+    a.partySize ? [t(lang, 'partySize'), t(lang, 'persons', { n: a.partySize })] : null,
+    [t(lang, 'status'), t(lang, 'statusLabels')[a.status] || a.status]
+  ].filter(Boolean);
+  return (
+    <div className="bf-card">
+      <div className="bf-card-title">{t(lang, 'cardHeading', { t: a.term || 'Randevu' })}</div>
+      <dl className="bf-card-rows">
+        {rows.map(([k, v]) => (
+          <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
+        ))}
+      </dl>
+      {pending && <p className="bf-card-note">{t(lang, 'cardPendingNote')}</p>}
+      <div className="bf-card-actions">
+        <a className="bf-btn" href={a.icsUrl} target="_blank" rel="noopener">📅 {t(lang, 'addToCalendar')}</a>
+        <a className="bf-btn bf-btn-light" href={a.googleUrl} target="_blank" rel="noopener noreferrer">{t(lang, 'googleCalendar')}</a>
+      </div>
+      <p className="bf-help">{t(lang, 'calendarHint')}</p>
+      <div className="bf-card-cancel">
+        <div className="bf-card-sub">{t(lang, 'cancelLinkTitle')}</div>
+        <div className="bf-card-link">
+          <a href={a.cancelUrl} target="_blank" rel="noopener">{a.cancelUrl.replace(/^https?:\/\//, '')}</a>
+        </div>
+        <div className="bf-card-actions">
+          <button type="button" className="bf-btn bf-btn-light" onClick={copy}>{copied ? t(lang, 'copied') : t(lang, 'copyLink')}</button>
+        </div>
+        <p className="bf-help">{a.cancelCutoffHours > 0 ? t(lang, 'cancelLinkHint', { n: a.cancelCutoffHours }) : t(lang, 'cancelLinkHint0')}</p>
+      </div>
     </div>
   );
 }
@@ -336,12 +392,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         <div className="bf-success" role="status">
           <div className="bf-success-icon" aria-hidden="true">✓</div>
           <p>{done.successMessage || t(lang, 'thanks')}</p>
-          {done.appointment && (
-            <p className="bf-muted">
-              {t(lang, 'yourAppointment', { d: `${formatDateShort(done.appointment.date, lang)} ${done.appointment.start}` })}
-              {done.appointment.status === 'bekliyor' ? ` ${t(lang, 'pending')}` : ''}
-            </p>
-          )}
+          {done.appointment && <AppointmentCard a={done.appointment} lang={lang} />}
           {done.preview && <p className="bf-muted">{t(lang, 'previewNote')}</p>}
           {preview && (
             <button type="button" className="bf-btn bf-btn-light" onClick={() => setDone(null)}>{t(lang, 'showAgain')}</button>

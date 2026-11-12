@@ -119,7 +119,7 @@ input[type=checkbox], input[type=radio] { width: 18px; height: 18px; accent-colo
 .scrim { display: none; }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: 1fr; grid-template-rows: auto 1fr; align-content: start; }
   .topbar { display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 30; background: #fff; border-bottom: 1px solid var(--line); padding: 8px 12px; }
   .topbar .brand span { font-family: var(--display); font-weight: 700; }
   .menu-btn { font-size: 20px; }
@@ -503,3 +503,70 @@ html.is-embedded, html.is-embedded body { background: transparent !important; ov
 
 .mail-head > .badge:nth-child(3) { justify-self: start; }
 .mail-err { margin-bottom: 8px; font-family: var(--font); }
+
+/* ---------- randevu sonrası bilgi kartı (müşteri) */
+.bf-card { width: 100%; max-width: 460px; text-align: left; border: 1px solid var(--bf-border); border-radius: var(--bf-radius); padding: 16px; display: flex; flex-direction: column; gap: 10px; background: var(--bf-field-bg); }
+.bf-card-title { font-weight: 700; font-size: 16px; }
+.bf-card-rows { margin: 0; display: grid; gap: 6px; }
+.bf-card-rows > div { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 14px; }
+.bf-card-rows dt { color: var(--bf-muted); }
+.bf-card-rows dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.bf-success p.bf-card-note { font-size: 13.5px; font-weight: 500; color: var(--bf-muted); }
+.bf-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bf-card-actions .bf-btn { flex: 1 1 160px; text-align: center; text-decoration: none; align-self: stretch; }
+.bf-card-cancel { border-top: 1px dashed var(--bf-border); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.bf-card-sub { font-weight: 600; font-size: 14px; }
+.bf-card-link { font-size: 13px; overflow-wrap: anywhere; }
+.bf-card-link a { color: var(--bf-primary); }
+.bf-success p.bf-help { font-size: 12.5px; font-weight: 400; }
+@media (max-width: 420px) { .bf-card-rows > div { grid-template-columns: 1fr; gap: 0; } }
+
+/* ---------- güvenlik (Authenticator) */
+.mb { margin-bottom: 12px; }
+.otp-input { font-size: 22px; letter-spacing: 0.3em; text-align: center; font-variant-numeric: tabular-nums; max-width: 220px; }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.qr-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.qr { width: 200px; height: 200px; flex: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.qr-wrap .stack-sm { flex: 1 1 220px; }
+.secret-key { font-size: 15px; letter-spacing: 0.08em; word-break: break-all; background: #f1f5f9; padding: 8px 10px; border-radius: 8px; }
+.backup-codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.backup-codes code { font-size: 15px; background: #f1f5f9; padding: 8px; border-radius: 8px; text-align: center; }
+
+/* ---------- bildirimler (zil, açılır kartlar, ayarlar) */
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bell { position: relative; }
+.bell-top { margin-left: auto; }
+.bell-btn { position: relative; color: var(--text); }
+.bell-count { position: absolute; top: 0; right: 0; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+.bell-panel { position: absolute; top: calc(100% + 6px); left: 0; width: min(360px, calc(100vw - 24px)); max-height: 70vh; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16); z-index: 60; }
+.bell-top .bell-panel { left: auto; right: 0; }
+.bell-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: #fff; }
+.bell-empty, .bell-foot { padding: 14px; font-size: 13.5px; color: var(--muted); }
+.bell-foot { border-top: 1px solid var(--line); }
+.bell-list { list-style: none; margin: 0; padding: 0; }
+.bell-list li + li { border-top: 1px solid var(--line); }
+.bell-list a { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; text-decoration: none; color: var(--text); }
+.bell-list a:hover { background: #f8fafc; }
+.bell-list span { font-size: 13.5px; }
+.bell-list small { font-size: 12px; color: var(--muted); }
+.bell-kind { font-size: 13.5px; }
+.bell-iptal { color: var(--red); }
+.bell-randevu { color: var(--blue); }
+.live-popups { position: fixed; right: 16px; bottom: 16px; z-index: 150; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); }
+.live-popup { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--blue); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18); padding: 12px 12px 12px 14px; display: flex; gap: 10px; align-items: center; animation: live-in 0.25s ease-out; }
+.live-popup.live-iptal { border-left-color: var(--red); }
+.live-popup.live-kayit { border-left-color: var(--green); }
+.live-popup-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.live-popup-text span { font-size: 13.5px; color: var(--muted); overflow-wrap: anywhere; }
+.live-popup-actions { display: flex; align-items: center; gap: 4px; }
+@keyframes live-in { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .live-popup { animation: none; } }
+.plain-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.device-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.device-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.device-list li:first-child { border-top: 0; }
+details.help summary { cursor: pointer; font-weight: 600; }
+details.help[open] summary { margin-bottom: 12px; }
+.template-group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-top: 6px; }
+@media print { .sidebar, .topbar, .live-popups { display: none !important; } .shell { display: block; } }

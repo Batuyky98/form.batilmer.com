@@ -1,4 +1,4 @@
-// Koşullu alanlar: "Hayvan türü = Diğer ise 'Hangi hayvan?' alanını göster" gibi.
+// Koşullu alanlar: "Hizmet = Diğer ise 'Hangi hizmet?' alanını göster" gibi.
 // Bir alanın koşulu sadece KENDİSİNDEN ÖNCEKİ bir alana bağlanabilir.
 // Koşulun bağlı olduğu alan gizliyse, bu alan da gizlenir (zincirleme).
 

@@ -37,7 +37,9 @@ export const DEFAULT_SETTINGS = {
   title: '',
   description: '',
   duplicateCheck: 'yok', // 'yok' | 'email' | 'tc' | 'tel'
-  notifyEmails: [],
+  // Müşteriye mail (randevu onayı, hatırlatma, otomatik cevap). Varsayılan KAPALI: ücretli ek özellik.
+  // Yetkili kişilere bildirim mail ile değil, panel + telefon bildirimiyle gider.
+  customerMails: false,
   kvkk: {
     enabled: true,
     label: 'Kişisel verilerimin işlenmesine ilişkin aydınlatma metnini okudum, onaylıyorum.',
@@ -89,6 +91,8 @@ export function normalizeContent(c) {
   const settings = { ...clone(DEFAULT_SETTINGS), ...(c.settings || {}) };
   settings.kvkk = { ...clone(DEFAULT_SETTINGS.kvkk), ...(c.settings?.kvkk || {}) };
   settings.autoReply = { ...clone(DEFAULT_SETTINGS.autoReply), ...(c.settings?.autoReply || {}) };
+  // Eski sürümdeki "bildirim gidecek e-postalar" kaldırıldı (elle yazılan adreslere kişisel veri gitmesin)
+  delete settings.notifyEmails;
   const randevu = { ...clone(DEFAULT_RANDEVU), ...(c.randevu || {}) };
   randevu.sms = { ...clone(DEFAULT_RANDEVU.sms), ...(c.randevu?.sms || {}) };
   return {
@@ -146,7 +150,7 @@ export const TEMPLATES = [
   {
     id: 'kafe',
     name: 'Kafe rezervasyon formu',
-    sector: 'Kafe',
+    sector: 'Yeme-içme',
     fields: () => [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
@@ -155,6 +159,7 @@ export const TEMPLATES = [
     ],
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
+      term: 'Rezervasyon',
       services: [{ id: 'svc_masa', name: 'Masa rezervasyonu', duration: 90, buffer: 0 }],
       capacityMode: 'kisi',
       capacity: 40,
@@ -171,7 +176,7 @@ export const TEMPLATES = [
   {
     id: 'guzellik',
     name: 'Güzellik merkezi randevu formu',
-    sector: 'Güzellik merkezi',
+    sector: 'Kişisel bakım',
     fields: () => [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
@@ -193,8 +198,205 @@ export const TEMPLATES = [
       resourceLabel: 'Uzman',
       interval: 15
     })
+  },
+  {
+    id: 'klinik',
+    name: 'Klinik / muayenehane randevu formu',
+    sector: 'Sağlık',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('dogum_tarihi', 'date', 'Doğum tarihi'),
+      f('ilk_ziyaret', 'radio', 'Daha önce bize geldiniz mi?', { options: ['Evet', 'Hayır, ilk kez geliyorum'] }),
+      f('randevu', 'randevu', 'Randevu', { required: true }),
+      f('aciklama', 'textarea', 'Şikayetiniz (isteğe bağlı)', { maxLength: 500 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      services: [
+        { id: 'svc_muayene', name: 'Muayene', duration: 20, buffer: 5 },
+        { id: 'svc_kontrol', name: 'Kontrol', duration: 15, buffer: 5 }
+      ],
+      interval: 10
+    })
+  },
+  {
+    id: 'kuafor',
+    name: 'Kuaför / berber randevu formu',
+    sector: 'Kişisel bakım',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('randevu', 'randevu', 'Randevu', { required: true }),
+      f('not', 'textarea', 'Notunuz', { maxLength: 300 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      services: [
+        { id: 'svc_kesim', name: 'Saç kesimi', duration: 30, buffer: 5 },
+        { id: 'svc_sakal', name: 'Sakal', duration: 15, buffer: 5 },
+        { id: 'svc_kesim_sakal', name: 'Saç + sakal', duration: 45, buffer: 5 }
+      ],
+      resources: [{ id: 'res_1', name: 'Usta 1', serviceIds: [] }],
+      resourceLabel: 'Usta',
+      interval: 15,
+      minNoticeHours: 1
+    })
+  },
+  {
+    id: 'restoran',
+    name: 'Restoran rezervasyon formu',
+    sector: 'Yeme-içme',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('randevu', 'randevu', 'Rezervasyon', { required: true }),
+      f('alan', 'radio', 'Oturma tercihi', { options: ['İç mekan', 'Bahçe / teras', 'Fark etmez'] }),
+      f('not', 'textarea', 'Özel isteğiniz (alerji, doğum günü...)', { maxLength: 300 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      term: 'Rezervasyon',
+      services: [{ id: 'svc_masa', name: 'Masa rezervasyonu', duration: 120, buffer: 0 }],
+      capacityMode: 'kisi',
+      capacity: 60,
+      partySizeMax: 12,
+      interval: 30,
+      minNoticeHours: 2,
+      hours: {
+        0: [{ start: '12:00', end: '23:00' }], 1: [{ start: '12:00', end: '23:00' }], 2: [{ start: '12:00', end: '23:00' }],
+        3: [{ start: '12:00', end: '23:00' }], 4: [{ start: '12:00', end: '23:00' }], 5: [{ start: '12:00', end: '24:00' }],
+        6: [{ start: '12:00', end: '24:00' }]
+      }
+    })
+  },
+  {
+    id: 'spor',
+    name: 'Spor salonu / özel ders formu',
+    sector: 'Spor ve eğitim',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('seviye', 'select', 'Seviyeniz', { options: ['Yeni başlıyorum', 'Orta', 'İleri'] }),
+      f('randevu', 'randevu', 'Ders', { required: true }),
+      f('saglik', 'textarea', 'Bilmemiz gereken bir sağlık durumu var mı?', { maxLength: 300 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      term: 'Ders',
+      services: [
+        { id: 'svc_ozel', name: 'Özel ders', duration: 60, buffer: 0 },
+        { id: 'svc_deneme', name: 'Ücretsiz deneme dersi', duration: 45, buffer: 0 }
+      ],
+      resources: [{ id: 'res_1', name: 'Eğitmen 1', serviceIds: [] }],
+      resourceLabel: 'Eğitmen',
+      interval: 60
+    })
+  },
+  {
+    id: 'danismanlik',
+    name: 'Danışmanlık / terapi seansı formu',
+    sector: 'Danışmanlık',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('email', 'email', 'E-posta'),
+      f('gorusme_sekli', 'radio', 'Görüşme şekli', { required: true, options: ['Yüz yüze', 'Online'] }),
+      f('randevu', 'randevu', 'Seans', { required: true }),
+      f('konu', 'textarea', 'Kısaca konu (isteğe bağlı)', { maxLength: 500 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      term: 'Seans',
+      services: [
+        { id: 'svc_ilk', name: 'Ön görüşme', duration: 30, buffer: 10 },
+        { id: 'svc_seans', name: 'Seans', duration: 50, buffer: 10 }
+      ],
+      interval: 60,
+      minNoticeHours: 12,
+      cancelCutoffHours: 24
+    })
+  },
+  {
+    id: 'oto',
+    name: 'Oto servis randevu formu',
+    sector: 'Otomotiv',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('plaka', 'text', 'Plaka', { required: true, maxLength: 12 }),
+      f('arac', 'text', 'Marka / model', { placeholder: 'Örnek: Renault Clio 2019' }),
+      f('randevu', 'randevu', 'Randevu', { required: true }),
+      f('sikayet', 'textarea', 'Aracınızla ilgili şikayet / istek', { maxLength: 500 })
+    ],
+    randevu: () => ({
+      ...clone(DEFAULT_RANDEVU),
+      services: [
+        { id: 'svc_bakim', name: 'Periyodik bakım', duration: 120, buffer: 0 },
+        { id: 'svc_ariza', name: 'Arıza tespiti', duration: 60, buffer: 0 },
+        { id: 'svc_lastik', name: 'Lastik değişimi', duration: 30, buffer: 0 }
+      ],
+      capacity: 2,
+      interval: 30
+    })
+  },
+  {
+    id: 'kurs',
+    name: 'Kurs / eğitim ön kayıt formu',
+    sector: 'Spor ve eğitim',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('email', 'email', 'E-posta'),
+      f('program', 'select', 'İlgilendiğiniz program', { required: true, options: ['Program 1', 'Program 2'] }),
+      f('zaman', 'checkbox', 'Uygun olduğunuz zamanlar', { options: ['Hafta içi gündüz', 'Hafta içi akşam', 'Hafta sonu'] }),
+      f('not', 'textarea', 'Notunuz', { maxLength: 500 })
+    ]
+  },
+  {
+    id: 'etkinlik',
+    name: 'Etkinlik / seminer kayıt formu',
+    sector: 'Etkinlik',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('email', 'email', 'E-posta', { required: true }),
+      f('telefon', 'tel', 'Telefon', { placeholder: '05xx xxx xx xx' }),
+      f('kurum', 'text', 'Kurum / şirket'),
+      f('katilim', 'radio', 'Katılım şekli', { required: true, options: ['Yüz yüze', 'Online'] })
+    ]
+  },
+  {
+    id: 'teklif',
+    name: 'Teklif / keşif talep formu',
+    sector: 'Hizmet',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('email', 'email', 'E-posta'),
+      f('hizmet', 'select', 'Hangi hizmet için?', { required: true, options: ['Hizmet 1', 'Hizmet 2', 'Diğer'] }),
+      f('hizmet_diger', 'text', 'Hangi hizmet?', { required: true, condition: { fieldKey: 'hizmet', operator: 'esit', value: 'Diğer' } }),
+      f('adres', 'text', 'İlçe / adres'),
+      f('detay', 'textarea', 'İhtiyacınızı kısaca anlatın', { required: true, maxLength: 1000 }),
+      f('fotograf', 'dosya', 'Fotoğraf (isteğe bağlı)', { accept: ['jpg', 'png', 'pdf'], maxMB: 5 })
+    ]
+  },
+  {
+    id: 'basvuru',
+    name: 'İş başvuru formu',
+    sector: 'İnsan kaynakları',
+    fields: () => [
+      f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
+      f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
+      f('email', 'email', 'E-posta', { required: true }),
+      f('pozisyon', 'select', 'Başvurduğunuz pozisyon', { required: true, options: ['Pozisyon 1', 'Pozisyon 2'] }),
+      f('cv', 'dosya', 'Özgeçmiş (CV)', { required: true, accept: ['pdf', 'doc'], maxMB: 5 }),
+      f('not', 'textarea', 'Ön yazı (isteğe bağlı)', { maxLength: 1500 })
+    ]
   }
 ];
+
+// Şablon seçerken gruplar
+export const TEMPLATE_SECTORS = [...new Set(TEMPLATES.map((t) => t.sector))];
 
 export function buildFormContent(templateId) {
   const t = TEMPLATES.find((x) => x.id === templateId) || TEMPLATES[0];

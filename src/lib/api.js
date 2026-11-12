@@ -5,15 +5,17 @@
 //  VITE_API_MODE=local   → sunucusuz demo, veri tarayıcıda (localStorage)
 // =====================================================================
 import * as local from './api.local.js';
-import { remote, onSessionExpired } from './api.remote.js';
+import { remote, onSessionExpired, onActivity } from './api.remote.js';
 
 export { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue } from './shared.js';
 export { addDays, today } from './util.js';
-export { onSessionExpired };
+export { onSessionExpired, onActivity };
 
 export const API_MODE = import.meta.env.VITE_API_MODE === 'local' ? 'local' : 'server';
 const impl = API_MODE === 'local' ? local : remote;
 const call = (name) => (...args) => impl[name](...args);
+// Demo modunda (sunucusuz) olmayan özellikler: bildirim, Authenticator, oturum süresi
+const serverOnly = (name, demo) => (...args) => (API_MODE === 'local' ? Promise.resolve(typeof demo === 'function' ? demo(...args) : demo) : remote[name](...args));
 
 // Sadece yerel modda anlamlı olanlar (sunucuda bu işleri sunucu kendisi yapar)
 export const ensureSeed = () => (API_MODE === 'local' ? local.ensureSeed() : Promise.resolve());
@@ -26,6 +28,31 @@ export const currentUser = call('currentUser');
 export const changePassword = call('changePassword');
 export const requestPasswordReset = call('requestPasswordReset');
 export const resetPassword = call('resetPassword');
+export const loginTotp = serverOnly('loginTotp', () => {
+  throw new Error('Demo modunda iki adımlı doğrulama yok.');
+});
+export const publicConfig = serverOnly('publicConfig', { mailEnabled: false });
+export const sessionInfo = serverOnly('sessionInfo', null);
+export const touchSession = serverOnly('touchSession', null);
+// iki adımlı doğrulama
+export const totpStatus = serverOnly('totpStatus', { enabled: false, required: false, backupLeft: 0, demo: true });
+export const totpSetupStart = serverOnly('totpSetupStart', () => {
+  throw new Error('Demo modunda kullanılamaz.');
+});
+export const totpSetupConfirm = serverOnly('totpSetupConfirm', null);
+export const totpDisable = serverOnly('totpDisable', true);
+export const regenerateBackupCodes = serverOnly('regenerateBackupCodes', null);
+export const adminResetTotp = serverOnly('adminResetTotp', true);
+// bildirimler
+export const pushConfig = serverOnly('pushConfig', { publicKey: '' });
+export const savePushSubscription = serverOnly('savePushSubscription', true);
+export const deletePushSubscription = serverOnly('deletePushSubscription', true);
+export const myNotificationSettings = serverOnly('myNotificationSettings', { enabled: false, forms: [], devices: [], demo: true });
+export const setNotifyEnabled = serverOnly('setNotifyEnabled', false);
+export const deleteMyDevice = serverOnly('deleteMyDevice', true);
+export const sendTestNotification = serverOnly('sendTestNotification', { sent: 0, failed: 0 });
+export const pollNotifications = serverOnly('pollNotifications', { items: [], unread: 0, enabled: false, hasForms: false, session: null });
+export const markNotificationsSeen = serverOnly('markNotificationsSeen', true);
 // kullanıcılar ve yetkiler
 export const listUsers = call('listUsers');
 export const createUser = call('createUser');
