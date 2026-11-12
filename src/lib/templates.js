@@ -208,7 +208,7 @@ export const TEMPLATES = [
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       term: 'Rezervasyon',
-      services: [{ id: 'svc_masa', name: 'Masa rezervasyonu', duration: 90, buffer: 0 }],
+      services: [{ id: 'svc_masa', name: '☕ Masa rezervasyonu', duration: 90, buffer: 0 }],
       capacityMode: 'kisi',
       capacity: 40,
       partySizeMax: 12,
@@ -235,9 +235,9 @@ export const TEMPLATES = [
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       services: [
-        { id: 'svc_sac', name: 'Saç kesimi', duration: 45, buffer: 15 },
-        { id: 'svc_boya', name: 'Saç boyama', duration: 120, buffer: 15 },
-        { id: 'svc_cilt', name: 'Cilt bakımı', duration: 60, buffer: 10 }
+        { id: 'svc_sac', name: '💇‍♀️ Saç kesimi', duration: 45, buffer: 15 },
+        { id: 'svc_boya', name: '🎨 Saç boyama', duration: 120, buffer: 15 },
+        { id: 'svc_cilt', name: '✨ Cilt bakımı', duration: 60, buffer: 10 }
       ],
       resources: [
         { id: 'res_ayse', name: 'Ayşe', serviceIds: [] },
@@ -255,15 +255,15 @@ export const TEMPLATES = [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('dogum_tarihi', 'date', 'Doğum tarihi'),
-      f('ilk_ziyaret', 'radio', 'Daha önce bize geldiniz mi?', { options: ['Evet', 'Hayır, ilk kez geliyorum'] }),
+      f('ilk_ziyaret', 'radio', 'Daha önce bize geldiniz mi?', { options: ['✅ Evet', '👋 Hayır, ilk kez geliyorum'] }),
       f('randevu', 'randevu', 'Randevu', { required: true }),
       f('aciklama', 'textarea', 'Şikayetiniz (isteğe bağlı)', { maxLength: 500 })
     ],
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       services: [
-        { id: 'svc_muayene', name: 'Muayene', duration: 20, buffer: 5 },
-        { id: 'svc_kontrol', name: 'Kontrol', duration: 15, buffer: 5 }
+        { id: 'svc_muayene', name: '🩺 Muayene', duration: 20, buffer: 5 },
+        { id: 'svc_kontrol', name: '📋 Kontrol', duration: 15, buffer: 5 }
       ],
       interval: 10
     })
@@ -281,9 +281,9 @@ export const TEMPLATES = [
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       services: [
-        { id: 'svc_kesim', name: 'Saç kesimi', duration: 30, buffer: 5 },
-        { id: 'svc_sakal', name: 'Sakal', duration: 15, buffer: 5 },
-        { id: 'svc_kesim_sakal', name: 'Saç + sakal', duration: 45, buffer: 5 }
+        { id: 'svc_kesim', name: '✂️ Saç kesimi', duration: 30, buffer: 5 },
+        { id: 'svc_sakal', name: '🧔 Sakal', duration: 15, buffer: 5 },
+        { id: 'svc_kesim_sakal', name: '💈 Saç + sakal', duration: 45, buffer: 5 }
       ],
       resources: [{ id: 'res_1', name: 'Usta 1', serviceIds: [] }],
       resourceLabel: 'Usta',
@@ -299,13 +299,13 @@ export const TEMPLATES = [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('randevu', 'randevu', 'Rezervasyon', { required: true }),
-      f('alan', 'radio', 'Oturma tercihi', { options: ['İç mekan', 'Bahçe / teras', 'Fark etmez'] }),
+      f('alan', 'radio', 'Oturma tercihi', { options: ['🏠 İç mekan', '🌿 Bahçe / teras', '🤷 Fark etmez'] }),
       f('not', 'textarea', 'Özel isteğiniz (alerji, doğum günü...)', { maxLength: 300 })
     ],
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       term: 'Rezervasyon',
-      services: [{ id: 'svc_masa', name: 'Masa rezervasyonu', duration: 120, buffer: 0 }],
+      services: [{ id: 'svc_masa', name: '🍽️ Masa rezervasyonu', duration: 120, buffer: 0 }],
       capacityMode: 'kisi',
       capacity: 60,
       partySizeMax: 12,
@@ -325,7 +325,7 @@ export const TEMPLATES = [
     fields: () => [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
-      f('seviye', 'select', 'Seviyeniz', { options: ['Yeni başlıyorum', 'Orta', 'İleri'] }),
+      f('seviye', 'radio', 'Seviyeniz', { options: ['🌱 Yeni başlıyorum', '💪 Orta', '🔥 İleri'] }),
       f('randevu', 'randevu', 'Ders', { required: true }),
       f('saglik', 'textarea', 'Bilmemiz gereken bir sağlık durumu var mı?', { maxLength: 300 })
     ],
@@ -333,8 +333,8 @@ export const TEMPLATES = [
       ...clone(DEFAULT_RANDEVU),
       term: 'Ders',
       services: [
-        { id: 'svc_ozel', name: 'Özel ders', duration: 60, buffer: 0 },
-        { id: 'svc_deneme', name: 'Ücretsiz deneme dersi', duration: 45, buffer: 0 }
+        { id: 'svc_ozel', name: '🏋️ Özel ders', duration: 60, buffer: 0 },
+        { id: 'svc_deneme', name: '🎁 Ücretsiz deneme dersi', duration: 45, buffer: 0 }
       ],
       resources: [{ id: 'res_1', name: 'Eğitmen 1', serviceIds: [] }],
       resourceLabel: 'Eğitmen',
@@ -349,7 +349,7 @@ export const TEMPLATES = [
       f('ad_soyad', 'text', 'Ad Soyad', { required: true }),
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('email', 'email', 'E-posta'),
-      f('gorusme_sekli', 'radio', 'Görüşme şekli', { required: true, options: ['Yüz yüze', 'Online'] }),
+      f('gorusme_sekli', 'radio', 'Görüşme şekli', { required: true, options: ['🤝 Yüz yüze', '💻 Online'] }),
       f('randevu', 'randevu', 'Seans', { required: true }),
       f('konu', 'textarea', 'Kısaca konu (isteğe bağlı)', { maxLength: 500 })
     ],
@@ -357,8 +357,8 @@ export const TEMPLATES = [
       ...clone(DEFAULT_RANDEVU),
       term: 'Seans',
       services: [
-        { id: 'svc_ilk', name: 'Ön görüşme', duration: 30, buffer: 10 },
-        { id: 'svc_seans', name: 'Seans', duration: 50, buffer: 10 }
+        { id: 'svc_ilk', name: '💬 Ön görüşme', duration: 30, buffer: 10 },
+        { id: 'svc_seans', name: '🧠 Seans', duration: 50, buffer: 10 }
       ],
       interval: 60,
       minNoticeHours: 12,
@@ -380,9 +380,9 @@ export const TEMPLATES = [
     randevu: () => ({
       ...clone(DEFAULT_RANDEVU),
       services: [
-        { id: 'svc_bakim', name: 'Periyodik bakım', duration: 120, buffer: 0 },
-        { id: 'svc_ariza', name: 'Arıza tespiti', duration: 60, buffer: 0 },
-        { id: 'svc_lastik', name: 'Lastik değişimi', duration: 30, buffer: 0 }
+        { id: 'svc_bakim', name: '🔧 Periyodik bakım', duration: 120, buffer: 0 },
+        { id: 'svc_ariza', name: '🔍 Arıza tespiti', duration: 60, buffer: 0 },
+        { id: 'svc_lastik', name: '🛞 Lastik değişimi', duration: 30, buffer: 0 }
       ],
       capacity: 2,
       interval: 30
@@ -397,7 +397,7 @@ export const TEMPLATES = [
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('email', 'email', 'E-posta'),
       f('program', 'select', 'İlgilendiğiniz program', { required: true, options: ['Program 1', 'Program 2'] }),
-      f('zaman', 'checkbox', 'Uygun olduğunuz zamanlar', { options: ['Hafta içi gündüz', 'Hafta içi akşam', 'Hafta sonu'] }),
+      f('zaman', 'checkbox', 'Uygun olduğunuz zamanlar', { options: ['☀️ Hafta içi gündüz', '🌙 Hafta içi akşam', '🎉 Hafta sonu'] }),
       f('not', 'textarea', 'Notunuz', { maxLength: 500 })
     ]
   },
@@ -410,7 +410,7 @@ export const TEMPLATES = [
       f('email', 'email', 'E-posta', { required: true }),
       f('telefon', 'tel', 'Telefon', { placeholder: '05xx xxx xx xx' }),
       f('kurum', 'text', 'Kurum / şirket'),
-      f('katilim', 'radio', 'Katılım şekli', { required: true, options: ['Yüz yüze', 'Online'] })
+      f('katilim', 'radio', 'Katılım şekli', { required: true, options: ['🤝 Yüz yüze', '💻 Online'] })
     ]
   },
   {

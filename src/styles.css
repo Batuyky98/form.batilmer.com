@@ -1274,3 +1274,13 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .style-name { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; gap: 6px; padding: 2px 4px 0; }
 .style-on { color: var(--blue); font-size: 12px; }
 .style-desc { font-size: 12.5px; color: var(--muted); padding: 0 4px; }
+/* simge seçici */
+.emoji-pick { position: relative; flex: none; }
+.emoji-btn { font-size: 18px; border: 1px solid var(--line-strong); background: var(--surface); }
+.emoji-pop { position: fixed; z-index: 120; width: 300px; max-height: 340px; overflow: auto; padding: 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; gap: 6px; }
+.emoji-g { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+.emoji-row { display: flex; flex-wrap: wrap; gap: 2px; }
+.emoji-row button { width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; font-size: 19px; cursor: pointer; }
+.emoji-row button:hover { background: var(--surface-3); }
+.tbl-compact td:first-child { width: 48%; min-width: 210px; }
+.tbl-compact td:first-child .opt-row input { min-width: 0; }

@@ -12,6 +12,7 @@ import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } f
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
+import EmojiPick from '../components/EmojiPick.jsx';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
@@ -49,6 +50,7 @@ function OptionsEditor({ options, onChange }) {
     <div className="stack-sm">
       {options.map((o, i) => (
         <div className="opt-row" key={i}>
+          <EmojiPick value={o} onChange={(v) => onChange(options.map((x, k) => (k === i ? v : x)))} />
           <input value={o} aria-label={`Seçenek ${i + 1}`} onChange={(e) => onChange(options.map((x, k) => (k === i ? e.target.value : x)))} />
           <button type="button" className="icon-btn" aria-label="Yukarı taşı" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
           <button type="button" className="icon-btn" aria-label="Aşağı taşı" onClick={() => move(i, 1)} disabled={i === options.length - 1}>↓</button>
@@ -631,7 +633,7 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
             <tbody>
               {cfg.services.map((s, i) => (
                 <tr key={s.id}>
-                  <td><input aria-label="Hizmet adı" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} /></td>
+                  <td><div className="opt-row"><EmojiPick value={s.name} onChange={(v) => setService(i, { name: v })} /><input aria-label="Hizmet adı" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} /></div></td>
                   <td><input aria-label="Süre" type="number" min="5" step="5" value={s.duration} onChange={(e) => setService(i, { duration: Number(e.target.value) })} /></td>
                   <td><input aria-label="Arka arkaya randevu arası" type="number" min="0" step="5" value={s.buffer || 0} onChange={(e) => setService(i, { buffer: Number(e.target.value) })} /></td>
                   <td><button type="button" className="icon-btn" aria-label="Hizmeti sil" disabled={cfg.services.length === 1} onClick={() => set({ services: cfg.services.filter((_, k) => k !== i) })}>✕</button></td>
