@@ -4,6 +4,7 @@ import { Link } from '../router.jsx';
 import { Badge, Field, Modal, Segmented, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
 import { addDays, dayOfMonth, dayOfWeek, formatDate, formatDateShort, today, weekdayName, weekdayShort } from '../lib/util.js';
 import { serviceById } from '../lib/availability.js';
+import ApptActions from '../components/ApptActions.jsx';
 
 const STATUS_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
 
@@ -256,13 +257,13 @@ export default function Appointments({ id }) {
       <div className="page-head">
         <div>
           <Link to="/panel" className="back">← Formlar</Link>
-          <h1>{form.name} <span className="muted">· Randevular</span></h1>
-          <div className="small muted">{form.isletme}</div>
+          <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
+          <h1>Randevular</h1>
         </div>
         <div className="row wrap">
           <Link to={`/panel/formlar/${id}/kayitlar`} className="btn">Kayıtlar</Link>
           <button type="button" className="btn" onClick={() => setModal({ type: 'block' })}>Saat blokla</button>
-          <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'manual' })}>+ Manuel randevu</button>
+          {!mobile && <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'manual' })}>+ Manuel randevu</button>}
         </div>
       </div>
 
@@ -324,12 +325,15 @@ export default function Appointments({ id }) {
                   </div>
                 ))}
                 {list.map((a) => (
-                  <button key={a.id} type="button" className={`cal-item status-${a.status}`} onClick={() => setModal({ type: 'detail', appt: a })}>
-                    <span className="cal-time">{a.start}<small>{a.end}</small></span>
-                    <span className="cal-name">{a.contact?.name || 'İsimsiz'}{cfg.capacityMode === 'kisi' ? ` · ${a.partySize} kişi` : ''}</span>
-                    <span className="cal-meta">{serviceById(cfg, a.serviceId)?.name}{a.resourceId ? ` · ${cfg.resources.find((r) => r.id === a.resourceId)?.name || ''}` : ''}</span>
-                    <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
-                  </button>
+                  <div key={a.id} className={`cal-item status-${a.status}`}>
+                    <button type="button" className="cal-main" onClick={() => setModal({ type: 'detail', appt: a })}>
+                      <span className="cal-time">{a.start}<small>{a.end}</small></span>
+                      <span className="cal-name">{a.contact?.name || 'İsimsiz'}{cfg.capacityMode === 'kisi' ? ` · ${a.partySize} kişi` : ''}</span>
+                      <span className="cal-meta">{serviceById(cfg, a.serviceId)?.name}{a.resourceId ? ` · ${cfg.resources.find((r) => r.id === a.resourceId)?.name || ''}` : ''}</span>
+                      <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
+                    </button>
+                    <ApptActions appt={a} phone={a.contact?.phone} compact={effView === 'hafta'} onDone={load} />
+                  </div>
                 ))}
                 {!list.length && !blocks.length && !closed && <div className="muted small cal-empty">Randevu yok</div>}
               </div>
@@ -338,6 +342,11 @@ export default function Appointments({ id }) {
         })}
       </div>
 
+      {mobile && (
+        <button type="button" className="fab" aria-label="Manuel randevu ekle" onClick={() => setModal({ type: 'manual' })}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      )}
       {modal?.type === 'manual' && <ManualModal formId={id} cfg={cfg} initialDate={effView === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
       {modal?.type === 'block' && <BlockModal formId={id} cfg={cfg} initialDate={effView === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
       {modal?.type === 'detail' && <DetailModal appt={modal.appt} cfg={cfg} formId={id} onClose={() => setModal(null)} onDone={done} />}

@@ -175,8 +175,8 @@ export default function Submissions({ id }) {
       <div className="page-head">
         <div>
           <Link to="/panel" className="back">← Formlar</Link>
-          <h1>{form.name} <span className="muted">· Kayıtlar</span></h1>
-          <div className="small muted">{form.isletme}</div>
+          <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
+          <h1>Kayıtlar</h1>
         </div>
         <div className="row">
           <Link to={`/panel/formlar/${id}/istatistik`} className="btn">İstatistik</Link>
@@ -223,8 +223,9 @@ export default function Submissions({ id }) {
             const titleCol = columns.find((c) => c.type === 'text') || columns[0];
             const rest = columns.filter((c) => c !== titleCol);
             const lastNote = (s.notes || []).filter((n) => !n.system).slice(-1)[0];
+            const telCol = data.fields.find((f) => f.type === 'tel' && s.values[f.key]);
             return (
-              <li key={s.id}>
+              <li key={s.id} className="sub-li">
                 <button type="button" className={`sub-card-m tone-${statusTone(s.status)}`} onClick={() => setDetailId(s.id)}>
                   <div className="scm-top">
                     <b className="scm-title">{titleCol ? <ValueCell type={titleCol.type} value={s.values[titleCol.key]} randevu={data.randevu} showTc={showTc} /> : 'Kayıt'}</b>
@@ -242,6 +243,12 @@ export default function Submissions({ id }) {
                   {lastNote && <div className="scm-note">“{lastNote.text}”</div>}
                   <div className="scm-foot">{formatDateTime(s.createdAt)}{s.manual ? ' · Manuel' : ''}<span aria-hidden="true">›</span></div>
                 </button>
+                {telCol && (
+                  <a className="scm-call" href={`tel:${String(s.values[telCol.key]).replace(/[^\d+]/g, '')}`} aria-label={`Ara: ${s.values[telCol.key]}`}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z" /></svg>
+                    Ara
+                  </a>
+                )}
               </li>
             );
           })}

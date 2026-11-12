@@ -1,10 +1,71 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import ApptActions from '../components/ApptActions.jsx';
+import { useLive } from '../components/Live.jsx';
 import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
-import { formatDate, formatDateTime, nowMinutesTR, slugify, formBaseUrl, today, weekdayName } from '../lib/util.js';
+import { formatDate, formatDateTime, nowMinutesTR, slugify, formBaseUrl, today, weekdayName, timeToMin } from '../lib/util.js';
+
+const APPT_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
+
+// Bugünün programı: yetkili olunan bütün formların bugünkü randevuları, sıradaki öne çıkar
+function TodayAgenda() {
+  const live = useLive();
+  const [data, setData] = useState(null);
+  const load = () => api.listAllAppointments({ from: today(), to: today() }).then(setData).catch(() => setData({ forms: [], items: [] }));
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+  // Yeni bildirim gelince (yeni randevu / iptal) listeyi yenile
+  const newest = live?.items?.[0]?.id;
+  useEffect(() => {
+    if (newest) load();
+  }, [newest]);
+  if (!data || !data.forms.length) return null;
+  const items = data.items.filter((a) => a.status !== 'iptal');
+  const nowMin = nowMinutesTR();
+  const next = items.find((a) => ['onaylandi', 'bekliyor'].includes(a.status) && timeToMin(a.end) > nowMin);
+  const waiting = items.filter((a) => a.status === 'bekliyor').length;
+  const formName = (id) => {
+    const f = data.forms.find((x) => x.id === id);
+    return f?.isletme || f?.name || '';
+  };
+  return (
+    <section className="agenda card" aria-label="Bugünün programı">
+      <div className="agenda-head">
+        <div>
+          <h2>Bugünün programı</h2>
+          <p className="muted small">{items.length ? `${items.length} randevu${waiting ? ` · ${waiting} onay bekliyor` : ''}` : 'Bugün randevu yok'}</p>
+        </div>
+        <Link to="/panel/takvim" className="btn btn-sm btn-ghost">Takvim →</Link>
+      </div>
+      {!items.length ? (
+        <div className="agenda-empty">Bugün için randevu yok. Yeni randevu gelince burada ve telefonunuzda görünecek.</div>
+      ) : (
+        <ol className="agenda-list">
+          {items.map((a) => (
+            <li key={a.id} className={`agenda-item status-${a.status} ${next?.id === a.id ? 'is-next' : ''} ${timeToMin(a.end) <= nowMin ? 'is-past' : ''}`}>
+              <Link to={`/panel/formlar/${a.formId}/randevular?tarih=${a.date}`} className="agenda-main">
+                <span className="agenda-time">{a.start}<small>{a.end}</small></span>
+                <span className="agenda-text">
+                  {next?.id === a.id && <span className="agenda-next">Sıradaki</span>}
+                  <b>{a.name || 'İsimsiz'}</b>
+                  <span>{[a.service, a.resource, data.forms.length > 1 ? formName(a.formId) : ''].filter(Boolean).join(' · ')}</span>
+                </span>
+                <Badge tone={APPT_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
+              </Link>
+              <ApptActions appt={a} phone={a.phone} compact onDone={load} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
 
 function greeting() {
   const h = Math.floor(nowMinutesTR() / 60);
@@ -139,6 +200,11 @@ export default function Dashboard() {
         </div>
       </section>
 
+      <div className="dash">
+      <div className="dash-side">
+        <TodayAgenda />
+      </div>
+      <div className="dash-main">
       <div className="page-head">
         <div>
           <h2 className="section-title">Formlar</h2>
@@ -192,6 +258,8 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+      </div>
+      </div>
       {creating && <NewFormModal onClose={() => setCreating(false)} />}
     </div>
   );

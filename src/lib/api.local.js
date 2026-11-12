@@ -999,7 +999,7 @@ export async function listAllAppointments({ from, to }) {
         const cfg = (f.published || f.draft).randevu;
         return {
           id: a.id, formId: a.formId, date: a.date, start: a.start, end: a.end, status: a.status, partySize: a.partySize,
-          name: a.contact?.name || '', service: serviceById(cfg, a.serviceId)?.name || '',
+          name: a.contact?.name || '', phone: a.contact?.phone || '', service: serviceById(cfg, a.serviceId)?.name || '',
           resource: (cfg.resources || []).find((r) => r.id === a.resourceId)?.name || ''
         };
       })
