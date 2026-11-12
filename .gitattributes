@@ -1,0 +1,5 @@
+# Sunucuda çalışan betikler Windows'tan çıksa da Linux satır sonuyla kalsın (aksi hâlde bash "pipefail" hatası verir)
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+deploy/Caddyfile.ek text eol=lf
