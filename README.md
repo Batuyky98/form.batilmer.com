@@ -61,6 +61,11 @@ Tarayıcıda `http://localhost:5180` adresini açın. Sunucu modunda ilk giriş:
 - **Sektör şablonları:** genel, veteriner, klinik, kuaför/berber, güzellik, kafe, restoran, spor/özel ders, danışmanlık/terapi, oto servis, kurs ön kaydı, etkinlik kaydı, teklif/keşif talebi, iş başvurusu. Randevu alanının adı form bazında seçilir (Randevu / Rezervasyon / Seans / Ders / Görüşme…).
 - **Randevu kuralları:** en az kaç saat önceden, en fazla kaç gün ileri, **"şu tarihten itibaren açılsın"**, iptal süresi, kişi başı sınır, kapasite (randevu ya da kişi sayısı), personel/kaynak, kapalı günler.
 - **Müşteri tarafı (mailsiz):** form gönderilince randevu bilgi kartı, iptal bağlantısı (kopyala), **"Takvimime ekle"** (.ics) ve Google Takvim. Hatırlatmayı müşterinin kendi telefonu yapar.
+- **Panel görünümü:** açık / karanlık tema (sağ üstteki ay simgesi, cihazda hatırlanır), telefonda alt sekme çubuğu, günlük ajanda, kart görünümünde kayıtlar, alttan açılan pencereler.
+- **Bugünün programı:** Formlar sayfasında yetkili olunan formların bugünkü randevuları; kartlarda tek dokunuşla Ara, WhatsApp, Onayla, Geldi / Gelmedi.
+- **İşletme adresi:** müşteriye randevu sonrası ve iptal sayfasında "Yol tarifi al"; takvim dosyasına da yazılır.
+- **KVKK:** aydınlatma metni panelden yazılır ve form içinde açılır; ayrı **açık rıza** kutusu (zorunlu / isteğe bağlı), onay zamanı saklanır ve Excel'e çıkar.
+- **Görünüm:** formun her parçasının rengi ayrı seçilir (etiket, alan zemini, kenarlık, buton yazısı, seçili gün…), hazır renk takımları; form başlığı varsayılan kapalı ("Forma başlık ekle").
 - **Bildirimler (yetkili kişilere, ücretsiz):** panelde canlı (ses + açılır kart + zil) ve telefon/bilgisayar bildirimi (Web Push, Android ve iPhone). Sadece "Bildirim" tiki olan yetkililere gider; içerikte kişisel veri yok.
 - **Müşteriye mail / SMS (ücretli ek özellik, form bazında, sadece Ana Admin açar):** randevu onayı, değişiklik, iptal, hatırlatma, otomatik cevap. Varsayılan kapalı.
 - **Görünüm:** şeffaf/beyaz/özel arka plan, renkler, font, köşe, etiket yerleşimi, genişlik, koyu tema, buton metni

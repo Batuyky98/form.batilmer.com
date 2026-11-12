@@ -57,6 +57,10 @@ Sol menü → **Bildirimler**:
 
 Müşteri randevu aldığı anda ekranında randevu bilgisi, **iptal bağlantısı** ve **"Takvimime ekle"** butonu görür. Randevuyu kendi takvimine eklerse telefonu 1 gün ve 2 saat önce kendisine hatırlatır. Müşteri iptal ederse size "Randevu iptal edildi" bildirimi gelir ve saat yeniden açılır.
 
+Formlar sayfasındaki **Bugünün programı** bölümü günün randevularını sırasıyla gösterir; "Sıradaki" randevu öne çıkar. Kartlardaki düğmelerle müşteriyi tek dokunuşla **arayabilir**, **WhatsApp**'tan yazabilir, randevuyu **onaylayabilir** ya da **Geldi / Gelmedi** işaretleyebilirsiniz.
+
+Sağ üstteki ay simgesiyle paneli **karanlık temaya** alabilirsiniz; tekrar basana kadar öyle kalır.
+
 ## 4. Kayıtlar
 
 - Formun kartındaki **Kayıtlar**: arama (notlar dahil), durum ve tarih filtresi.
