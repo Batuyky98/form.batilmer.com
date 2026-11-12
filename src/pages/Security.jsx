@@ -3,7 +3,7 @@ import qrcode from 'qrcode-generator';
 import { useAuth } from '../auth.jsx';
 import * as api from '../lib/api.js';
 import { navigate } from '../router.jsx';
-import { Field, Spinner, copyText, useToast } from '../components/ui.jsx';
+import { Field, PasswordInput, Spinner, copyText, useToast } from '../components/ui.jsx';
 import { download } from '../lib/util.js';
 
 function Qr({ text }) {
@@ -104,7 +104,7 @@ function ConfirmWithCode({ title, buttonText, danger, onSubmit, onCancel }) {
     >
       <h3>{title}</h3>
       <div className="grid-2">
-        <Field label="Şifreniz" htmlFor="cw-p"><input id="cw-p" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+        <Field label="Şifreniz" htmlFor="cw-p"><PasswordInput id="cw-p" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
         <Field label="Authenticator kodu" htmlFor="cw-c"><input id="cw-c" className="otp-input" inputMode="numeric" maxLength={6} required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} /></Field>
       </div>
       {error && <div className="notice notice-err" role="alert">{error}</div>}

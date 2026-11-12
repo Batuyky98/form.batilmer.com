@@ -4,7 +4,7 @@ import { useAuth } from '../auth.jsx';
 import { Link } from '../router.jsx';
 import { Badge, Field, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
 import FormRenderer from '../components/FormRenderer.jsx';
-import { FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
+import { COLOR_FIELDS, FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
 import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
@@ -281,47 +281,115 @@ function FieldsTab({ draft, setDraft, formId }) {
 }
 
 // ======================================================= GÖRÜNÜM
+function ColorField({ label, hint, value, onChange, auto }) {
+  const isAuto = !value;
+  return (
+    <div className="color-field">
+      <div className="color-field-text">
+        <span className="pf-label">{label}</span>
+        {hint && <span className="pf-hint">{hint}</span>}
+      </div>
+      <div className="color-row">
+        <label className={`swatch ${isAuto ? 'is-auto' : ''}`} style={isAuto ? undefined : { background: value }} title={isAuto ? 'Otomatik' : value}>
+          <input type="color" value={value || auto || '#2f5bea'} onChange={(e) => onChange(e.target.value)} aria-label={`${label} rengi`} />
+        </label>
+        <input className="color-code" value={value} placeholder="Otomatik" onChange={(e) => onChange(e.target.value.trim())} aria-label={`${label} renk kodu`} />
+        {!isAuto && auto !== undefined && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange('')}>Otomatik</button>}
+      </div>
+    </div>
+  );
+}
+
+const PALETTES = [
+  { name: 'Batilmer', primary: '#2F5BEA', text: '#0F172A', colors: {} },
+  { name: 'Yeşil klinik', primary: '#0F9F6E', text: '#0B2E23', colors: { label: '#0B2E23', fieldBorder: '#B7E4D3', link: '#0F9F6E' } },
+  { name: 'Mor güzellik', primary: '#8B5CF6', text: '#2E1065', colors: { fieldBorder: '#DDD6FE', label: '#4C1D95' } },
+  { name: 'Turuncu kafe', primary: '#EA580C', text: '#431407', colors: { fieldBorder: '#FED7AA', fieldBg: '#FFFBF5' } },
+  { name: 'Siyah zarif', primary: '#111827', text: '#111827', colors: { fieldBorder: '#D1D5DB', selectedBg: '#111827' } }
+];
+
 function AppearanceTab({ draft, setDraft }) {
   const a = draft.appearance;
+  const s = draft.settings;
+  const colors = a.colors || {};
   const set = (patch) => setDraft({ ...draft, appearance: { ...a, ...patch } });
+  const setColor = (k, v) => set({ colors: { ...colors, [k]: v } });
+  const setSettings = (patch) => setDraft({ ...draft, settings: { ...s, ...patch } });
+  const autoOf = (k) => ({ title: a.text, label: a.text, fieldText: a.text, link: a.primary, selectedBg: a.primary, buttonText: '#ffffff', selectedText: '#ffffff', error: '#dc2626', help: '#475569', fieldBg: '#ffffff', fieldBorder: '#cbd5e1' }[k]);
   return (
     <div className="stack">
       <p className="muted">Form, müşterinin sitesine iframe ile gömülecek. Bu ayarlarla sitenin bir parçası gibi görünmesini sağlayın.</p>
-      <Field label="1. Arka plan">
-        <Segmented value={a.background} onChange={(v) => set({ background: v })} label="Arka plan" options={[{ value: 'seffaf', label: 'Şeffaf (site arka planı)' }, { value: 'beyaz', label: 'Beyaz kart' }, { value: 'ozel', label: 'Özel renk' }]} />
-        {a.background === 'ozel' && (
-          <div className="color-row mt-sm"><input type="color" value={a.bgColor} onChange={(e) => set({ bgColor: e.target.value })} aria-label="Arka plan rengi" /><input value={a.bgColor} onChange={(e) => set({ bgColor: e.target.value })} aria-label="Arka plan renk kodu" /></div>
+
+      <section className="sub-card stack">
+        <h3>Başlık</h3>
+        <Toggle id="ap-head" checked={a.titleOn === true} onChange={(v) => set({ titleOn: v })} label="Forma başlık ekle" />
+        {a.titleOn === true ? (
+          <>
+            <Field label="Başlık" htmlFor="ap-title"><input id="ap-title" value={s.title} placeholder="Örnek: Online randevu" onChange={(e) => setSettings({ title: e.target.value })} /></Field>
+            <Field label="Açıklama (isteğe bağlı)" htmlFor="ap-desc"><textarea id="ap-desc" rows={2} value={s.description} onChange={(e) => setSettings({ description: e.target.value })} /></Field>
+          </>
+        ) : (
+          <div className="pf-hint">Kapalıyken formun üstünde başlık görünmez; form doğrudan ilk alanla başlar (sitedeki sayfa başlığı yeterli olur).</div>
         )}
-      </Field>
-      <div className="grid-2">
-        <Field label="2. Ana renk (buton, seçim)">
-          <div className="color-row"><input type="color" value={a.primary} onChange={(e) => set({ primary: e.target.value })} aria-label="Ana renk" /><input value={a.primary} onChange={(e) => set({ primary: e.target.value })} aria-label="Ana renk kodu" /></div>
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Zemin ve ana renkler</h3>
+        <Field label="Arka plan">
+          <Segmented value={a.background} onChange={(v) => set({ background: v })} label="Arka plan" options={[{ value: 'seffaf', label: 'Şeffaf (site arka planı)' }, { value: 'beyaz', label: 'Beyaz kart' }, { value: 'ozel', label: 'Özel renk' }]} />
         </Field>
-        <Field label="Yazı rengi">
-          <div className="color-row"><input type="color" value={a.text} onChange={(e) => set({ text: e.target.value })} aria-label="Yazı rengi" /><input value={a.text} onChange={(e) => set({ text: e.target.value })} aria-label="Yazı renk kodu" /></div>
+        {a.background === 'ozel' && <ColorField label="Arka plan rengi" value={a.bgColor} onChange={(v) => set({ bgColor: v || '#FFFFFF' })} />}
+        <ColorField label="Ana renk" hint="Buton, seçimler, odak çerçevesi" value={a.primary} onChange={(v) => set({ primary: v || '#2F5BEA' })} />
+        <ColorField label="Yazı rengi" hint="Genel metin" value={a.text} onChange={(v) => set({ text: v || '#0F172A' })} />
+        <div>
+          <div className="pf-label">Hazır renk takımları</div>
+          <div className="palettes">
+            {PALETTES.map((p) => (
+              <button key={p.name} type="button" className="palette-chip" onClick={() => set({ primary: p.primary, text: p.text, colors: { ...Object.fromEntries(Object.keys(colors).map((k) => [k, ''])), ...p.colors } })}>
+                <span className="palette-dots"><i style={{ background: p.primary }} /><i style={{ background: p.text }} /><i style={{ background: p.colors.fieldBorder || '#cbd5e1' }} /></span>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>Ayrıntılı renkler</h3>
+          {Object.values(colors).some(Boolean) && <button type="button" className="btn btn-sm btn-ghost" onClick={() => set({ colors: Object.fromEntries(Object.keys(colors).map((k) => [k, ''])) })}>Hepsini otomatiğe al</button>}
+        </div>
+        <div className="pf-hint">Formdaki her parçanın rengini ayrı seçebilirsiniz. "Otomatik" olanlar ana renk ve yazı renginden gelir. Sağdaki önizlemede hemen görünür.</div>
+        <div className="color-grid">
+          {COLOR_FIELDS.map(([k, label, hint]) => (
+            <ColorField key={k} label={label} hint={hint} value={colors[k] || ''} auto={autoOf(k)} onChange={(v) => setColor(k, v)} />
+          ))}
+        </div>
+      </section>
+
+      <section className="sub-card stack">
+        <h3>Yazı ve şekil</h3>
+        <Field label="Yazı tipi" htmlFor="ap-font" hint="'Sitenin fontu' seçilirse iframe içinde tarayıcının varsayılan fontu kullanılır; siteyle aynı olması için sitenin fontunu seçin.">
+          <select id="ap-font" value={a.font} onChange={(e) => set({ font: e.target.value })}>
+            <option value="site">Sitenin fontu / varsayılan</option>
+            {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
         </Field>
-      </div>
-      <Field label="3. Yazı tipi" htmlFor="ap-font" hint="'Sitenin fontu' seçilirse iframe içinde tarayıcının varsayılan fontu kullanılır; siteyle aynı olması için sitenin fontunu seçin.">
-        <select id="ap-font" value={a.font} onChange={(e) => set({ font: e.target.value })}>
-          <option value="site">Sitenin fontu / varsayılan</option>
-          {GOOGLE_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-      </Field>
-      <Field label="4. Köşeler">
-        <Segmented value={a.radius} onChange={(v) => set({ radius: v })} label="Köşeler" options={[{ value: 'keskin', label: 'Keskin' }, { value: 'hafif', label: 'Hafif yuvarlak' }, { value: 'tam', label: 'Tam yuvarlak' }]} />
-      </Field>
-      <Field label="5. Etiket yerleşimi">
-        <Segmented value={a.labelPosition} onChange={(v) => set({ labelPosition: v })} label="Etiket yerleşimi" options={[{ value: 'ust', label: 'Alanın üstünde' }, { value: 'ic', label: 'Alanın içinde' }]} />
-      </Field>
-      <Field label="6. Genişlik">
-        <Segmented value={a.width} onChange={(v) => set({ width: v })} label="Genişlik" options={[{ value: 'tam', label: 'Tam genişlik' }, { value: 'dar', label: 'Dar, ortalı' }, { value: 'iki', label: 'İki sütun (masaüstü)' }]} />
-      </Field>
-      <Toggle id="ap-head" checked={a.showHeader !== false} onChange={(v) => set({ showHeader: v })} label="7. Form başlığı ve açıklamasını göster" />
-      <Field label="8. Buton metni" htmlFor="ap-btn">
-        <input id="ap-btn" value={a.buttonText} onChange={(e) => set({ buttonText: e.target.value })} />
-      </Field>
-      <p className="muted small">9. Gönderim sonrası davranış <b>Ayarlar</b> sekmesinde.</p>
-      <Toggle id="ap-dark" checked={a.dark} onChange={(v) => set({ dark: v })} label="10. Koyu tema (koyu renkli siteler için)" />
+        <Field label="Köşeler">
+          <Segmented value={a.radius} onChange={(v) => set({ radius: v })} label="Köşeler" options={[{ value: 'keskin', label: 'Keskin' }, { value: 'hafif', label: 'Hafif yuvarlak' }, { value: 'tam', label: 'Tam yuvarlak' }]} />
+        </Field>
+        <Field label="Etiket yerleşimi">
+          <Segmented value={a.labelPosition} onChange={(v) => set({ labelPosition: v })} label="Etiket yerleşimi" options={[{ value: 'ust', label: 'Alanın üstünde' }, { value: 'ic', label: 'Alanın içinde' }]} />
+        </Field>
+        <Field label="Genişlik">
+          <Segmented value={a.width} onChange={(v) => set({ width: v })} label="Genişlik" options={[{ value: 'tam', label: 'Tam genişlik' }, { value: 'dar', label: 'Dar, ortalı' }, { value: 'iki', label: 'İki sütun (masaüstü)' }]} />
+        </Field>
+        <Field label="Buton metni" htmlFor="ap-btn">
+          <input id="ap-btn" value={a.buttonText} onChange={(e) => set({ buttonText: e.target.value })} />
+        </Field>
+        <Toggle id="ap-dark" checked={a.dark} onChange={(v) => set({ dark: v })} label="Koyu tema (koyu renkli siteler için)" />
+        <p className="muted small">Gönderim sonrası davranış <b>Ayarlar</b> sekmesinde.</p>
+      </section>
     </div>
   );
 }
@@ -413,9 +481,8 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
-        <h3>Başlık ve gönderim</h3>
-        <Field label="Form başlığı (formun üstünde)"><input value={s.title} onChange={(e) => set({ title: e.target.value })} /></Field>
-        <Field label="Açıklama"><textarea rows={2} value={s.description} onChange={(e) => set({ description: e.target.value })} /></Field>
+        <h3>Gönderim</h3>
+        <div className="pf-hint">Formun üstündeki başlık <b>Görünüm</b> sekmesinden eklenir ("Forma başlık ekle").</div>
         <Field label="Gönderdikten sonra">
           <Segmented value={s.afterSubmit} onChange={(v) => set({ afterSubmit: v })} label="Gönderdikten sonra" options={[{ value: 'mesaj', label: 'Teşekkür mesajı göster' }, { value: 'yonlendir', label: 'Başka sayfaya yönlendir' }]} />
         </Field>

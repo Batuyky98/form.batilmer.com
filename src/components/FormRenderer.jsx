@@ -20,21 +20,28 @@ function useGoogleFont(font) {
   }, [font]);
 }
 
+const okColor = (v) => (/^#[0-9a-f]{3,8}$/i.test(String(v || '')) ? v : '');
+
 export function appearanceStyle(a) {
   const dark = !!a.dark;
+  const c = a.colors || {};
   let bg = 'transparent';
   if (a.background === 'beyaz') bg = dark ? '#111827' : '#FFFFFF';
   if (a.background === 'ozel') bg = a.bgColor || '#FFFFFF';
-  return {
+  const style = {
     '--bf-primary': a.primary || '#2F5BEA',
     '--bf-text': a.text || (dark ? '#F8FAFC' : '#0F172A'),
     '--bf-bg': bg,
     '--bf-radius': RADIUS[a.radius] || RADIUS.hafif,
-    '--bf-field-bg': dark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-    '--bf-border': dark ? 'rgba(255,255,255,0.22)' : '#CBD5E1',
-    '--bf-muted': dark ? 'rgba(248,250,252,0.72)' : '#475569',
+    '--bf-field-bg': okColor(c.fieldBg) || (dark ? 'rgba(255,255,255,0.06)' : '#FFFFFF'),
+    '--bf-border': okColor(c.fieldBorder) || (dark ? 'rgba(255,255,255,0.22)' : '#CBD5E1'),
+    '--bf-muted': okColor(c.help) || (dark ? 'rgba(248,250,252,0.72)' : '#475569'),
     fontFamily: a.font && a.font !== 'site' ? `'${a.font}', system-ui, sans-serif` : 'inherit'
   };
+  // Ayrıntılı renkler (boşsa CSS'teki varsayılan kullanılır)
+  const map = { title: '--bf-title', label: '--bf-label', fieldText: '--bf-field-text', buttonText: '--bf-btn-text', link: '--bf-link', error: '--bf-error', selectedBg: '--bf-sel-bg', selectedText: '--bf-sel-text' };
+  for (const [k, v] of Object.entries(map)) if (okColor(c[k])) style[v] = c[k];
+  return style;
 }
 
 // ------------------------------------------------------------ Cloudflare Turnstile (anahtar tanımlıysa)
@@ -404,7 +411,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
 
   return (
     <form className={className} style={appearanceStyle(a)} onSubmit={submit} noValidate lang={lang}>
-      {a.showHeader !== false && (s.title || s.description) && (
+      {a.titleOn === true && (s.title || s.description) && (
         <div className="bf-header">
           {s.title && <h2 className="bf-title">{s.title}</h2>}
           {s.description && <p className="bf-desc">{s.description}</p>}

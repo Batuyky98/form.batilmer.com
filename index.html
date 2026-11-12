@@ -9,7 +9,9 @@
   <!-- "Ana Ekrana Ekle" (iPhone'da bildirim için gerekli) -->
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#ffffff" />
+  <!-- Tema, sayfa çizilmeden uygulanır (açılışta beyaz parlama olmasın) -->
+  <script>try{if(localStorage.getItem('bf_tema')==='dark'&&!/^\/(f|iptal|test-sitesi)(\/|$)/.test(location.pathname)){document.documentElement.dataset.theme='dark';document.querySelector('meta[name="theme-color"]').setAttribute('content','#0a0f1c')}}catch(e){}</script>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="batilmer" />

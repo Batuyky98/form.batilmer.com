@@ -172,3 +172,37 @@ export async function copyText(text) {
     return ok;
   }
 }
+
+// ---------------- Ekran genişliği (telefon görünümü için)
+export function useMedia(query) {
+  const get = () => typeof window !== 'undefined' && window.matchMedia?.(query).matches;
+  const [on, setOn] = useState(get);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const fn = () => setOn(m.matches);
+    m.addEventListener?.('change', fn);
+    fn();
+    return () => m.removeEventListener?.('change', fn);
+  }, [query]);
+  return !!on;
+}
+export const useIsMobile = () => useMedia('(max-width: 720px)');
+
+// ---------------- Şifre alanı (göz simgesiyle göster / gizle)
+export function PasswordInput({ id, value, onChange, autoComplete = 'current-password', required, ...rest }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="pw-wrap">
+      <input id={id} type={show ? 'text' : 'password'} required={required} autoComplete={autoComplete} value={value} onChange={onChange} spellCheck={false} autoCapitalize="none" {...rest} />
+      <button type="button" className="pw-eye" aria-label={show ? 'Şifreyi gizle' : 'Şifreyi göster'} aria-pressed={show} aria-controls={id} onClick={() => setShow((s) => !s)}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {show ? (
+            <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A9.9 9.9 0 0 1 12 5c5 0 9 4.5 10 7a12.6 12.6 0 0 1-3.2 4.3M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 4.4-1" />
+          ) : (
+            <path d="M2 12c1-2.5 5-7 10-7s9 4.5 10 7c-1 2.5-5 7-10 7S3 14.5 2 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          )}
+        </svg>
+      </button>
+    </div>
+  );
+}

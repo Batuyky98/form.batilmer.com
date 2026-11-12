@@ -20,6 +20,7 @@ import AllCalendar from './pages/AllCalendar.jsx';
 import Security from './pages/Security.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
 import { registerWorker } from './lib/push.js';
+import { applyTheme } from './lib/theme.js';
 
 const PANEL_ROUTES = [
   ['/panel', Dashboard],
@@ -90,6 +91,17 @@ function Routes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Panel teması; müşteri sayfalarına (/f/, /iptal/) geçilince uygulanmaz
+    applyTheme();
+    const on = () => applyTheme();
+    window.addEventListener('batilmer-navigate', on);
+    window.addEventListener('popstate', on);
+    return () => {
+      window.removeEventListener('batilmer-navigate', on);
+      window.removeEventListener('popstate', on);
+    };
+  }, []);
   useEffect(() => {
     // Bildirim servis çalışanı sadece panelde (herkese açık formlarda gerekmez)
     if (!window.location.pathname.startsWith('/f/') && !window.location.pathname.startsWith('/iptal/')) registerWorker();

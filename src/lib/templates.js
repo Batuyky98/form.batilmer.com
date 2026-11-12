@@ -28,10 +28,41 @@ export const DEFAULT_APPEARANCE = {
   radius: 'hafif', // 'keskin' | 'hafif' | 'tam'
   labelPosition: 'ust', // 'ust' | 'ic'
   width: 'tam', // 'tam' | 'dar' | 'iki'
-  showHeader: true,
+  // Formun üstünde başlık: varsayılan KAPALI (sitede zaten başlık olur). Görünüm → "Forma başlık ekle" ile açılır.
+  // (Eski "showHeader" ayarı artık kullanılmıyor; bu sürümde tüm formlarda başlık gizlenir.)
+  titleOn: false,
   buttonText: 'Gönder',
-  dark: false
+  dark: false,
+  // Ayrıntılı renkler: boş = otomatik (ana renk / yazı renginden). Formdaki her parça ayrı boyanabilir.
+  colors: {
+    title: '',
+    label: '',
+    help: '',
+    fieldBg: '',
+    fieldBorder: '',
+    fieldText: '',
+    buttonText: '',
+    link: '',
+    error: '',
+    selectedBg: '',
+    selectedText: ''
+  }
 };
+
+// Görünüm sekmesindeki renk seçicileri: [anahtar, etiket, açıklama]
+export const COLOR_FIELDS = [
+  ['title', 'Başlık', 'Formun üstündeki başlık'],
+  ['label', 'Alan etiketleri', '"Ad Soyad", "Telefon" gibi'],
+  ['help', 'Yardım metinleri', 'Açıklama, alt bilgi, sayaç'],
+  ['fieldText', 'Alan içindeki yazı', 'Müşterinin yazdığı metin'],
+  ['fieldBg', 'Alan zemini', 'Kutuların içi'],
+  ['fieldBorder', 'Alan kenarlığı', 'Kutuların çerçevesi'],
+  ['buttonText', 'Buton yazısı', '"Gönder" yazısının rengi'],
+  ['selectedBg', 'Seçili gün / saat zemini', 'Randevu seçicide (boş = ana renk)'],
+  ['selectedText', 'Seçili gün / saat yazısı', ''],
+  ['link', 'Bağlantılar', 'Aydınlatma metni linki vb.'],
+  ['error', 'Hata mesajları', '"Bu alan zorunlu" uyarıları']
+];
 
 export const DEFAULT_SETTINGS = {
   title: '',
@@ -95,10 +126,12 @@ export function normalizeContent(c) {
   delete settings.notifyEmails;
   const randevu = { ...clone(DEFAULT_RANDEVU), ...(c.randevu || {}) };
   randevu.sms = { ...clone(DEFAULT_RANDEVU.sms), ...(c.randevu?.sms || {}) };
+  const appearance = { ...clone(DEFAULT_APPEARANCE), ...(c.appearance || {}) };
+  appearance.colors = { ...clone(DEFAULT_APPEARANCE.colors), ...(c.appearance?.colors || {}) };
   return {
     ...c,
     fields: c.fields || [],
-    appearance: { ...clone(DEFAULT_APPEARANCE), ...(c.appearance || {}) },
+    appearance,
     settings,
     randevu
   };

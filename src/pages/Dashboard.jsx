@@ -4,7 +4,17 @@ import { useAuth } from '../auth.jsx';
 import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
-import { formatDateTime, slugify, formBaseUrl } from '../lib/util.js';
+import { formatDate, formatDateTime, nowMinutesTR, slugify, formBaseUrl, today, weekdayName } from '../lib/util.js';
+
+function greeting() {
+  const h = Math.floor(nowMinutesTR() / 60);
+  return h < 6 ? 'İyi geceler' : h < 12 ? 'Günaydın' : h < 18 ? 'İyi günler' : 'İyi akşamlar';
+}
+
+// "Dr. Ayşe Yılmaz" → "Ayşe" (Dr., Av., Prof., Uzm. gibi unvanlar atlanır)
+const firstName = (n) => String(n || '').split(/\s+/).find((w) => w && !/\.$/.test(w)) || '';
+
+const monogram = (f) => (f.isletme || f.name || '?').trim().slice(0, 1).toLocaleUpperCase('tr');
 
 function StatusBadge({ f }) {
   if (!f.publishedAt) return <Badge tone="gray">Yayınlanmadı</Badge>;
@@ -89,7 +99,7 @@ function NewFormModal({ onClose }) {
 }
 
 export default function Dashboard() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const toast = useToast();
   const confirm = useConfirm();
   const { data: forms, loading, reload } = useAsync(() => api.listForms(), []);
@@ -111,12 +121,28 @@ export default function Dashboard() {
     reload();
   }
 
+  const sum = (k) => (forms || []).reduce((a, f) => a + (f[k] || 0), 0);
+  const live = (forms || []).filter((f) => f.publishedAt && f.control.status === 'aktif').length;
+
   return (
     <div className="page">
+      <section className="hero">
+        <div className="hero-text">
+          <span className="hero-date">{weekdayName(today())}, {formatDate(today())}</span>
+          <h1>{greeting()}, {firstName(user?.name) || 'hoş geldiniz'}</h1>
+          <p>{forms ? (sum('todayCount') ? `Bugün ${sum('todayCount')} yeni kayıt geldi.` : 'Bugün henüz yeni kayıt yok.') : ' '}</p>
+        </div>
+        <div className="kpis">
+          <div className="kpi"><b>{forms ? sum('todayCount') : '–'}</b><span>Bugünkü kayıt</span></div>
+          <div className="kpi"><b>{forms ? sum('upcomingAppointments') : '–'}</b><span>Yaklaşan randevu</span></div>
+          <div className="kpi"><b>{forms ? live : '–'}</b><span>Yayındaki form</span></div>
+        </div>
+      </section>
+
       <div className="page-head">
         <div>
-          <h1>Formlar</h1>
-          <p className="muted">{isAdmin ? 'Tüm formlar' : 'Yetkili olduğunuz formlar'}</p>
+          <h2 className="section-title">Formlar</h2>
+          <p className="muted small">{isAdmin ? 'Tüm formlar' : 'Yetkili olduğunuz formlar'}</p>
         </div>
         <div className="row">
           <input className="search" type="search" placeholder="Form ara…" aria-label="Form ara" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -135,7 +161,8 @@ export default function Dashboard() {
           {list.map((f) => (
             <article key={f.id} className="form-card">
               <div className="form-card-head">
-                <div>
+                <span className="monogram" aria-hidden="true">{monogram(f)}</span>
+                <div className="form-card-title">
                   <div className="eyebrow">{f.isletme || 'İşletme belirtilmedi'}</div>
                   <h2>{f.name}</h2>
                   <a className="slug" href={`/f/${f.slug}`} target="_blank" rel="noreferrer">/f/{f.slug} ↗</a>
@@ -151,7 +178,7 @@ export default function Dashboard() {
               <div className="form-card-actions">
                 <Link to={`/panel/formlar/${f.id}/kayitlar`} className="btn btn-sm">Kayıtlar</Link>
                 <Link to={`/panel/formlar/${f.id}/istatistik`} className="btn btn-sm btn-ghost">İstatistik</Link>
-                {f.hasRandevu && f.perms.randevu && <Link to={`/panel/formlar/${f.id}/randevular`} className="btn btn-sm">Randevular</Link>}
+                {f.hasRandevu && f.perms.randevu && <Link to={`/panel/formlar/${f.id}/randevular`} className="btn btn-sm btn-primary">Randevular</Link>}
                 {f.perms.edit && <Link to={`/panel/formlar/${f.id}/duzenle`} className="btn btn-sm">Düzenle</Link>}
                 {isAdmin && (
                   <>

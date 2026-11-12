@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
 import { Link } from '../router.jsx';
-import { Badge, Field, Modal, Segmented, Spinner, useConfirm, useToast } from '../components/ui.jsx';
-import { addDays, dayOfWeek, formatDate, formatDateShort, today, weekdayName } from '../lib/util.js';
+import { Badge, Field, Modal, Segmented, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
+import { addDays, dayOfMonth, dayOfWeek, formatDate, formatDateShort, today, weekdayName, weekdayShort } from '../lib/util.js';
 import { serviceById } from '../lib/availability.js';
 
 const STATUS_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
@@ -217,10 +217,14 @@ export default function Appointments({ id }) {
   const [resFilter, setResFilter] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const [modal, setModal] = useState(null);
+  const mobile = useIsMobile();
 
-  const start = view === 'hafta' ? weekStart(anchor) : anchor;
-  const days = view === 'hafta' ? Array.from({ length: 7 }, (_, i) => addDays(start, i)) : [anchor];
-  const end = days[days.length - 1];
+  // Telefonda: üstte haftanın günleri (şerit), altında seçili günün ajandası. Veri her zaman haftalık çekilir.
+  const effView = mobile ? 'gun' : view;
+  const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart(anchor), i));
+  const start = mobile || view === 'hafta' ? week[0] : anchor;
+  const end = mobile || view === 'hafta' ? week[6] : anchor;
+  const days = effView === 'hafta' ? week : [anchor];
 
   async function load() {
     try {
@@ -265,12 +269,27 @@ export default function Appointments({ id }) {
       {pending > 0 && <div className="notice notice-warn">Bu aralıkta onay bekleyen {pending} randevu var.</div>}
 
       <div className="cal-toolbar card">
-        <div className="row">
-          <button type="button" className="btn btn-sm" aria-label="Önceki" onClick={() => setAnchor(addDays(anchor, view === 'hafta' ? -7 : -1))}>←</button>
+        <div className="row cal-nav">
+          <button type="button" className="btn btn-sm" aria-label={mobile ? 'Önceki hafta' : 'Önceki'} onClick={() => setAnchor(addDays(anchor, mobile || view === 'hafta' ? -7 : -1))}>←</button>
           <button type="button" className="btn btn-sm" onClick={() => setAnchor(today())}>Bugün</button>
-          <button type="button" className="btn btn-sm" aria-label="Sonraki" onClick={() => setAnchor(addDays(anchor, view === 'hafta' ? 7 : 1))}>→</button>
-          <strong className="cal-range">{view === 'hafta' ? `${formatDateShort(start)} – ${formatDate(end)}` : `${weekdayName(anchor)}, ${formatDate(anchor)}`}</strong>
+          <button type="button" className="btn btn-sm" aria-label={mobile ? 'Sonraki hafta' : 'Sonraki'} onClick={() => setAnchor(addDays(anchor, mobile || view === 'hafta' ? 7 : 1))}>→</button>
+          <strong className="cal-range">{effView === 'hafta' ? `${formatDateShort(start)} – ${formatDate(end)}` : `${weekdayName(anchor)}, ${formatDate(anchor)}`}</strong>
         </div>
+        {mobile && (
+          <div className="week-strip" role="tablist" aria-label="Haftanın günleri">
+            {week.map((d) => {
+              const n = data.items.filter((a) => a.date === d && a.status !== 'iptal').length;
+              const wait = data.items.some((a) => a.date === d && a.status === 'bekliyor');
+              return (
+                <button key={d} type="button" role="tab" aria-selected={d === anchor} className={`ws-day ${d === anchor ? 'is-on' : ''} ${d === today() ? 'is-today' : ''}`} onClick={() => setAnchor(d)} aria-label={`${weekdayName(d)} ${formatDate(d)}, ${n} randevu`}>
+                  <span className="ws-w">{weekdayShort(d)}</span>
+                  <span className="ws-n">{dayOfMonth(d)}</span>
+                  <span className={`ws-count ${wait ? 'is-wait' : ''}`}>{n || ''}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="row wrap">
           {cfg.resources.length > 0 && (
             <select aria-label="Kaynak filtresi" value={resFilter} onChange={(e) => setResFilter(e.target.value)}>
@@ -279,11 +298,11 @@ export default function Appointments({ id }) {
             </select>
           )}
           <label className="inline-check"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> İptalleri göster</label>
-          <Segmented value={view} onChange={setView} label="Görünüm" options={[{ value: 'gun', label: 'Gün' }, { value: 'hafta', label: 'Hafta' }]} />
+          {!mobile && <Segmented value={view} onChange={setView} label="Görünüm" options={[{ value: 'gun', label: 'Gün' }, { value: 'hafta', label: 'Hafta' }]} />}
         </div>
       </div>
 
-      <div className={`calendar ${view === 'gun' ? 'calendar-day' : ''}`}>
+      <div className={`calendar ${effView === 'gun' ? 'calendar-day' : ''}`}>
         {days.map((d) => {
           const list = items.filter((a) => a.date === d);
           const blocks = data.blocks.filter((b) => b.date === d && (!resFilter || !b.resourceId || b.resourceId === resFilter));
@@ -291,7 +310,7 @@ export default function Appointments({ id }) {
           return (
             <section key={d} className={`cal-day ${d === today() ? 'is-today' : ''} ${closed ? 'is-closed' : ''}`} aria-label={`${weekdayName(d)} ${formatDate(d)}`}>
               <header>
-                <button type="button" className="cal-day-title" onClick={() => { setAnchor(d); setView('gun'); }}>
+                <button type="button" className="cal-day-title" onClick={() => { setAnchor(d); if (!mobile) setView('gun'); }}>
                   <span>{weekdayName(d)}</span>
                   <b>{formatDateShort(d)}</b>
                 </button>
@@ -306,7 +325,7 @@ export default function Appointments({ id }) {
                 ))}
                 {list.map((a) => (
                   <button key={a.id} type="button" className={`cal-item status-${a.status}`} onClick={() => setModal({ type: 'detail', appt: a })}>
-                    <span className="cal-time">{a.start}–{a.end}</span>
+                    <span className="cal-time">{a.start}<small>{a.end}</small></span>
                     <span className="cal-name">{a.contact?.name || 'İsimsiz'}{cfg.capacityMode === 'kisi' ? ` · ${a.partySize} kişi` : ''}</span>
                     <span className="cal-meta">{serviceById(cfg, a.serviceId)?.name}{a.resourceId ? ` · ${cfg.resources.find((r) => r.id === a.resourceId)?.name || ''}` : ''}</span>
                     <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
@@ -319,8 +338,8 @@ export default function Appointments({ id }) {
         })}
       </div>
 
-      {modal?.type === 'manual' && <ManualModal formId={id} cfg={cfg} initialDate={view === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
-      {modal?.type === 'block' && <BlockModal formId={id} cfg={cfg} initialDate={view === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.type === 'manual' && <ManualModal formId={id} cfg={cfg} initialDate={effView === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
+      {modal?.type === 'block' && <BlockModal formId={id} cfg={cfg} initialDate={effView === 'gun' ? anchor : today()} onClose={() => setModal(null)} onDone={done} />}
       {modal?.type === 'detail' && <DetailModal appt={modal.appt} cfg={cfg} formId={id} onClose={() => setModal(null)} onDone={done} />}
     </div>
   );

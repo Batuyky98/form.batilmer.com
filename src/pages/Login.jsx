@@ -2,12 +2,36 @@ import { useEffect, useState } from 'react';
 import { EXPIRED_KEY, useAuth } from '../auth.jsx';
 import * as api from '../lib/api.js';
 import { Link, navigate } from '../router.jsx';
-import { Field, useToast } from '../components/ui.jsx';
+import { Field, PasswordInput, useToast } from '../components/ui.jsx';
+import ThemeToggle from '../components/ThemeToggle.jsx';
 import { Logo } from '../components/Logo.jsx';
+
+const FEATURES = [
+  ['Randevu ve kayıt formları', 'Her sektöre hazır şablonlar, sitenize tek satırla eklenir.'],
+  ['Anında bildirim', 'Yeni randevu telefonunuza saniyeler içinde düşer.'],
+  ['Güvenli', 'İki adımlı doğrulama, form bazında yetki, kişisel veri korumalı.']
+];
 
 function AuthCard({ title, subtitle, children }) {
   return (
     <div className="auth-page">
+      <ThemeToggle className="auth-theme" />
+      <aside className="auth-hero" aria-hidden="true">
+        <div className="auth-hero-inner">
+          <div className="auth-hero-brand"><Logo size={40} /><span>batilmer</span></div>
+          <h2>Randevularınız ve kayıtlarınız<br />tek panelde.</h2>
+          <ul>
+            {FEATURES.map(([t, d]) => (
+              <li key={t}><b>{t}</b><span>{d}</span></li>
+            ))}
+          </ul>
+          <div className="auth-hero-card">
+            <div className="ahc-dot" />
+            <div><b>Yeni randevu</b><span>Per 14 Kas 14:30 · Muayene</span></div>
+            <small>şimdi</small>
+          </div>
+        </div>
+      </aside>
       <div className="auth-card">
         <div className="auth-brand">
           <Logo size={44} />
@@ -133,7 +157,7 @@ export default function Login() {
           <input id="le" type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
         <Field label="Şifre" htmlFor="lp">
-          <input id="lp" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput id="lp" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         {error && <div className="notice notice-err" role="alert">{error}</div>}
         <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Giriş yapılıyor…' : 'Giriş yap'}</button>
@@ -175,14 +199,14 @@ export function ChangePassword() {
       {user?.mustChange && <div className="notice notice-warn">Güvenliğiniz için ilk girişte şifrenizi değiştirmeniz gerekiyor.</div>}
       <form className="card stack" onSubmit={submit}>
         <Field label="Mevcut şifre" htmlFor="op">
-          <input id="op" type="password" required autoComplete="current-password" value={oldPw} onChange={(e) => setOld(e.target.value)} />
+          <PasswordInput id="op" required autoComplete="current-password" value={oldPw} onChange={(e) => setOld(e.target.value)} />
         </Field>
         <Field label="Yeni şifre" htmlFor="np">
-          <input id="np" type="password" required autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <PasswordInput id="np" required autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
           <PasswordRules />
         </Field>
         <Field label="Yeni şifre (tekrar)" htmlFor="np2">
-          <input id="np2" type="password" required autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+          <PasswordInput id="np2" required autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
         </Field>
         {error && <div className="notice notice-err" role="alert">{error}</div>}
         <div><button className="btn btn-primary">Şifreyi kaydet</button></div>
@@ -219,11 +243,11 @@ export function ResetPassword({ token }) {
       ) : (
         <form onSubmit={submit} className="stack">
           <Field label="Yeni şifre" htmlFor="rp">
-            <input id="rp" type="password" required autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+            <PasswordInput id="rp" required autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
             <PasswordRules />
           </Field>
           <Field label="Yeni şifre (tekrar)" htmlFor="rp2">
-            <input id="rp2" type="password" required autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
+            <PasswordInput id="rp2" required autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
           </Field>
           {error && <div className="notice notice-err" role="alert">{error}</div>}
           <button className="btn btn-primary btn-block">Şifreyi kaydet</button>
