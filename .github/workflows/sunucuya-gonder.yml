@@ -1,0 +1,70 @@
+# Bu dala her gönderimde: derle → testleri çalıştır → geçerse sunucuya kur.
+# Sunucu tarafı: deploy/otomatik-kur.sh (bir kez). Gerekli secret'lar:
+#   SUNUCU_ADRES, SUNUCU_PARMAK_IZI, SUNUCU_ANAHTAR
+name: Sunucuya gönder
+
+on:
+  push:
+    branches: [claude/upbeat-galileo-qa75b3]
+  workflow_dispatch:
+
+concurrency:
+  group: sunucu-canli
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix server
+      - run: npm run build
+      - run: npm test
+
+  kur:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secret kontrolü
+        env:
+          ADRES: ${{ secrets.SUNUCU_ADRES }}
+        run: |
+          if [ -z "$ADRES" ]; then
+            echo "::warning::Sunucu bilgileri girilmemiş; kurulum atlandı. Bkz. deploy/otomatik-kur.sh"
+            echo "ATLA=1" >> "$GITHUB_ENV"
+          fi
+      - name: Paketle ve sunucuya kur
+        if: env.ATLA != '1'
+        env:
+          ADRES: ${{ secrets.SUNUCU_ADRES }}
+          PARMAK_IZI: ${{ secrets.SUNUCU_PARMAK_IZI }}
+          ANAHTAR: ${{ secrets.SUNUCU_ANAHTAR }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$ANAHTAR" > ~/.ssh/sunucu && chmod 600 ~/.ssh/sunucu
+          printf '%s\n' "$PARMAK_IZI" > ~/.ssh/known_hosts
+          HOST="${ADRES%%:*}"; PORT=22
+          [ "$HOST" != "$ADRES" ] && PORT="${ADRES##*:}"
+          git archive --format=zip --prefix=batilmer-form-paneli/ -o paket.zip HEAD
+          ssh -i ~/.ssh/sunucu -p "$PORT" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30 \
+            "root@$HOST" < paket.zip
+      - name: Canlı site kontrolü
+        if: env.ATLA != '1'
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null https://form.batilmer.com/ && { echo "✔ form.batilmer.com açık"; exit 0; }
+            sleep 3
+          done
+          echo "::error::form.batilmer.com yanıt vermiyor"; exit 1

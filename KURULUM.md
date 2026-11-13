@@ -197,3 +197,17 @@ Site çökerse bunu veterinerden değil sizin öğrenmeniz için: uptimerobot.co
 - SSL hatası: DNS kaydını kontrol edin; `docker logs --tail=50 site-caddy-1`
 - Caddy ayarını geri almak: Caddyfile'ın yanında `Caddyfile.yedek-TARIH` dosyası var; içeriğini geri kopyalayıp `docker exec -w /etc/caddy site-caddy-1 caddy reload --config /etc/caddy/Caddyfile` çalıştırın.
 - **"Traefik'i Dağıt" butonuna basmayın**: Caddy ile çakışır, ana site kapanır.
+
+## Otomatik güncelleme (GitHub → sunucu)
+
+Bir kez açılır; sonra `claude/upbeat-galileo-qa75b3` dalına her gönderimde GitHub önce derler ve
+testleri çalıştırır, testler geçerse sunucuya kendisi kurar (yedek alır, panel ayağa kalkmazsa
+önceki sürüme döner). Elle zip/scp gerekmez.
+
+1. Sunucuda, proje klasöründe: `bash deploy/otomatik-kur.sh`
+2. Ekrana yazılan 3 değeri GitHub'da depo → Settings → Secrets and variables → Actions →
+   New repository secret ile aynı isimlerle ekleyin: `SUNUCU_ADRES`, `SUNUCU_PARMAK_IZI`, `SUNUCU_ANAHTAR`.
+3. GitHub → Actions → "Sunucuya gönder" → Run workflow ile ilk kurulumu deneyin.
+
+GitHub'ın anahtarı sunucuda yalnızca güncellemeyi çalıştırabilir; kabuk açamaz.
+Kayıtlar: `/var/log/batilmer-guncelle.log`. Kapatmak için: `bash deploy/otomatik-kur.sh kapat`
