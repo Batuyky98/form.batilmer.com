@@ -56,10 +56,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$ANAHTAR" > ~/.ssh/sunucu && chmod 600 ~/.ssh/sunucu
-          printf '%s\n' "$PARMAK_IZI" > ~/.ssh/known_hosts
+          printf '%s\n' "$ANAHTAR" | tr -d '\r' > ~/.ssh/sunucu && chmod 600 ~/.ssh/sunucu
+          ADRES="$(printf '%s' "$ADRES" | tr -d ' \r\n\t')"
           HOST="${ADRES%%:*}"; PORT=22
           [ "$HOST" != "$ADRES" ] && PORT="${ADRES##*:}"
+          KH_HOST="$HOST"; [ "$PORT" != 22 ] && KH_HOST="[$HOST]:$PORT"
+          # Parmak izinden sadece anahtar türü ve anahtarı al, adresi biz yazalım (kopyalarken oluşan farklar sorun olmasın)
+          KEY="$(printf '%s\n' "$PARMAK_IZI" | tr -d '\r' | grep -oE 'ssh-ed25519 [A-Za-z0-9+/=]+' | head -1 || true)"
+          if [ -n "$KEY" ]; then
+            echo "$KH_HOST $KEY" > ~/.ssh/known_hosts
+          else
+            echo "::warning::SUNUCU_PARMAK_IZI okunamadı; sunucunun anahtarı ilk bağlantıda alınıyor. deploy/otomatik-kur.sh çıktısındaki 2. satırı secret'a yeniden girin."
+            ssh-keyscan -p "$PORT" -t ed25519 "$HOST" 2>/dev/null > ~/.ssh/known_hosts
+          fi
           git archive --format=zip --prefix=batilmer-form-paneli/ -o paket.zip HEAD
           ssh -i ~/.ssh/sunucu -p "$PORT" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30 \
             "root@$HOST" < paket.zip
