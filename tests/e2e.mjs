@@ -153,6 +153,73 @@ console.log(users.map((x) => `${x.name}: ${x.formCount} form, ${x.notifyFormCoun
 e = await ex(rpc('a', 'deleteUser', users.find((x) => x.role === 'admin').id));
 ok(e, 'kendi Ana Admin hesabını silemez');
 
+// ---------------------------------------------------------------- WhatsApp hatırlatma + müşteri kartı
+const g = await rpc('a', 'getForm', fid);
+for (const d of [0, 1, 2, 3, 4, 5, 6]) g.draft.randevu.hours[d] = [{ start: '09:00', end: '18:00' }];
+g.draft.randevu.minNoticeHours = 0;
+g.draft.randevu.wa = { enabled: true, when: 'once', notifyAt: new Date(Date.now() + 3 * 3600e3).toISOString().slice(11, 16), text: 'Merhaba {ad}, {hayvan_adi} için {gun} saat {saat} randevunuz var. İptal: {iptal_linki}' };
+await rpc('a', 'saveDraft', fid, g.draft);
+await rpc('a', 'publishForm', fid, {});
+const tomorrow = new Date(Date.now() + 864e5 + 3 * 3600e3).toISOString().slice(0, 10);
+const submitT = async (name, phone, pet, i) => { const sl = await rpc('p', 'getAvailability', f.slug, { date: tomorrow, serviceId: 'svc_muayene' }); return rpc('p', 'submitForm', f.slug, { ad_soyad: name, telefon: phone, email: `${pet.toLowerCase()}@x.com`, hayvan_adi: pet, hayvan_turu: '🐱 Kedi', randevu: { date: tomorrow, time: sl[i].time, serviceId: 'svc_muayene' } }, { startedAt: Date.now() - 5000, kvkkAccepted: true }); };
+await submitT('Ali Veli', '+90 532 111 22 33', 'Pamuk', 3);
+await submitT('Zeynep Kaya', '0212 555 11 22', 'Boncuk', 8);
+let rem = await rpc('v', 'listReminders', { day: 'yarin' });
+const ali = rem.items.find((x) => x.name === 'Ali Veli');
+ok(ali && ali.waUrl.startsWith('https://wa.me/905321112233?text=') && ali.text.includes('Pamuk') && ali.text.includes('yarın') && ali.text.includes('/iptal/'), 'hatırlatma: WhatsApp linki ve hazır metin');
+ok(rem.items.find((x) => x.name === 'Zeynep Kaya')?.waUrl === '', 'sabit hatta WhatsApp düğmesi yok');
+ok(ali.customerKey === '5321112233' && !ali.firstTime, 'aynı telefon eski kayıtla eşleşti (ilk kez değil)');
+ok(rem.counts.yarin === 2, 'yarın sayısı');
+await rpc('v', 'markReminded', ali.id, true);
+rem = await rpc('a', 'listReminders', { day: 'yarin' });
+ok(rem.items.find((x) => x.id === ali.id).waBy === 'Veteriner', 'hatırlatıldı işareti herkeste görünüyor');
+await rpc('a', 'markReminded', ali.id, false);
+ok(!(await rpc('a', 'listReminders', { day: 'yarin' })).items.find((x) => x.id === ali.id).waAt, 'geri alındı');
+
+// günlük "hatırlatmaları gönderin" bildirimi (zamanlayıcı doğrudan çalıştırılır)
+await rpc('a', 'setPermission', vet.id, fid, { view: true, randevu: true, notify: true });
+process.env.DB_DRIVER = 'sqlite';
+process.env.DATA_DIR = DATA;
+const { connect } = await import('../server/src/db.js');
+const { _test: sched } = await import('../server/src/scheduler.js');
+const sdb = await connect();
+await sched.dailyReminderNotice(sdb);
+await sched.dailyReminderNotice(sdb);
+const hn = (await rpc('vbg', 'pollNotifications', 0)).items.filter((x) => x.kind === 'hatirlatma');
+ok(hn.length === 1 && hn[0].body.includes('Yarın 2 randevu') && !hn[0].body.includes('Ali'), 'günlük hatırlatma bildirimi bir kez, kişisel veri yok: ' + hn[0]?.body);
+
+// müşteri kartı
+const cl = await rpc('a', 'listCustomers', {});
+const cAli = cl.items.find((x) => x.key === '5321112233');
+ok(cAli && cAli.records === 2 && cAli.name === 'Ali Veli', 'müşteri listesi: aynı telefon tek müşteri');
+ok((await rpc('a', 'listCustomers', { q: '0532 111' })).items.some((x) => x.key === '5321112233'), 'telefonla arama');
+ok((await rpc('a', 'listCustomers', { q: 'zeynep' })).items.length === 1, 'isimle arama');
+const card = await rpc('v', 'getCustomer', '05321112233');
+ok(card.items.length === 2 && card.stats.iptal === 1 && card.upcoming.length === 1 && card.items.some((i) => i.details.some((d) => d.value === 'Pamuk')), 'müşteri kartı: geçmiş, iptal, yaklaşan randevu, hayvan adı');
+const note = await rpc('v', 'addCustomerNote', '5321112233', fid, 'Kuduz aşısı Mart 2027');
+ok((await rpc('a', 'getCustomer', '5321112233')).notes[0].text === 'Kuduz aşısı Mart 2027', 'müşteri notu');
+const nobody = await rpc('a', 'createUser', { name: 'Yetkisiz', email: 'yok@test.com', password: 'Yok.Sifre1234' });
+await rpc('n', 'login', 'yok@test.com', 'Yok.Sifre1234');
+await rpc('n', 'changePassword', 'Yok.Sifre1234', 'Yok.Sifre12345');
+e = await ex(rpc('n', 'getCustomer', '5321112233'));
+ok(e?.code === 'yok', 'yetkisiz kullanıcı müşteri kartını göremez');
+ok((await rpc('n', 'listCustomers', {})).items.length === 0 && (await rpc('n', 'listReminders', {})).items.length === 0, 'yetkisiz kullanıcıya liste boş');
+e = await ex(rpc('n', 'deleteCustomerNote', note.id));
+ok(e, 'yetkisiz kullanıcı not silemez');
+await rpc('a', 'deleteCustomerNote', note.id);
+ok((await rpc('a', 'getCustomer', '5321112233')).notes.length === 0, 'Ana Admin notu sildi');
+void nobody;
+
+// logo: sadece küçük resim kabul edilir
+const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const lg = await rpc('a', 'getForm', fid);
+lg.draft.appearance.logo = png;
+await rpc('a', 'saveDraft', fid, lg.draft);
+ok((await rpc('a', 'getForm', fid)).draft.appearance.logo === png, 'logo kaydedildi');
+lg.draft.appearance.logo = 'javascript:alert(1)';
+await rpc('a', 'saveDraft', fid, lg.draft);
+ok((await rpc('a', 'getForm', fid)).draft.appearance.logo === '', 'geçersiz logo reddedildi');
+
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));
 ok(e, 'kullanıcı test kayıtlarını silemez');
@@ -162,3 +229,4 @@ const before2 = (await rpc('a', 'listSubmissions', fid)).rows.length;
 const pr = await rpc('a', 'purgeFormData', fid, f.slug);
 ok(before2 > 0 && pr.deleted === before2 && (await rpc('a', 'listSubmissions', fid)).rows.length === 0, `test kayıtları temizlendi (${pr.deleted})`);
 ok((await rpc('a', 'getForm', fid)).draft.fields.length > 0, 'form alanları duruyor');
+

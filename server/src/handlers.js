@@ -20,6 +20,7 @@ import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/l
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
+import { phoneKey, phonePretty, fillReminder, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
 
 // ---------------------------------------------------------------- hata
 export class ApiError extends Error {
@@ -100,7 +101,7 @@ function mapAppt(r) {
     id: r.id, formId: r.form_id, submissionId: r.submission_id, serviceId: r.service_id, resourceId: r.resource_id,
     date: r.date, start: r.start, end: r.end_time, buffer: Number(r.buffer), partySize: Number(r.party_size), status: r.status,
     cancelToken: r.cancel_token, cancelledBy: r.cancelled_by, reminderSent: !!Number(r.reminder_sent),
-    contact: J(r.contact, {}), lang: r.lang, source: r.source, createdAt: num(r.created_at)
+    contact: J(r.contact, {}), lang: r.lang, source: r.source, createdAt: num(r.created_at), waAt: num(r.wa_at), waBy: r.wa_by || ''
   };
 }
 const panelAppt = (a) => {
@@ -875,7 +876,19 @@ function cleanDraft(draft, prev, user) {
   }
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
+  const wa = next.randevu.wa || {};
+  next.randevu.wa = {
+    enabled: wa.enabled !== false,
+    when: ['once', 'ayni', 'ikisi'].includes(wa.when) ? wa.when : DEFAULT_WA.when,
+    notifyAt: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(wa.notifyAt || '')) ? wa.notifyAt : DEFAULT_WA.notifyAt,
+    text: String(wa.text || '').slice(0, 1000)
+  };
   if (!FORM_STYLES.some((x) => x.id === next.appearance.style)) next.appearance.style = 'yuzen';
+  // Logo: sadece küçük png/jpeg/webp resim (panel yüklerken 400px'e küçültür)
+  const logo = String(next.appearance.logo || '');
+  next.appearance.logo = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo) && logo.length <= 400_000 ? logo : '';
+  if (!['kucuk', 'orta', 'buyuk'].includes(next.appearance.logoSize)) next.appearance.logoSize = 'orta';
+  if (!['sol', 'orta'].includes(next.appearance.logoAlign)) next.appearance.logoAlign = 'orta';
   next.settings.address = str(next.settings.address, 300);
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
@@ -1193,8 +1206,8 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         await q('INSERT INTO files (id, form_id, submission_id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [up.id, form.id, sub.id, up.name, up.mime, up.buffer.length, now()]);
       }
 
-      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)', [
-        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
+      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)', [
+        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now(), phoneKey(contact.phone) || null
       ]);
 
       const ar = c.settings.autoReply;
@@ -1434,6 +1447,205 @@ H.listAllAppointments = async (ctx, { from, to } = {}) => {
   };
 };
 
+// ---------------------------------------------------------------- WhatsApp hatırlatma
+// Personel listeden tek tıkla WhatsApp'ı açar, mesaj hazır gelir; gönder'e kendisi basar.
+async function permittedForms(q, user, perm, { randevu = false } = {}) {
+  const out = [];
+  for (const f of (await q('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm)) {
+    const c = content(f);
+    if (randevu && !c.fields.some((x) => x.type === 'randevu')) continue;
+    if ((await permsFor(q, user, f.id))[perm]) out.push(f);
+  }
+  return out;
+}
+
+const subContact = (row) => {
+  const types = J(row.types, {});
+  const labels = J(row.labels, {});
+  const fields = Object.keys(types).map((key) => ({ key, type: types[key], label: labels[key] || key }));
+  return contactFrom(fields, J(row.vals, {}));
+};
+
+// Telefon anahtarlarına göre geçmiş: kaç kez geldi / gelmedi
+async function historyByPhone(q, formIds, keys) {
+  const out = {};
+  if (!formIds.length || !keys.length) return out;
+  const rows = await q(
+    `SELECT s.phone_key, a.status FROM submissions s JOIN appointments a ON a.id = s.appointment_id
+     WHERE s.form_id IN (${ph(formIds)}) AND s.phone_key IN (${ph(keys)}) AND s.deleted_at IS NULL`,
+    [...formIds, ...keys]
+  );
+  for (const r of rows) {
+    const h = (out[r.phone_key] ||= { total: 0, geldi: 0, gelmedi: 0 });
+    h.total += 1;
+    if (r.status === 'geldi') h.geldi += 1;
+    if (r.status === 'gelmedi') h.gelmedi += 1;
+  }
+  return out;
+}
+
+H.listReminders = async (ctx, { day = 'yarin' } = {}) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const dates = { bugun: today(), yarin: addDays(today(), 1) };
+  const date = dates[day] || dates.yarin;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => content(f).randevu.wa?.enabled !== false);
+  const empty = { date, items: [], counts: { bugun: 0, yarin: 0 }, forms: [] };
+  if (!forms.length) return empty;
+  const ids = forms.map((f) => f.id);
+  const counts = {};
+  for (const [k, d] of Object.entries(dates)) {
+    counts[k] = Number((await q(`SELECT COUNT(*) AS c FROM appointments WHERE form_id IN (${ph(ids)}) AND date = ? AND status IN ${PENDING_SQL}`, [...ids, d]))[0].c);
+  }
+  const appts = (await q(`SELECT * FROM appointments WHERE form_id IN (${ph(ids)}) AND date = ? AND status IN ${PENDING_SQL} ORDER BY start`, [...ids, date])).map(mapAppt);
+  const subIds = appts.map((a) => a.submissionId);
+  const subs = subIds.length ? await q(`SELECT id, vals, phone_key FROM submissions WHERE id IN (${ph(subIds)})`, subIds) : [];
+  const subMap = Object.fromEntries(subs.map((r) => [r.id, r]));
+  const keyOf = (a) => subMap[a.submissionId]?.phone_key || phoneKey(a.contact?.phone);
+  const hist = await historyByPhone(q, ids, [...new Set(appts.map(keyOf).filter(Boolean))]);
+  const items = appts.map((a) => {
+    const form = forms.find((f) => f.id === a.formId);
+    const c = content(form);
+    const cfg = c.randevu;
+    const svc = serviceById(cfg, a.serviceId)?.name || '';
+    const res = (cfg.resources || []).find((r) => r.id === a.resourceId)?.name || '';
+    const isletme = form.isletme || form.name;
+    const text = fillReminder(cfg.wa?.text, { name: a.contact?.name, date: a.date, start: a.start, isletme, service: svc, resource: res, partySize: a.partySize, cancelUrl: cancelUrl(a) }, J(subMap[a.submissionId]?.vals, {}));
+    const key = keyOf(a);
+    const h = hist[key] || { total: 0, geldi: 0, gelmedi: 0 };
+    return {
+      id: a.id, formId: a.formId, isletme, formName: form.name, date: a.date, start: a.start, end: a.end, status: a.status,
+      name: a.contact?.name || '', phone: phonePretty(a.contact?.phone), phoneOk: !!a.contact?.phone && waPhoneOk(a.contact.phone),
+      waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '', text,
+      emailAuto: !!(a.contact?.email && customerMails(c)), emailSent: !!(a.contact?.email && customerMails(c) && a.reminderSent),
+      service: svc, resource: res, partySize: a.partySize, waAt: a.waAt, waBy: a.waBy,
+      customerKey: key, visits: h.geldi, noShow: h.gelmedi, firstTime: h.total <= 1
+    };
+  });
+  return { date, items, counts, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+H.markReminded = async (ctx, id, done = true) => {
+  return ctx.db.tx(async (q) => {
+    const a = await loadAppt(q, String(id || ''));
+    if (!a) fail('Randevu bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, a.formId, 'randevu');
+    if (done) await q('UPDATE appointments SET wa_at = ?, wa_by = ? WHERE id = ?', [now(), str(user.name, 150), a.id]);
+    else await q('UPDATE appointments SET wa_at = NULL, wa_by = NULL WHERE id = ?', [a.id]);
+    return done ? { waAt: now(), waBy: user.name } : { waAt: null, waBy: '' };
+  });
+};
+
+// ---------------------------------------------------------------- müşteri kartı
+// Müşteri = telefon numarası. Kullanıcı sadece görme yetkisi olduğu formlardaki kayıtları görür.
+H.listCustomers = async (ctx, { q: search = '' } = {}) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = await permittedForms(q, user, 'view');
+  if (!forms.length) return { items: [], total: 0 };
+  const ids = forms.map((f) => f.id);
+  const rows = await q(`SELECT id, form_id, vals, types, labels, phone_key, appointment_id, created_at FROM submissions WHERE form_id IN (${ph(ids)}) AND deleted_at IS NULL AND phone_key IS NOT NULL ORDER BY created_at DESC LIMIT 20000`, ids);
+  const appts = Object.fromEntries((await q(`SELECT id, status, date, start FROM appointments WHERE form_id IN (${ph(ids)})`, ids)).map((a) => [a.id, a]));
+  const map = new Map();
+  for (const r of rows) {
+    let c = map.get(r.phone_key);
+    if (!c) {
+      const ct = subContact(r);
+      c = { key: r.phone_key, name: ct.name, phone: phonePretty(r.phone_key), email: ct.email, records: 0, visits: 0, noShow: 0, last: 0, next: '', forms: new Set() };
+      map.set(r.phone_key, c);
+    }
+    if (!c.name) c.name = subContact(r).name;
+    c.records += 1;
+    c.last = Math.max(c.last, num(r.created_at));
+    const f = forms.find((x) => x.id === r.form_id);
+    if (f) c.forms.add(f.isletme || f.name);
+    const a = appts[r.appointment_id];
+    if (a) {
+      if (a.status === 'geldi') c.visits += 1;
+      if (a.status === 'gelmedi') c.noShow += 1;
+      if (a.date >= today() && ['bekliyor', 'onaylandi'].includes(a.status) && (!c.next || `${a.date} ${a.start}` < c.next)) c.next = `${a.date} ${a.start}`;
+    }
+  }
+  const s = String(search || '').trim().toLocaleLowerCase('tr');
+  const digits = s.replace(/\D/g, '');
+  let items = [...map.values()].map((c) => ({ ...c, forms: [...c.forms] }));
+  if (s) items = items.filter((c) => c.name.toLocaleLowerCase('tr').includes(s) || (digits.length >= 3 && c.key.includes(phoneKey(digits) || digits.replace(/^0/, ''))));
+  return { items: items.slice(0, 300), total: items.length };
+};
+
+H.getCustomer = async (ctx, key) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const pk = phoneKey(key);
+  if (!pk) fail('Geçersiz telefon.');
+  const forms = await permittedForms(q, user, 'view');
+  const ids = forms.map((f) => f.id);
+  const rows = ids.length ? (await q(`SELECT * FROM submissions WHERE form_id IN (${ph(ids)}) AND phone_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500`, [...ids, pk])).map(mapSub) : [];
+  if (!rows.length) fail('Bu numarayla kayıt bulunamadı.', 'yok', 404);
+  const apptIds = rows.map((r) => r.appointmentId).filter(Boolean);
+  const appts = apptIds.length ? Object.fromEntries((await q(`SELECT * FROM appointments WHERE id IN (${ph(apptIds)})`, apptIds)).map(mapAppt).map((a) => [a.id, a])) : {};
+  let name = '';
+  let email = '';
+  const stats = { records: rows.length, appointments: 0, geldi: 0, gelmedi: 0, iptal: 0 };
+  const upcoming = [];
+  const items = rows.map((r) => {
+    const form = forms.find((f) => f.id === r.formId);
+    const c = content(form);
+    const fields = r.order.map((k) => ({ key: k, type: r.types[k], label: r.labels[k] || k }));
+    const ct = contactFrom(fields, r.values);
+    name ||= ct.name;
+    email ||= ct.email;
+    const a = appts[r.appointmentId];
+    let appt = null;
+    if (a) {
+      stats.appointments += 1;
+      if (stats[a.status] !== undefined) stats[a.status] += 1;
+      appt = { id: a.id, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(c.randevu, a.serviceId)?.name || '', resource: (c.randevu.resources || []).find((x) => x.id === a.resourceId)?.name || '' };
+      if (a.date >= today() && ['bekliyor', 'onaylandi'].includes(a.status)) upcoming.push({ ...appt, formId: form.id, isletme: form.isletme || form.name });
+    }
+    // Kartta kısa özet: iletişim ve randevu dışındaki alanlar (hayvan adı, şikâyet…)
+    const details = fields
+      .filter((f) => !['tel', 'email', 'randevu', 'dosya', 'tc'].includes(f.type) && String(r.values[f.key] ?? '').trim() && r.values[f.key] !== ct.name)
+      .slice(0, 6)
+      .map((f) => ({ label: f.label, value: displayValue(f.type, r.values[f.key], c.randevu) }));
+    return { id: r.id, formId: r.formId, formName: form.name, isletme: form.isletme || form.name, createdAt: r.createdAt, status: r.status, manual: r.manual, notesCount: r.notes.length, appt, details };
+  });
+  const notes = ids.length
+    ? (await q(`SELECT * FROM customer_notes WHERE phone_key = ? AND form_id IN (${ph(ids)}) ORDER BY created_at DESC LIMIT 200`, [pk, ...ids])).map((n) => ({
+        id: n.id, formId: n.form_id, text: n.text, by: n.user_name, at: num(n.created_at), mine: n.user_id === user.id || user.role === 'admin'
+      }))
+    : [];
+  upcoming.sort((x, y) => `${x.date}${x.start}`.localeCompare(`${y.date}${y.start}`));
+  const noteForms = [...new Map(items.map((i) => [i.formId, { id: i.formId, name: i.isletme === i.formName ? i.formName : `${i.isletme} – ${i.formName}` }])).values()];
+  return { key: pk, name, phone: phonePretty(pk), phoneRaw: pk, email, stats, upcoming, items, notes, noteForms, firstAt: rows[rows.length - 1].createdAt, lastAt: rows[0].createdAt };
+};
+
+H.addCustomerNote = async (ctx, key, formId, text) => {
+  return ctx.db.tx(async (q) => {
+    const { user, form } = await requirePerm(ctx, q, formId, 'view');
+    const pk = phoneKey(key);
+    const t = String(text || '').trim().slice(0, 2000);
+    if (!pk || !t) fail('Not boş olamaz.');
+    const has = await q('SELECT id FROM submissions WHERE form_id = ? AND phone_key = ? AND deleted_at IS NULL LIMIT 1', [form.id, pk]);
+    if (!has.length) fail('Bu müşterinin bu formda kaydı yok.');
+    const id = uid('cn_');
+    await q('INSERT INTO customer_notes (id, form_id, phone_key, user_id, user_name, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, form.id, pk, user.id, str(user.name, 150), t, now()]);
+    return { id, formId: form.id, text: t, by: user.name, at: now(), mine: true };
+  });
+};
+
+H.deleteCustomerNote = async (ctx, id) => {
+  return ctx.db.tx(async (q) => {
+    const user = await requireUser(ctx);
+    const n = (await q('SELECT * FROM customer_notes WHERE id = ?', [String(id || '')]))[0];
+    if (!n) fail('Not bulunamadı.', 'yok', 404);
+    await requirePerm(ctx, q, n.form_id, 'view');
+    if (n.user_id !== user.id && user.role !== 'admin') fail('Sadece kendi notunuzu silebilirsiniz.', 'yetki', 403);
+    await q('DELETE FROM customer_notes WHERE id = ?', [n.id]);
+    return true;
+  });
+};
+
 H.adminSlots = async (ctx, formId, { date, serviceId, resourceId, partySize, excludeId } = {}) => {
   const q = ctx.db.query;
   const { form } = await requirePerm(ctx, q, formId, 'randevu');
@@ -1499,7 +1711,7 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
     a.start = time;
     a.end = endTime(cfg, a.serviceId, time);
     a.resourceId = check.resourceId;
-    await q('UPDATE appointments SET date = ?, start = ?, end_time = ?, resource_id = ?, reminder_sent = 0 WHERE id = ?', [a.date, a.start, a.end, a.resourceId, id]);
+    await q('UPDATE appointments SET date = ?, start = ?, end_time = ?, resource_id = ?, reminder_sent = 0, wa_at = NULL, wa_by = NULL WHERE id = ?', [a.date, a.start, a.end, a.resourceId, id]);
     const sub = await loadSub(q, a.submissionId);
     if (sub) {
       const rKey = Object.keys(sub.types).find((k) => sub.types[k] === 'randevu');
@@ -1546,8 +1758,8 @@ H.createManualAppointment = async (ctx, formId, { name, phone, email, note, date
     await q('INSERT INTO appointments (id, form_id, submission_id, service_id, resource_id, date, start, end_time, buffer, party_size, status, cancel_token, reminder_sent, contact, lang, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)', [
       appt.id, form.id, subId, appt.serviceId, appt.resourceId, date, time, appt.end, appt.buffer, ps, 'onaylandi', appt.cancelToken, S(contact), lang, 'manuel', now()
     ]);
-    await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)', [
-      subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now()
+    await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)', [
+      subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now(), phoneKey(contact.phone) || null
     ]);
     const biz = form.isletme || form.name;
     if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
@@ -1670,7 +1882,7 @@ H.purgeFormData = async (ctx, formId, confirmSlug) => {
     if (String(confirmSlug || '').trim() !== form.slug) fail('Onay için formun linkini aynen yazın.');
     const ids = (await q('SELECT id FROM files WHERE form_id = ?', [form.id])).map((r) => r.id);
     const [{ c: subs }] = await q('SELECT COUNT(*) AS c FROM submissions WHERE form_id = ?', [form.id]);
-    for (const t of ['files', 'appointments', 'submissions', 'notifications']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
+    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
     await log(q, admin.id, `Test kayıtlarını temizledi (${Number(subs)} kayıt)`, form.name);
     return { ids, subs: Number(subs) };
   });
@@ -1685,7 +1897,7 @@ H.purgeItem = async (ctx, kind, id) => {
     if (kind === 'form') {
       if (!(await q('SELECT id FROM forms WHERE id = ? AND deleted_at IS NOT NULL', [id])).length) fail('Bulunamadı.', 'yok', 404);
       files = (await q('SELECT id FROM files WHERE form_id = ?', [id])).map((r) => r.id);
-      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
+      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
       await q('DELETE FROM forms WHERE id = ?', [id]);
     } else if (kind === 'submission') {
       const s = (await q('SELECT * FROM submissions WHERE id = ? AND deleted_at IS NOT NULL', [id]))[0];

@@ -113,6 +113,7 @@ async function migrate(db) {
       const sql = /^\s*CREATE TABLE/i.test(stmt) ? db.ddl(stmt) : stmt;
       await db.query(sql);
     }
+    if (m.after) await m.after(db);
     await db.query('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)', [m.version, Date.now()]);
     console.log(`[db] migration ${m.version} uygulandı: ${m.name}`);
   }

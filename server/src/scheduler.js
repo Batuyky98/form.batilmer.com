@@ -1,7 +1,8 @@
 // Zamanlanmış işler: randevu hatırlatmaları, saklama süresi dolan kayıtların silinmesi, eski oturumların temizliği
 import { removeUploads } from './files.js';
 import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails } from './handlers.js';
-import { today, addDays, dateTimeToMs } from '../../src/lib/util.js';
+import { today, addDays, dateTimeToMs, nowMinutesTR, timeToMin, uid } from '../../src/lib/util.js';
+import { reminderTargets } from '../../src/lib/reminder.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { STATUS_LABELS } from '../../src/lib/shared.js';
 
@@ -30,6 +31,42 @@ async function reminders(db) {
   }
 }
 
+// Her gün ayarlanan saatte (varsayılan 10:00) personele "hatırlatmaları gönderin" bildirimi.
+// Bildirimde kişisel veri yok: sadece işletme adı ve randevu sayısı.
+async function dailyReminderNotice(db) {
+  const nowMin = nowMinutesTR();
+  const day = today();
+  const forms = (await db.query('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm);
+  for (const form of forms) {
+    const c = content(form);
+    if (!c.fields?.some((f) => f.type === 'randevu')) continue;
+    const wa = c.randevu.wa || {};
+    if (wa.enabled === false) continue;
+    const at = timeToMin(wa.notifyAt || '10:00');
+    // Sunucu o saatte kapalıysa en geç 3 saat sonrasına kadar telafi eder; gece geç saatte göndermez
+    if (nowMin < at || nowMin > at + 180) continue;
+    if ((await db.query('SELECT 1 AS x FROM reminder_runs WHERE form_id = ? AND day = ?', [form.id, day])).length) continue;
+    try {
+      await db.query('INSERT INTO reminder_runs (form_id, day, created_at) VALUES (?, ?, ?)', [form.id, day, Date.now()]);
+    } catch {
+      continue; // başka bir döngü aynı anda yazdı
+    }
+    const parts = [];
+    let total = 0;
+    for (const d of reminderTargets(wa.when, day)) {
+      const n = Number((await db.query("SELECT COUNT(*) AS c FROM appointments WHERE form_id = ? AND date = ? AND status IN ('bekliyor','onaylandi') AND wa_at IS NULL", [form.id, d]))[0].c);
+      total += n;
+      if (n) parts.push(`${d === day ? 'Bugün' : 'Yarın'} ${n} randevu`);
+    }
+    if (!total) continue;
+    const biz = form.isletme || form.name;
+    const url = `/panel/hatirlatmalar${reminderTargets(wa.when, day)[0] === day ? '?gun=bugun' : ''}`;
+    await db.query('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+      uid('n_'), form.id, 'hatirlatma', 'Hatırlatma zamanı 📲', `${biz} · ${parts.join(' · ')}. Dokunun, liste hazır.`.slice(0, 500), url, Date.now()
+    ]);
+  }
+}
+
 async function retention(db) {
   const forms = (await db.query('SELECT * FROM forms')).map(mapForm);
   for (const form of forms) {
@@ -49,6 +86,8 @@ async function retention(db) {
       return f;
     });
     await removeUploads(files);
+    // Kaydı kalmayan müşterinin notları da silinir
+    await db.query('DELETE FROM customer_notes WHERE form_id = ? AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)', [form.id, form.id]);
   }
 }
 
@@ -61,6 +100,7 @@ async function cleanup(db) {
   // Panel bildirim akışı 30 gün tutulur
   await db.query('DELETE FROM notifications WHERE created_at < ?', [Date.now() - 30 * 864e5]);
   await db.query('DELETE FROM sessions WHERE created_at < ?', [Date.now() - 24 * 3600000]);
+  await db.query('DELETE FROM reminder_runs WHERE created_at < ?', [Date.now() - 14 * 864e5]);
 }
 
 export function startScheduler(db) {
@@ -73,6 +113,7 @@ export function startScheduler(db) {
   };
   const timers = [
     setInterval(safe('hatirlatma', reminders), 60 * 1000),
+    setInterval(safe('wa-bildirim', dailyReminderNotice), 60 * 1000),
     setInterval(safe('saklama', retention), 60 * 60 * 1000),
     setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000)
   ];
@@ -83,4 +124,4 @@ export function startScheduler(db) {
   return () => timers.forEach(clearInterval);
 }
 
-export const _test = { reminders, retention, cleanup };
+export const _test = { reminders, retention, cleanup, dailyReminderNotice };

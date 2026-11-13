@@ -19,6 +19,8 @@ import Stats from './pages/Stats.jsx';
 import AllCalendar from './pages/AllCalendar.jsx';
 import Security from './pages/Security.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
+import Reminders from './pages/Reminders.jsx';
+import Customers, { CustomerCard } from './pages/Customers.jsx';
 import { registerWorker } from './lib/push.js';
 import { applyTheme } from './lib/theme.js';
 
@@ -29,6 +31,9 @@ const PANEL_ROUTES = [
   ['/panel/formlar/:id/randevular', Appointments],
   ['/panel/formlar/:id/istatistik', Stats],
   ['/panel/takvim', AllCalendar],
+  ['/panel/hatirlatmalar', Reminders],
+  ['/panel/musteriler', Customers],
+  ['/panel/musteriler/:tel', CustomerCard],
   ['/panel/kullanicilar', Users, true],
   ['/panel/cop-kutusu', Trash, true],
   ['/panel/islem-kayitlari', Logs, true],

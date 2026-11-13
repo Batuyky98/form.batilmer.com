@@ -109,3 +109,10 @@ export const purgeItem = call('purgeItem');
 export const listLogs = call('listLogs');
 export const listOutbox = call('listOutbox');
 export const clearOutbox = call('clearOutbox');
+// WhatsApp hatırlatma ve müşteri kartı (sunucu özellikleri; demo modunda boş döner)
+export const listReminders = serverOnly('listReminders', () => ({ date: '', items: [], counts: { bugun: 0, yarin: 0 }, forms: [] }));
+export const markReminded = serverOnly('markReminded', () => ({ waAt: Date.now(), waBy: '' }));
+export const listCustomers = serverOnly('listCustomers', () => ({ items: [], total: 0 }));
+export const getCustomer = serverOnly('getCustomer', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const addCustomerNote = serverOnly('addCustomerNote', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const deleteCustomerNote = serverOnly('deleteCustomerNote', () => true);

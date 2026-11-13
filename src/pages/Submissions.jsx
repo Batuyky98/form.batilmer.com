@@ -1,6 +1,7 @@
+import { phoneKey } from '../lib/reminder.js';
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '../lib/api.js';
-import { Link } from '../router.jsx';
+import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Modal, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
 import ContactButtons from '../components/ContactButtons.jsx';
 import { buildXlsx } from '../lib/xlsx.js';
@@ -67,6 +68,7 @@ function DetailModal({ sub, data, showTc, perms, onClose, onChanged, onDelete })
               <dd className="pre">
                 <ValueCell type={s.types[k]} value={s.values[k]} randevu={data.randevu} showTc={showTc} />
                 {s.types[k] === 'tel' && <ContactButtons phone={s.values[k]} className="dd-contact" />}
+                {s.types[k] === 'tel' && phoneKey(s.values[k]) && <a className="cu-link" href={`/panel/musteriler/${phoneKey(s.values[k])}`} onClick={(e) => { e.preventDefault(); navigate(`/panel/musteriler/${phoneKey(s.values[k])}`); }}>👤 Müşteri kartı</a>}
               </dd>
             </div>
           ))}
@@ -119,6 +121,13 @@ export default function Submissions({ id }) {
       const [f, d] = await Promise.all([api.getForm(id), api.listSubmissions(id, { q, from, to, status })]);
       setForm(f);
       setData(d);
+      // Müşteri kartından "Kaydı aç" ile gelindiyse o kaydı aç
+      const want = new URLSearchParams(window.location.search).get('kayit');
+      if (want && d.rows.some((r) => r.id === want)) {
+        setDetailIdState(want);
+        setDetailSnap(d.rows.find((r) => r.id === want));
+        window.history.replaceState(null, '', window.location.pathname);
+      }
     } catch (e) {
       setError(e.message);
     }

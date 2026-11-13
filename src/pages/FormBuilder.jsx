@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link } from '../router.jsx';
@@ -8,11 +8,12 @@ import { COLOR_FIELDS, FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabe
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
 import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
-import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
+import { addDays, clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
+import { DEFAULT_WA, DEFAULT_WA_TEXT, WA_VARS, fillReminder } from '../lib/reminder.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
@@ -313,6 +314,73 @@ const PALETTES = [
   { name: 'Siyah zarif', primary: '#111827', text: '#111827', colors: { fieldBorder: '#D1D5DB', selectedBg: '#111827' } }
 ];
 
+// Logo: seçilen resim tarayıcıda en fazla 400px'e küçültülür, forma gömülür (ayrı dosya sunucusu gerekmez)
+function shrinkImage(file, max = 400) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) return reject(new Error('PNG, JPG, WEBP veya SVG resim seçin.'));
+    if (file.size > 8 * 1024 * 1024) return reject(new Error('Resim en fazla 8 MB olabilir.'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
+      const w = Math.max(1, Math.round((img.naturalWidth || max) * k));
+      const h = Math.max(1, Math.round((img.naturalHeight || max) * k));
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      let out = c.toDataURL('image/png');
+      if (out.length > 380_000) out = c.toDataURL('image/webp', 0.85);
+      if (out.length > 380_000) out = c.toDataURL('image/jpeg', 0.8);
+      if (out.length > 380_000) return reject(new Error('Resim çok büyük; daha sade bir logo deneyin.'));
+      resolve(out);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Resim açılamadı.'));
+    };
+    img.src = url;
+  });
+}
+
+function LogoSection({ a, set }) {
+  const toast = useToast();
+  const ref = useRef(null);
+  async function pick(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      set({ logo: await shrinkImage(file) });
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  }
+  return (
+    <section className="sub-card stack">
+      <h3>Logo</h3>
+      <div className="logo-row">
+        <div className={`logo-box ${a.logo ? 'has' : ''}`}>{a.logo ? <img src={a.logo} alt="Logo" /> : <span className="muted small">Logo yok</span>}</div>
+        <div className="stack-sm">
+          <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={pick} />
+          <div className="row wrap">
+            <button type="button" className="btn" onClick={() => ref.current?.click()}>{a.logo ? 'Değiştir' : 'Logo yükle'}</button>
+            {a.logo && <button type="button" className="btn btn-ghost" onClick={() => set({ logo: '' })}>Kaldır</button>}
+          </div>
+          <div className="pf-hint">Formun en üstünde görünür. PNG (şeffaf zeminli) en iyisidir; resim otomatik küçültülür.</div>
+        </div>
+      </div>
+      {a.logo && (
+        <div className="row wrap" style={{ gap: 16 }}>
+          <Field label="Boyut"><Segmented label="Logo boyutu" value={a.logoSize || 'orta'} onChange={(v) => set({ logoSize: v })} options={[{ value: 'kucuk', label: 'Küçük' }, { value: 'orta', label: 'Orta' }, { value: 'buyuk', label: 'Büyük' }]} /></Field>
+          <Field label="Hizalama"><Segmented label="Logo hizası" value={a.logoAlign || 'orta'} onChange={(v) => set({ logoAlign: v })} options={[{ value: 'sol', label: 'Sol' }, { value: 'orta', label: 'Orta' }]} /></Field>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AppearanceTab({ draft, setDraft }) {
   const a = draft.appearance;
   const s = draft.settings;
@@ -330,6 +398,8 @@ function AppearanceTab({ draft, setDraft }) {
         <div className="pf-hint">Bir tasarıma tıklayın; renkleri, yazı tipi ve köşeleri tek seferde değişir. Sağdaki önizlemede hemen görünür, müşteriye <b>Yayınla</b> deyince geçer. Sonra renkleri aşağıdan dilediğiniz gibi ayarlayabilirsiniz.</div>
         <StylePicker value={a.style || DEFAULT_STYLE} onChange={(id) => setDraft({ ...draft, appearance: applyFormStyle(a, id) })} />
       </section>
+
+      <LogoSection a={a} set={set} />
 
       <section className="sub-card stack">
         <h3>Başlık</h3>
@@ -639,7 +709,7 @@ function PurgeData({ form }) {
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
 
-function RandevuTab({ draft, setDraft, isAdmin }) {
+function RandevuTab({ form, draft, setDraft, isAdmin }) {
   const cfg = draft.randevu || clone(DEFAULT_RANDEVU);
   const set = (patch) => setDraft({ ...draft, randevu: { ...cfg, ...patch } });
   const [closed, setClosed] = useState('');
@@ -796,6 +866,8 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
         )}
       </section>
 
+      <WaReminderSection form={form} draft={draft} cfg={cfg} set={set} />
+
       <section className="sub-card stack">
         <h3>Müşteriye SMS <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
         <Toggle id="sms-c" disabled={!isAdmin} checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
@@ -804,6 +876,61 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
         <div className="pf-hint">SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanana kadar SMS'ler gönderilmez, "Giden mailler" sayfasında görünür. SMS ücretlidir.</div>
       </section>
     </div>
+  );
+}
+
+// WhatsApp ile tek tık hatırlatma ayarları (ücretsiz; personel gönderir)
+function WaReminderSection({ form, draft, cfg, set }) {
+  const wa = { ...DEFAULT_WA, ...(cfg.wa || {}) };
+  const setWa = (patch) => set({ wa: { ...wa, ...patch } });
+  const ref = useRef(null);
+  const text = wa.text || DEFAULT_WA_TEXT;
+  const extra = draft.fields.filter((f) => ['text', 'radio', 'select'].includes(f.type) && !/ad.?soyad|isim|name/i.test(f.key)).slice(0, 6);
+  const svc = cfg.services?.[0]?.name || 'Muayene';
+  const sampleVals = Object.fromEntries(extra.map((f) => [f.key, f.options?.[0] || (f.key.includes('hayvan') ? 'Pamuk' : f.label)]));
+  const preview = fillReminder(text, { name: 'Ayşe Yılmaz', date: addDays(today(), 1), start: '14:00', isletme: form?.isletme || form?.name || 'İşletmeniz', service: svc, partySize: 1, cancelUrl: `${formBaseUrl().replace(/^https?:\/\//, '')}/iptal/…` }, sampleVals);
+  function insert(v) {
+    const el = ref.current;
+    const at = el ? el.selectionStart : text.length;
+    const next = text.slice(0, at) + v + text.slice(el ? el.selectionEnd : at);
+    setWa({ text: next });
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = at + v.length;
+    });
+  }
+  const hasTel = draft.fields.some((f) => f.type === 'tel');
+  return (
+    <section className="sub-card stack wa-set">
+      <div className="row-between">
+        <h3>📲 WhatsApp hatırlatma <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="wa-on" checked={wa.enabled} onChange={(v) => setWa({ enabled: v })} label={wa.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Personel "Hatırlatmalar" ekranında düğmeye basınca WhatsApp, müşterinin sohbetiyle ve bu mesaj hazır yazılı olarak açılır; gönder'e kendisi basar.</div>
+      {!hasTel && <div className="notice notice-warn">Formda telefon alanı yok; WhatsApp hatırlatması için bir telefon alanı ekleyin.</div>}
+      {wa.enabled && (
+        <>
+          <Field label="Ne zaman hatırlatılsın?">
+            <Segmented label="Hatırlatma zamanı" value={wa.when} onChange={(v) => setWa({ when: v })} options={[{ value: 'once', label: '1 gün önce' }, { value: 'ayni', label: 'Aynı gün' }, { value: 'ikisi', label: 'İkisi de' }]} />
+          </Field>
+          <Field label='Personele "hatırlatmaları gönderin" bildirimi' htmlFor="wa-at" hint="Bu formda bildirim tiki olan kullanıcıların telefonuna her gün bu saatte gelir.">
+            <input id="wa-at" type="time" className="auto-w" value={wa.notifyAt} onChange={(e) => setWa({ notifyAt: e.target.value || '10:00' })} />
+          </Field>
+          <Field label="Mesaj metni" htmlFor="wa-text">
+            <textarea id="wa-text" ref={ref} rows="4" value={text} onChange={(e) => setWa({ text: e.target.value })} />
+          </Field>
+          <div className="wa-vars">
+            {[...WA_VARS, ...extra.map((f) => [`{${f.key}}`, f.label])].map(([v, label]) => (
+              <button type="button" key={v} className="wa-var" title={label} onClick={() => insert(v)}>{label}</button>
+            ))}
+            {wa.text && <button type="button" className="nf-link" onClick={() => setWa({ text: '' })}>Varsayılana dön</button>}
+          </div>
+          <div className="pf-label">Önizleme</div>
+          <div className="wa-bubble">{preview}</div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -1021,7 +1148,7 @@ export default function FormBuilder({ id }) {
           {tab === 'alanlar' && <FieldsTab draft={draft} setDraft={setDraft} formId={id} />}
           {tab === 'gorunum' && <AppearanceTab draft={draft} setDraft={setDraft} />}
           {tab === 'ayarlar' && <SettingsTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} onMetaSaved={load} onControlSaved={(c) => setForm({ ...form, control: c })} />}
-          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
+          {tab === 'randevu' && <RandevuTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
           {tab === 'paylas' && <ShareTab form={form} />}
           {tab === 'gecmis' && <HistoryTab form={form} isAdmin={isAdmin} onRestored={load} />}
         </div>

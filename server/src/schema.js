@@ -214,5 +214,51 @@ export const MIGRATIONS = [
     version: 3,
     name: 'açık rıza onayı',
     up: ['ALTER TABLE submissions ADD COLUMN consent_at BIGINT NULL']
+  },
+  {
+    version: 4,
+    name: 'whatsapp hatırlatma ve müşteri kartı',
+    up: [
+      'ALTER TABLE appointments ADD COLUMN wa_at BIGINT NULL',
+      'ALTER TABLE appointments ADD COLUMN wa_by VARCHAR(150) NULL',
+      // Müşteriyi telefonla tanımak için (5321112233 biçiminde)
+      'ALTER TABLE submissions ADD COLUMN phone_key VARCHAR(20) NULL',
+      'CREATE INDEX idx_subs_phone ON submissions (phone_key)',
+      `CREATE TABLE customer_notes (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        user_name VARCHAR(150) NOT NULL,
+        text TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_cnotes_phone ON customer_notes (phone_key)',
+      // Günlük "hatırlatmaları gönderin" bildirimi aynı gün iki kez gitmesin
+      `CREATE TABLE reminder_runs (
+        form_id VARCHAR(40) NOT NULL,
+        day CHAR(10) NOT NULL,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (form_id, day)
+      )`
+    ],
+    // Eski kayıtların telefon anahtarını doldur
+    after: async (db) => {
+      const { phoneKey } = await import('../../src/lib/reminder.js');
+      const rows = await db.query('SELECT id, vals, types FROM submissions WHERE phone_key IS NULL');
+      for (const r of rows) {
+        let vals = {};
+        let types = {};
+        try {
+          vals = JSON.parse(r.vals || '{}');
+          types = JSON.parse(r.types || '{}');
+        } catch {
+          continue;
+        }
+        const key = Object.keys(types).find((k) => types[k] === 'tel' && vals[k]);
+        const pk = key ? phoneKey(vals[key]) : '';
+        if (pk) await db.query('UPDATE submissions SET phone_key = ? WHERE id = ?', [pk, r.id]);
+      }
+    }
   }
 ];

@@ -32,6 +32,10 @@ export const DEFAULT_APPEARANCE = {
   // Formun üstünde başlık: varsayılan KAPALI (sitede zaten başlık olur). Görünüm → "Forma başlık ekle" ile açılır.
   // (Eski "showHeader" ayarı artık kullanılmıyor; bu sürümde tüm formlarda başlık gizlenir.)
   titleOn: false,
+  // İşletme logosu (küçültülmüş resim, formun en üstünde). Boş = logo yok.
+  logo: '',
+  logoSize: 'orta', // 'kucuk' | 'orta' | 'buyuk'
+  logoAlign: 'orta', // 'sol' | 'orta'
   buttonText: 'Gönder',
   dark: false,
   // Ayrıntılı renkler: boş = otomatik (ana renk / yazı renginden). Formdaki her parça ayrı boyanabilir.
@@ -141,6 +145,7 @@ export function normalizeContent(c) {
   delete settings.notifyEmails;
   const randevu = { ...clone(DEFAULT_RANDEVU), ...(c.randevu || {}) };
   randevu.sms = { ...clone(DEFAULT_RANDEVU.sms), ...(c.randevu?.sms || {}) };
+  randevu.wa = { ...clone(DEFAULT_RANDEVU.wa), ...(c.randevu?.wa || {}) };
   const appearance = { ...clone(DEFAULT_APPEARANCE), ...(c.appearance || {}) };
   appearance.colors = { ...clone(DEFAULT_APPEARANCE.colors), ...(c.appearance?.colors || {}) };
   return {

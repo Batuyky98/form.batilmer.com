@@ -3,6 +3,7 @@
 // (SELECT ... FOR UPDATE ile) tekrar kontrol edilerek yazılmalı; böylece iki kişi aynı saati alamaz.
 
 import { addDays, dateTimeToMs, dayOfWeek, minToTime, timeToMin, today } from './util.js';
+import { DEFAULT_WA } from './reminder.js';
 
 export const DEFAULT_RANDEVU = {
   services: [{ id: 'svc1', name: 'Randevu', duration: 30, buffer: 0 }],
@@ -32,6 +33,8 @@ export const DEFAULT_RANDEVU = {
   cancelCutoffHours: 2,
   perContactLimit: 2,
   reminderHours: 24,
+  // WhatsApp ile tek tık hatırlatma (personel gönderir; ücretsiz)
+  wa: { ...DEFAULT_WA },
   sms: { confirm: false, reminder: false } // canlıda SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) ile gönderilecek
 };
 

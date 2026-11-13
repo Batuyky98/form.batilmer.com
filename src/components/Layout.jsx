@@ -16,12 +16,16 @@ const I = {
   menu: 'M4 7h16M4 12h16M4 17h16',
   shield: 'M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z',
   key: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3v-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7Z',
-  out: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10'
+  out: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  remind: 'M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5A8.4 8.4 0 1 1 21 11.5ZM12 8v4l2.5 1.5',
+  people: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1'
 };
 
 const NAV = [
   { to: '/panel', label: 'Formlar', icon: I.forms },
   { to: '/panel/takvim', label: 'Tüm randevular', short: 'Takvim', icon: I.cal },
+  { to: '/panel/hatirlatmalar', label: 'Hatırlatmalar', short: 'Hatırlat', icon: I.remind },
+  { to: '/panel/musteriler', label: 'Müşteriler', icon: I.people },
   { to: '/panel/bildirimler', label: 'Bildirimler', icon: I.bell },
   { to: '/panel/kullanicilar', label: 'Kullanıcılar', icon: I.users, admin: true },
   { to: '/panel/giden-mailler', label: 'Giden mailler', icon: I.mail, admin: true },
@@ -43,7 +47,7 @@ const isActive = (path, to) => (to === '/panel' ? path === '/panel' || path.star
 function TabBar({ onMenu, menuOpen }) {
   const { path } = useLocation();
   const live = useLive();
-  const tabs = [NAV[0], NAV[1], NAV[2]];
+  const tabs = [NAV[0], NAV[1], NAV[2], NAV[3]];
   return (
     <nav className="tabbar" aria-label="Hızlı menü">
       {tabs.map((t) => (

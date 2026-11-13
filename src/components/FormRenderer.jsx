@@ -492,6 +492,11 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
           <div className="bf-steps-meta"><span><b>{stepNo + 1}</b> / {steps.length} · {steps[stepNo].title}</span></div>
         </div>
       )}
+      {a.logo && (
+        <div className={`bf-logo bf-logo-${a.logoSize || 'orta'} bf-logo-${a.logoAlign === 'sol' ? 'sol' : 'orta'}`}>
+          <img src={a.logo} alt={s.title || 'Logo'} />
+        </div>
+      )}
       {a.titleOn === true && (s.title || s.description) && (
         <div className="bf-header">
           {s.title && <h2 className="bf-title">{s.title}</h2>}
