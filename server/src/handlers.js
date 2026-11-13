@@ -125,20 +125,39 @@ async function log(q, userId, action, target = '') {
   await q('INSERT INTO logs (id, user_id, action, target, at) VALUES (?, ?, ?, ?, ?)', [uid('l_'), userId, str(action, 300), str(target, 300), now()]);
 }
 
-async function mail(q, to, subject, body, kind = 'bilgi') {
+// ref: { formId, subId } → müşteriye giden mesaj o kayda bağlanır; kayıt kalıcı silinince mesaj da silinir
+async function mail(q, to, subject, body, kind = 'bilgi', ref = {}) {
   const list = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter(Boolean);
   for (const addr of list) {
-    await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-      uid('m_'), addr.slice(0, 190), str(subject, 300), String(body || '').slice(0, 20000), kind, 'mail', 'bekliyor', now()
+    await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at, form_id, submission_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      uid('m_'), addr.slice(0, 190), str(subject, 300), String(body || '').slice(0, 20000), kind, 'mail', 'bekliyor', now(), ref.formId || null, ref.subId || null
     ]);
   }
 }
 
-async function sms(q, phone, text) {
+async function sms(q, phone, text, ref = {}) {
   if (!phone) return;
-  await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-    uid('m_'), String(phone).slice(0, 30), 'SMS', String(text).slice(0, 1000), 'sms', 'sms', 'bekliyor', now()
+  await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at, form_id, submission_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    uid('m_'), String(phone).slice(0, 30), 'SMS', String(text).slice(0, 1000), 'sms', 'sms', 'bekliyor', now(), ref.formId || null, ref.subId || null
   ]);
+}
+
+// Kayıtları iz bırakmadan siler: kayıt, randevu, dosya kaydı, giden mail/SMS ve kaydı kalmayan müşterinin notları.
+// Diskteki dosyaların id'lerini döndürür (işlem bitince removeUploads ile silinir).
+async function forgetSubmissions(q, formId, ids) {
+  if (!ids.length) return [];
+  const files = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const part = ids.slice(i, i + 500);
+    const m = ph(part);
+    files.push(...(await q(`SELECT id FROM files WHERE submission_id IN (${m})`, part)).map((r) => r.id));
+    await q(`DELETE FROM files WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM outbox WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM appointments WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM submissions WHERE id IN (${m})`, part);
+  }
+  await q('DELETE FROM customer_notes WHERE form_id = ? AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)', [formId, formId]);
+  return files;
 }
 
 const cancelUrl = (appt) => `${config.publicUrl}/iptal/${appt.cancelToken}`;
@@ -944,7 +963,7 @@ H.publishForm = async (ctx, id, { note = '', cancelAffected = false } = {}) => {
         await q("UPDATE appointments SET status = 'iptal', cancelled_by = 'isletme' WHERE id = ?", [a.id]);
         if (a.contact?.email && customerMails(pub)) {
           const lang = a.lang || 'tr';
-          await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: form.isletme || form.name }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
+          await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: form.isletme || form.name }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu', { formId: a.formId, subId: a.submissionId });
         }
       }
       if (affected.length) await log(q, user.id, `${affected.length} randevuyu iptal etti (saat değişikliği)`, form.name);
@@ -1193,9 +1212,9 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         clean[rField.key] = { ...r, serviceId: svc.id, resourceId: check.resourceId };
         const pending = appt.status === 'bekliyor';
         if (contact.email && customerMails(c)) {
-          await mail(q, contact.email, tt(lang, pending ? 'mailRequestSubject' : 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, pending ? tt(lang, 'mailPendingText') : tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
+          await mail(q, contact.email, tt(lang, pending ? 'mailRequestSubject' : 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, pending ? tt(lang, 'mailPendingText') : tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: form.id, subId: sub.id });
         }
-        if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, pending ? 'smsPending' : 'smsConfirm', { x: biz, d: `${appt.date} ${appt.start}`, u: cancelUrl(appt) }));
+        if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, pending ? 'smsPending' : 'smsConfirm', { x: biz, d: `${appt.date} ${appt.start}`, u: cancelUrl(appt) }), { formId: form.id, subId: sub.id });
       }
 
       // Dosyaları diske yaz
@@ -1212,7 +1231,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
 
       const ar = c.settings.autoReply;
       if (ar?.enabled && contact.email && !appt && customerMails(c)) {
-        await mail(q, contact.email, fillTemplate(ar.subject, sub.labels, clean, c.randevu), fillTemplate(ar.body, sub.labels, clean, c.randevu), 'otomatik-cevap');
+        await mail(q, contact.email, fillTemplate(ar.subject, sub.labels, clean, c.randevu), fillTemplate(ar.body, sub.labels, clean, c.randevu), 'otomatik-cevap', { formId: form.id, subId: sub.id });
       }
       // Yetkili kişilere panel + telefon bildirimi (içerikte kişisel veri yok)
       await addNotice(q, form, 'yeni', appt, c.randevu);
@@ -1679,12 +1698,12 @@ H.setAppointmentStatus = async (ctx, id, status) => {
     await q('UPDATE appointments SET status = ?, cancelled_by = ? WHERE id = ?', [status, status === 'iptal' ? 'isletme' : a.cancelledBy, id]);
     if (prev !== status) {
       if (a.contact?.email && customerMails(c)) {
-        if (status === 'onaylandi') await mail(q, a.contact.email, tt(lang, 'mailApprovedSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
-        if (status === 'iptal') await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: biz }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
+        if (status === 'onaylandi') await mail(q, a.contact.email, tt(lang, 'mailApprovedSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: a.formId, subId: a.submissionId });
+        if (status === 'iptal') await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: biz }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu', { formId: a.formId, subId: a.submissionId });
       }
       if (cfg.sms?.confirm && a.contact?.phone) {
-        if (status === 'onaylandi') await sms(q, a.contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }));
-        if (status === 'iptal') await sms(q, a.contact.phone, tt(lang, 'smsCancelled', { x: biz, d: `${a.date} ${a.start}` }));
+        if (status === 'onaylandi') await sms(q, a.contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }), { formId: a.formId, subId: a.submissionId });
+        if (status === 'iptal') await sms(q, a.contact.phone, tt(lang, 'smsCancelled', { x: biz, d: `${a.date} ${a.start}` }), { formId: a.formId, subId: a.submissionId });
       }
     }
     await log(q, user.id, `Randevu durumu: ${STATUS_LABELS[status]}`, `${form.name} ${a.date} ${a.start}`);
@@ -1720,8 +1739,8 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
         await q('UPDATE submissions SET vals = ? WHERE id = ?', [S(sub.values), sub.id]);
       }
     }
-    if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu');
-    if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }));
+    if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu', { formId: a.formId, subId: a.submissionId });
+    if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }), { formId: a.formId, subId: a.submissionId });
     await log(q, user.id, 'Randevu taşıdı', `${form.name} ${old} → ${date} ${time}`);
     return true;
   });
@@ -1762,8 +1781,8 @@ H.createManualAppointment = async (ctx, formId, { name, phone, email, note, date
       subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now(), phoneKey(contact.phone) || null
     ]);
     const biz = form.isletme || form.name;
-    if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
-    if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${date} ${time}`, u: cancelUrl(appt) }));
+    if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: form.id, subId });
+    if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${date} ${time}`, u: cancelUrl(appt) }), { formId: form.id, subId });
     await log(q, user.id, 'Manuel randevu ekledi', `${form.name} ${date} ${time}`);
     return appt.id;
   });
@@ -1882,7 +1901,7 @@ H.purgeFormData = async (ctx, formId, confirmSlug) => {
     if (String(confirmSlug || '').trim() !== form.slug) fail('Onay için formun linkini aynen yazın.');
     const ids = (await q('SELECT id FROM files WHERE form_id = ?', [form.id])).map((r) => r.id);
     const [{ c: subs }] = await q('SELECT COUNT(*) AS c FROM submissions WHERE form_id = ?', [form.id]);
-    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
+    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes', 'outbox']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
     await log(q, admin.id, `Test kayıtlarını temizledi (${Number(subs)} kayıt)`, form.name);
     return { ids, subs: Number(subs) };
   });
@@ -1897,15 +1916,12 @@ H.purgeItem = async (ctx, kind, id) => {
     if (kind === 'form') {
       if (!(await q('SELECT id FROM forms WHERE id = ? AND deleted_at IS NOT NULL', [id])).length) fail('Bulunamadı.', 'yok', 404);
       files = (await q('SELECT id FROM files WHERE form_id = ?', [id])).map((r) => r.id);
-      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
+      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs', 'outbox']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
       await q('DELETE FROM forms WHERE id = ?', [id]);
     } else if (kind === 'submission') {
       const s = (await q('SELECT * FROM submissions WHERE id = ? AND deleted_at IS NOT NULL', [id]))[0];
       if (!s) fail('Bulunamadı.', 'yok', 404);
-      files = (await q('SELECT id FROM files WHERE submission_id = ?', [id])).map((r) => r.id);
-      await q('DELETE FROM files WHERE submission_id = ?', [id]);
-      await q('DELETE FROM appointments WHERE submission_id = ?', [id]);
-      await q('DELETE FROM submissions WHERE id = ?', [id]);
+      files = await forgetSubmissions(q, s.form_id, [id]);
     } else if (kind === 'user') {
       if (!(await q("SELECT id FROM users WHERE id = ? AND deleted_at IS NOT NULL AND role <> 'admin'", [id])).length) fail('Bulunamadı.', 'yok', 404);
       await q('DELETE FROM permissions WHERE user_id = ?', [id]);
@@ -1947,7 +1963,9 @@ export async function authorizeFile(ctx, fileId) {
   const user = await requireUser(ctx);
   if (sub?.deleted_at && user.role !== 'admin') fail('Dosya bulunamadı.', 'yok', 404);
   await requirePerm(ctx, ctx.db.query, f.form_id, 'view');
-  await log(ctx.db.query, user.id, 'Dosya indirdi', f.name);
+  // Dosya adı kişisel bilgi içerebilir (ör. "ahmet-yilmaz-rapor.pdf"); kayda sadece form adı yazılır
+  const fm = (await ctx.db.query('SELECT name FROM forms WHERE id = ?', [f.form_id]))[0];
+  await log(ctx.db.query, user.id, 'Dosya indirdi', fm?.name || '');
   return { id: f.id, name: f.name, mime: f.mime, size: Number(f.size) };
 }
 
@@ -1961,4 +1979,4 @@ export async function dispatch(ctx, name, args) {
 }
 
 export const handlerNames = () => Object.keys(H);
-export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, J };
+export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, J, forgetSubmissions };

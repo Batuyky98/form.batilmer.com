@@ -260,5 +260,15 @@ export const MIGRATIONS = [
         if (pk) await db.query('UPDATE submissions SET phone_key = ? WHERE id = ?', [pk, r.id]);
       }
     }
+  },
+  {
+    version: 5,
+    name: 'giden mesajları kayda bağla (kalıcı silmede iz kalmasın)',
+    up: [
+      'ALTER TABLE outbox ADD COLUMN form_id VARCHAR(40) NULL',
+      'ALTER TABLE outbox ADD COLUMN submission_id VARCHAR(40) NULL',
+      'CREATE INDEX idx_outbox_sub ON outbox (submission_id)',
+      'CREATE INDEX idx_outbox_form ON outbox (form_id)'
+    ]
   }
 ];

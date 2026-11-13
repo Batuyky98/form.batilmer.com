@@ -1,6 +1,6 @@
 // Zamanlanmış işler: randevu hatırlatmaları, saklama süresi dolan kayıtların silinmesi, eski oturumların temizliği
 import { removeUploads } from './files.js';
-import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails } from './handlers.js';
+import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, forgetSubmissions } from './handlers.js';
 import { today, addDays, dateTimeToMs, nowMinutesTR, timeToMin, uid } from '../../src/lib/util.js';
 import { reminderTargets } from '../../src/lib/reminder.js';
 import { t as tt } from '../../src/lib/i18n.js';
@@ -25,8 +25,8 @@ async function reminders(db) {
       // Aynı hatırlatma iki kez gitmesin
       const r = await q("UPDATE appointments SET reminder_sent = 1 WHERE id = ? AND reminder_sent = 0 AND status = 'onaylandi'", [a.id]);
       if (!r.affectedRows) return;
-      if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma');
-      if (cfg.sms?.reminder && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsReminder', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }));
+      if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma', { formId: a.formId, subId: a.submissionId });
+      if (cfg.sms?.reminder && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsReminder', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }), { formId: a.formId, subId: a.submissionId });
     });
   }
 }
@@ -77,17 +77,11 @@ async function retention(db) {
     if (!expired.length) continue;
     const ids = expired.map((r) => r.id);
     const files = await db.tx(async (q) => {
-      const marks = ids.map(() => '?').join(',');
-      const f = (await q(`SELECT id FROM files WHERE submission_id IN (${marks})`, ids)).map((r) => r.id);
-      await q(`DELETE FROM files WHERE submission_id IN (${marks})`, ids);
-      await q(`DELETE FROM appointments WHERE submission_id IN (${marks})`, ids);
-      await q(`DELETE FROM submissions WHERE id IN (${marks})`, ids);
+      const f = await forgetSubmissions(q, form.id, ids);
       await log(q, null, `Saklama süresi dolan ${ids.length} kayıt silindi`, form.name);
       return f;
     });
     await removeUploads(files);
-    // Kaydı kalmayan müşterinin notları da silinir
-    await db.query('DELETE FROM customer_notes WHERE form_id = ? AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)', [form.id, form.id]);
   }
 }
 

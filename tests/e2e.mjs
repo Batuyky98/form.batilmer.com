@@ -157,6 +157,7 @@ ok(e, 'kendi Ana Admin hesabını silemez');
 const g = await rpc('a', 'getForm', fid);
 for (const d of [0, 1, 2, 3, 4, 5, 6]) g.draft.randevu.hours[d] = [{ start: '09:00', end: '18:00' }];
 g.draft.randevu.minNoticeHours = 0;
+g.draft.settings.customerMails = true; // kalıcı silmede giden maillerin de silindiğini görmek için
 g.draft.randevu.wa = { enabled: true, when: 'once', notifyAt: new Date(Date.now() + 3 * 3600e3).toISOString().slice(11, 16), text: 'Merhaba {ad}, {hayvan_adi} için {gun} saat {saat} randevunuz var. İptal: {iptal_linki}' };
 await rpc('a', 'saveDraft', fid, g.draft);
 await rpc('a', 'publishForm', fid, {});
@@ -220,6 +221,7 @@ lg.draft.appearance.logo = 'javascript:alert(1)';
 await rpc('a', 'saveDraft', fid, lg.draft);
 ok((await rpc('a', 'getForm', fid)).draft.appearance.logo === '', 'geçersiz logo reddedildi');
 
+const izler = [];
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));
 ok(e, 'kullanıcı test kayıtlarını silemez');
@@ -229,4 +231,22 @@ const before2 = (await rpc('a', 'listSubmissions', fid)).rows.length;
 const pr = await rpc('a', 'purgeFormData', fid, f.slug);
 ok(before2 > 0 && pr.deleted === before2 && (await rpc('a', 'listSubmissions', fid)).rows.length === 0, `test kayıtları temizlendi (${pr.deleted})`);
 ok((await rpc('a', 'getForm', fid)).draft.fields.length > 0, 'form alanları duruyor');
+// tek kayıt: çöp kutusu → kalıcı sil
+await submitT('Deniz Yıldız', '0544 999 88 77', 'Tarçın', 5);
+const dz = (await rpc('a', 'listSubmissions', fid)).rows.find((r) => Object.values(r.values).includes('Deniz Yıldız'));
+await rpc('a', 'addCustomerNote', '5449998877', fid, 'Deniz notu');
+await rpc('a', 'deleteSubmission', dz.id);
+await rpc('a', 'purgeItem', 'submission', dz.id);
+izler.push('Deniz Yıldız', 'Tarçın', '5449998877', 'tarçın@x.com', 'Deniz notu');
+// kalıcı silmeden sonra veritabanının HİÇBİR tablosunda müşteriye dair iz kalmamalı
+const sdb2 = new DatabaseSync(`${DATA}/batilmer.sqlite`);
+izler.push('Ali Veli', 'Pamuk', 'Boncuk', '5321112233', 'ali@x.com', 'pamuk@x.com', 'Zeynep Kaya', '2125551122', 'Kuduz aşısı');
+const bulunan = [];
+for (const { name } of sdb2.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all()) {
+  for (const row of sdb2.prepare(`SELECT * FROM "${name}"`).all()) {
+    const txt = JSON.stringify(row);
+    for (const w of izler) if (txt.includes(w)) bulunan.push(`${name}: ${w}`);
+  }
+}
+ok(bulunan.length === 0, 'kalıcı silmeden sonra hiçbir tabloda iz yok' + (bulunan.length ? ': ' + [...new Set(bulunan)].join(', ') : ''));
 
