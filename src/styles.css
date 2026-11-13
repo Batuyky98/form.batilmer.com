@@ -1450,3 +1450,18 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .bf-logo-kucuk img { max-height: 40px; }
 .bf-logo-orta img { max-height: 64px; }
 .bf-logo-buyuk img { max-height: 96px; }
+/* formu paylaş */
+.share-link { display: flex; gap: 8px; }
+.share-link input { flex: 1; min-width: 0; font-size: 14px; }
+.share-btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.share-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: inherit; font-size: 14.5px; font-weight: 700; text-decoration: none; cursor: pointer; }
+.share-btn:hover { background: var(--hover); }
+.share-wa { background: #25d366; border-color: #25d366; color: #fff; }
+.share-wa:hover { background: #1fb457; color: #fff; }
+.share-wa svg { width: 18px; height: 18px; }
+.share-qr { display: flex; gap: 16px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-3); }
+.share-qr .qr { width: 132px; height: 132px; flex: none; background: #fff; border-radius: 10px; padding: 6px; }
+.share-qr .qr svg { width: 100%; height: 100%; display: block; }
+.share-qr .btn { align-self: flex-start; }
+.share-open { order: -1; }
+@media (max-width: 720px) { .share-qr { flex-direction: column; text-align: center; } .share-qr .btn { align-self: center; } }

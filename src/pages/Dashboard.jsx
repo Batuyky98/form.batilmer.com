@@ -7,6 +7,7 @@ import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
 import StylePicker from '../components/StylePicker.jsx';
+import ShareFormModal from '../components/ShareForm.jsx';
 import { formatDate, formatDateTime, nowMinutesTR, slugify, formBaseUrl, today, weekdayName, timeToMin } from '../lib/util.js';
 
 const APPT_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
@@ -234,6 +235,7 @@ export default function Dashboard() {
   const confirm = useConfirm();
   const { data: forms, loading, reload } = useAsync(() => api.listForms(), []);
   const [creating, setCreating] = useState(false);
+  const [sharing, setSharing] = useState(null);
   const [q, setQ] = useState('');
 
   const list = (forms || []).filter((f) => `${f.name} ${f.isletme} ${f.slug}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')));
@@ -311,6 +313,7 @@ export default function Dashboard() {
               </div>
               {f.hasDraftChanges && f.perms.edit && <div className="draft-note">Yayınlanmamış değişiklikler var</div>}
               <div className="form-card-actions">
+                <button type="button" className="btn btn-sm share-open" onClick={() => setSharing(f)}>🔗 Paylaş</button>
                 <Link to={`/panel/formlar/${f.id}/kayitlar`} className="btn btn-sm">Kayıtlar</Link>
                 <Link to={`/panel/formlar/${f.id}/istatistik`} className="btn btn-sm btn-ghost">İstatistik</Link>
                 {f.hasRandevu && f.perms.randevu && <Link to={`/panel/formlar/${f.id}/randevular`} className="btn btn-sm btn-primary">Randevular</Link>}
@@ -330,6 +333,7 @@ export default function Dashboard() {
       </div>
       </div>
       {creating && <NewFormModal onClose={() => setCreating(false)} />}
+      {sharing && <ShareFormModal form={sharing} onClose={() => setSharing(null)} />}
     </div>
   );
 }
