@@ -1660,6 +1660,24 @@ H.restoreItem = async (ctx, kind, id) => {
   });
 };
 
+// Test kayıtlarını temizle: formdaki TÜM kayıtlar, randevular, dosyalar ve bildirimler kalıcı silinir.
+// Sadece Ana Admin; yanlışlıkla olmasın diye formun linkini yazarak onaylar. Form ve ayarları kalır.
+H.purgeFormData = async (ctx, formId, confirmSlug) => {
+  const admin = await requireAdmin(ctx);
+  const files = await ctx.db.tx(async (q) => {
+    const form = await loadForm(q, String(formId || ''), { lock: true });
+    if (!form) fail('Form bulunamadı.', 'yok', 404);
+    if (String(confirmSlug || '').trim() !== form.slug) fail('Onay için formun linkini aynen yazın.');
+    const ids = (await q('SELECT id FROM files WHERE form_id = ?', [form.id])).map((r) => r.id);
+    const [{ c: subs }] = await q('SELECT COUNT(*) AS c FROM submissions WHERE form_id = ?', [form.id]);
+    for (const t of ['files', 'appointments', 'submissions', 'notifications']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
+    await log(q, admin.id, `Test kayıtlarını temizledi (${Number(subs)} kayıt)`, form.name);
+    return { ids, subs: Number(subs) };
+  });
+  await removeUploads(files.ids);
+  return { deleted: files.subs };
+};
+
 H.purgeItem = async (ctx, kind, id) => {
   const admin = await requireAdmin(ctx);
   const fileIds = await ctx.db.tx(async (q) => {

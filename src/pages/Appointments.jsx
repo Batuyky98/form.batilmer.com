@@ -298,7 +298,7 @@ export default function Appointments({ id }) {
               {cfg.resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           )}
-          <label className="inline-check"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> İptalleri göster</label>
+          <button type="button" className={`pill-toggle ${showCancelled ? 'is-on' : ''}`} aria-pressed={showCancelled} onClick={() => setShowCancelled((v) => !v)}>{showCancelled ? '✓ ' : ''}İptalleri göster</button>
           {!mobile && <Segmented value={view} onChange={setView} label="Görünüm" options={[{ value: 'gun', label: 'Gün' }, { value: 'hafta', label: 'Hafta' }]} />}
         </div>
       </div>
@@ -335,7 +335,7 @@ export default function Appointments({ id }) {
                     <ApptActions appt={a} phone={a.contact?.phone} compact={effView === 'hafta'} onDone={load} />
                   </div>
                 ))}
-                {!list.length && !blocks.length && !closed && <div className="muted small cal-empty">Randevu yok</div>}
+                {!list.length && !blocks.length && !closed && <div className="cal-empty cal-empty-nice"><span aria-hidden="true">🗓️</span><b>Randevu yok</b></div>}
               </div>
             </section>
           );

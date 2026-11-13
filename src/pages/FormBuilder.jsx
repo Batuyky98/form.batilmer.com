@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link } from '../router.jsx';
-import { Badge, Field, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
+import { Badge, Field, Modal, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
 import FormRenderer from '../components/FormRenderer.jsx';
 import { COLOR_FIELDS, FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
@@ -584,7 +584,55 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
           </>
         )}
       </section>
+
+      {isAdmin && <PurgeData form={form} />}
     </div>
+  );
+}
+
+// Test kayıtlarını temizle (sadece Ana Admin): form müşteriye teslim edilmeden önce denemeleri siler
+function PurgeData({ form }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function run(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api.purgeFormData(form.id, typed);
+      toast(`${r.deleted} kayıt ve randevuları silindi. Form temiz.`);
+      setOpen(false);
+      setTyped('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="danger-zone stack">
+      <h3>Test kayıtlarını temizle <Badge tone="blue">Ana Admin</Badge></h3>
+      <p className="muted small">Formu müşteriye teslim etmeden önce deneme amaçlı yapılan <b>bütün kayıtları, randevuları ve yüklenen dosyaları</b> kalıcı olarak siler. Formun alanları, tasarımı ve ayarları olduğu gibi kalır. Kullanıcılar bu bölümü görmez.</p>
+      <div><button type="button" className="btn btn-danger-ghost" onClick={() => setOpen(true)}>Kayıtları temizle…</button></div>
+      {open && (
+        <Modal title="Test kayıtlarını temizle" onClose={() => setOpen(false)}>
+          <form className="stack" onSubmit={run}>
+            <div className="notice notice-err"><b>{form.name}</b> formundaki bütün kayıtlar, randevular ve dosyalar <b>kalıcı olarak</b> silinecek. Çöp kutusuna gitmez, geri alınamaz.</div>
+            <Field label={`Onaylamak için formun linkini yazın: ${form.slug}`} htmlFor="pg-s">
+              <input id="pg-s" autoComplete="off" autoCapitalize="none" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={form.slug} />
+            </Field>
+            {error && <div className="notice notice-err" role="alert">{error}</div>}
+            <div className="row-end">
+              <button type="button" className="btn" onClick={() => setOpen(false)}>Vazgeç</button>
+              <button className="btn btn-danger" disabled={busy || typed.trim() !== form.slug}>{busy ? 'Siliniyor…' : 'Kalıcı olarak sil'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </section>
   );
 }
 

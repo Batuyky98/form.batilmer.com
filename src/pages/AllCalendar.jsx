@@ -29,7 +29,7 @@ export default function AllCalendar() {
       <div className="page-head">
         <div>
           <h1>Tüm randevular</h1>
-          <p className="muted">Yetkili olduğunuz tüm formların randevuları tek takvimde. Bir randevuya tıklayınca o formun takvimi açılır.</p>
+          {!mobile && <p className="muted small">Bir randevuya tıklayınca o formun takvimi açılır.</p>}
         </div>
       </div>
       {!data.forms.length ? (
@@ -59,12 +59,16 @@ export default function AllCalendar() {
                 })}
               </div>
             )}
-            <div className="row wrap">
-              <select aria-label="Form filtresi" value={formFilter} onChange={(e) => setFormFilter(e.target.value)}>
-                <option value="">Tüm formlar ({data.forms.length})</option>
-                {data.forms.map((f) => <option key={f.id} value={f.id}>{f.isletme ? `${f.isletme} – ` : ''}{f.name}</option>)}
-              </select>
-              <label className="inline-check"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> İptalleri göster</label>
+            <div className="row wrap cal-filters">
+              {data.forms.length > 1 && (
+                <select aria-label="Form filtresi" className="auto-w" value={formFilter} onChange={(e) => setFormFilter(e.target.value)}>
+                  <option value="">Tüm formlar ({data.forms.length})</option>
+                  {data.forms.map((f) => <option key={f.id} value={f.id}>{f.isletme ? `${f.isletme} – ` : ''}{f.name}</option>)}
+                </select>
+              )}
+              <button type="button" className={`pill-toggle ${showCancelled ? 'is-on' : ''}`} aria-pressed={showCancelled} onClick={() => setShowCancelled((v) => !v)}>
+                {showCancelled ? '✓ ' : ''}İptalleri göster
+              </button>
             </div>
           </div>
           <div className={`calendar ${mobile ? 'calendar-day' : ''}`}>
@@ -80,16 +84,27 @@ export default function AllCalendar() {
                     {list.map((a) => {
                       const f = data.forms.find((x) => x.id === a.formId);
                       return (
-                        <button key={a.id} type="button" className={`cal-item status-${a.status}`} onClick={() => navigate(`/panel/formlar/${a.formId}/randevular?tarih=${a.date}`)}>
+                        <div key={a.id} className={`cal-item status-${a.status}`}>
+                        <button type="button" className="cal-main" onClick={() => navigate(`/panel/formlar/${a.formId}/randevular?tarih=${a.date}`)}>
                           <span className="cal-time">{a.start}<small>{a.end}</small></span>
                           <span className="cal-name">{a.name || 'İsimsiz'}{a.partySize > 1 ? ` · ${a.partySize} kişi` : ''}</span>
                           <span className="cal-meta">{a.service}{a.resource ? ` · ${a.resource}` : ''}</span>
                           <span className="cal-form">{f?.isletme || f?.name}</span>
                           <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
                         </button>
+                        </div>
                       );
                     })}
-                    {!list.length && <div className="muted small cal-empty">Randevu yok</div>}
+                    {!list.length && (
+                      <div className="cal-empty cal-empty-nice">
+                        <span aria-hidden="true">🗓️</span>
+                        <b>{d === today() ? 'Bugün randevu yok' : 'Bu gün randevu yok'}</b>
+                        {mobile && (() => {
+                          const week = items.filter((a) => a.status !== 'iptal').length;
+                          return <span>{week ? `Bu hafta toplam ${week} randevu var; üstteki günlerden seçebilirsiniz.` : 'Bu hafta randevu yok. Yeni randevu gelince bildirim alırsınız.'}</span>;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </section>
               );

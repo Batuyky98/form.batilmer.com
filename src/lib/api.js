@@ -53,6 +53,9 @@ export const deleteMyDevice = serverOnly('deleteMyDevice', true);
 export const sendTestNotification = serverOnly('sendTestNotification', { sent: 0, failed: 0 });
 export const pollNotifications = serverOnly('pollNotifications', { items: [], unread: 0, enabled: false, hasForms: false, session: null });
 export const markNotificationsSeen = serverOnly('markNotificationsSeen', true);
+export const purgeFormData = serverOnly('purgeFormData', () => {
+  throw new Error('Demo modunda kullanılamaz.');
+});
 // kullanıcılar ve yetkiler
 export const listUsers = call('listUsers');
 export const createUser = call('createUser');
