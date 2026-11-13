@@ -26,15 +26,18 @@ fi
 
 install -m 755 "$APP_DIR/deploy/otomatik-guncelle.sh" /usr/local/sbin/batilmer-guncelle
 sed -i "s#^APP_DIR=.*#APP_DIR=\"\${APP_DIR:-$APP_DIR}\"#" /usr/local/sbin/batilmer-guncelle
-command -v unzip >/dev/null || apt-get install -y unzip >/dev/null
-command -v flock >/dev/null || apt-get install -y util-linux >/dev/null
+command -v unzip >/dev/null || apt-get install -y unzip >/dev/null || echo "! unzip kurulamadı: apt-get install -y unzip"
+command -v flock >/dev/null || apt-get install -y util-linux >/dev/null || echo "! flock kurulamadı: apt-get install -y util-linux"
 
 [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -C "$MARK" -f "$KEY"
 sed -i "/$MARK/d" "$AUTH"
 echo "command=\"/usr/local/sbin/batilmer-guncelle\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $(cat "$KEY.pub")" >>"$AUTH"
 
-IP="$(curl -s -4 --max-time 5 https://ifconfig.me || hostname -I | awk '{print $1}')"
-PORT="$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')"; PORT="${PORT:-22}"
+# Not: bu kontroller bazı sunucularda hata verebilir; script durmasın diye "|| true"
+IP="$(curl -s -4 --max-time 5 https://ifconfig.me || true)"
+[ -n "$IP" ] || IP="$( (hostname -I 2>/dev/null || true) | awk '{print $1}')"
+PORT="$( (sshd -T 2>/dev/null || true) | awk '/^port /{print $2; exit}')"
+PORT="${PORT:-22}"
 echo
 echo "✔ Sunucu hazır. Şimdi GitHub'da: depo → Settings → Secrets and variables → Actions → New repository secret"
 echo "  Aşağıdaki 3 değeri AYNI isimlerle ekleyin:"
@@ -43,7 +46,7 @@ echo "──── 1) İsim: SUNUCU_ADRES ────"
 [ "$PORT" = "22" ] && echo "$IP" || echo "$IP:$PORT"
 echo
 echo "──── 2) İsim: SUNUCU_PARMAK_IZI ────"
-ssh-keyscan -p "$PORT" -t ed25519 127.0.0.1 2>/dev/null | sed "s/^[^ ]*/$( [ "$PORT" = 22 ] && echo "$IP" || echo "[$IP]:$PORT")/"
+(ssh-keyscan -p "$PORT" -t ed25519 127.0.0.1 2>/dev/null || true) | sed "s/^[^ ]*/$( [ "$PORT" = 22 ] && echo "$IP" || echo "[$IP]:$PORT")/"
 echo
 echo "──── 3) İsim: SUNUCU_ANAHTAR (BEGIN ve END satırları dahil hepsi) ────"
 cat "$KEY"
