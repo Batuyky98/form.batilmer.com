@@ -200,8 +200,8 @@ Site çökerse bunu veterinerden değil sizin öğrenmeniz için: uptimerobot.co
 
 ## Otomatik güncelleme (GitHub → sunucu)
 
-Bir kez açılır; sonra `claude/upbeat-galileo-qa75b3` dalına her gönderimde GitHub önce derler ve
-testleri çalıştırır, testler geçerse sunucuya kendisi kurar (yedek alır, panel ayağa kalkmazsa
+Bir kez açılır. Dala her gönderimde GitHub derler ve testleri çalıştırır; sunucuya kurulum sadece
+Actions → "Sunucuya gönder" → Run workflow ile elle başlatılınca olur (yedek alır, panel ayağa kalkmazsa
 önceki sürüme döner). Elle zip/scp gerekmez.
 
 1. Sunucuda, proje klasöründe: `bash deploy/otomatik-kur.sh`

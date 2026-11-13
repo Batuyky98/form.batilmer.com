@@ -1,4 +1,6 @@
-# Bu dala her gönderimde: derle → testleri çalıştır → geçerse sunucuya kur.
+# Bu dala her gönderimde: derle → testleri çalıştır (sunucuya DOKUNMAZ).
+# Sunucuya kurulum SADECE elle başlatılınca olur: Actions → "Sunucuya gönder" → Run workflow
+# (işletme sahibi görselleri onaylayınca). Testler geçmezse kurulum yapılmaz.
 # Sunucu tarafı: deploy/otomatik-kur.sh (bir kez). Gerekli secret'lar:
 #   SUNUCU_ADRES, SUNUCU_PARMAK_IZI, SUNUCU_ANAHTAR
 name: Sunucuya gönder
@@ -32,6 +34,7 @@ jobs:
 
   kur:
     needs: test
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
