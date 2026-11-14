@@ -1,22 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link, navigate } from '../router.jsx';
-import { Badge, Empty, Field, Modal, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
+import { Empty, Field, Modal, Spinner, useAsync, useToast } from '../components/ui.jsx';
 import { TEMPLATES, TEMPLATE_SECTORS } from '../lib/templates.js';
 import StylePicker from '../components/StylePicker.jsx';
-import ShareFormModal from '../components/ShareForm.jsx';
-import { formatDateTime, slugify, formBaseUrl } from '../lib/util.js';
+import { slugify, formBaseUrl } from '../lib/util.js';
 
 const APPT_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
 
-const monogram = (f) => (f.isletme || f.name || '?').trim().slice(0, 1).toLocaleUpperCase('tr');
+export const monogram = (f) => (f.isletme || f.name || '?').trim().slice(0, 1).toLocaleUpperCase('tr');
 
-function StatusBadge({ f }) {
-  if (!f.publishedAt) return <Badge tone="gray">Yayınlanmadı</Badge>;
-  if (f.control.status !== 'aktif') return <Badge tone="gray">Pasif</Badge>;
-  return <Badge tone="green">Yayında</Badge>;
-}
 
 const NF_STEPS = ['Bilgiler', 'Şablon', 'Tasarım'];
 
@@ -157,88 +151,61 @@ function NewFormModal({ onClose }) {
   );
 }
 
+// Form satırının rengi: işletme adına göre hep aynı renk
+const PALETTE = ['#2f5bea', '#0f766e', '#db2777', '#7c3aed', '#ea580c', '#0891b2', '#475569', '#16a34a', '#b45309', '#9333ea'];
+export const formColor = (f) => {
+  const s = String(f.isletme || f.name || '');
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+};
+export const formLive = (f) => !!f.publishedAt && f.control?.status === 'aktif';
+
+function summary(f) {
+  const parts = [];
+  if (f.hasRandevu && f.upcomingAppointments) parts.push(`${f.upcomingAppointments} yaklaşan randevu`);
+  if (f.todayCount) parts.push(`bugün ${f.todayCount} kayıt`);
+  else if (f.total) parts.push(`${f.total} kayıt`);
+  return parts.join(' · ') || 'Henüz kayıt yok';
+}
+
 export default function Dashboard() {
   const { isAdmin } = useAuth();
-  const toast = useToast();
-  const confirm = useConfirm();
-  const { data: forms, loading, reload } = useAsync(() => api.listForms(), []);
+  const { data: forms, loading } = useAsync(() => api.listForms(), []);
   const [creating, setCreating] = useState(false);
-  const [sharing, setSharing] = useState(null);
   const [q, setQ] = useState('');
-
   const list = (forms || []).filter((f) => `${f.name} ${f.isletme} ${f.slug}`.toLocaleLowerCase('tr').includes(q.toLocaleLowerCase('tr')));
 
-  async function duplicate(f) {
-    const id = await api.duplicateForm(f.id);
-    toast('Form kopyalandı (pasif olarak).');
-    navigate(`/panel/formlar/${id}/duzenle`);
-  }
-  async function remove(f) {
-    const ok = await confirm({ title: 'Formu sil', message: `"${f.name}" çöp kutusuna taşınacak. Sitelere gömülü form çalışmayı durdurur. Çöp kutusundan geri alınabilir.`, confirmText: 'Çöp kutusuna taşı', danger: true });
-    if (!ok) return;
-    await api.deleteForm(f.id);
-    toast('Form çöp kutusuna taşındı.');
-    reload();
-  }
-
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1>Formlar</h1>
-          <p className="muted small">{isAdmin ? 'Tüm formlar' : 'Yetkili olduğunuz formlar'}</p>
-        </div>
-        <div className="row">
-          <input className="search" type="search" placeholder="Form ara…" aria-label="Form ara" value={q} onChange={(e) => setQ(e.target.value)} />
-          {isAdmin && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>+ Yeni form</button>}
-        </div>
+    <div className="page fl">
+      <div className="fl-head">
+        <h1>Formlar</h1>
+        {isAdmin && <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>+ Yeni form</button>}
       </div>
+      {(forms?.length || 0) > 4 && <input className="fl-search" type="search" placeholder="🔍  Form veya işletme ara" aria-label="Form ara" value={q} onChange={(e) => setQ(e.target.value)} />}
 
       {loading && !forms ? (
         <Spinner />
       ) : !list.length ? (
         <Empty title={forms?.length ? 'Aramaya uyan form yok' : 'Henüz form yok'}>
-          {isAdmin ? 'Yeni form butonuyla bir şablondan başlayın.' : 'Size bir form atandığında burada görünecek.'}
+          {isAdmin ? 'Yeni form düğmesiyle bir şablondan başlayın.' : 'Formunuz hazırlanınca burada görünecek.'}
         </Empty>
       ) : (
-        <div className="form-cards">
+        <div className="td-list">
           {list.map((f) => (
-            <article key={f.id} className="form-card">
-              <div className="form-card-head">
-                <span className="monogram" aria-hidden="true">{monogram(f)}</span>
-                <div className="form-card-title">
-                  <div className="eyebrow">{f.isletme || 'İşletme belirtilmedi'}</div>
-                  <h2>{f.name}</h2>
-                  <a className="slug" href={`/f/${f.slug}`} target="_blank" rel="noreferrer">/f/{f.slug} ↗</a>
-                </div>
-                <StatusBadge f={f} />
-              </div>
-              <div className="stats">
-                <div><b>{f.total}</b><span>Toplam kayıt</span></div>
-                <div><b>{f.todayCount}</b><span>Bugün</span></div>
-                {f.hasRandevu && <div><b>{f.upcomingAppointments}</b><span>Yaklaşan randevu</span></div>}
-              </div>
-              {f.hasDraftChanges && f.perms.edit && <div className="draft-note">Yayınlanmamış değişiklikler var</div>}
-              <div className="form-card-actions">
-                <button type="button" className="btn btn-sm share-open" onClick={() => setSharing(f)}>🔗 Paylaş</button>
-                <Link to={`/panel/formlar/${f.id}/kayitlar`} className="btn btn-sm">Kayıtlar</Link>
-                <Link to={`/panel/formlar/${f.id}/istatistik`} className="btn btn-sm btn-ghost">İstatistik</Link>
-                {f.hasRandevu && f.perms.randevu && <Link to={`/panel/formlar/${f.id}/randevular`} className="btn btn-sm btn-primary">Randevular</Link>}
-                {f.perms.edit && <Link to={`/panel/formlar/${f.id}/duzenle`} className="btn btn-sm">Düzenle</Link>}
-                {isAdmin && (
-                  <>
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => duplicate(f)}>Kopyala</button>
-                    <button type="button" className="btn btn-sm btn-ghost danger-text" onClick={() => remove(f)}>Sil</button>
-                  </>
-                )}
-              </div>
-              <div className="form-card-foot">Son güncelleme: {formatDateTime(f.updatedAt)}</div>
-            </article>
+            <Link key={f.id} to={`/panel/formlar/${f.id}`} className="td-row fl-row">
+              <span className="fl-mono" style={{ background: formColor(f) }} aria-hidden="true">{monogram(f)}</span>
+              <span className="td-who">
+                <b>{f.isletme || f.name}</b>
+                <span>{f.isletme ? `${f.name} · ` : ''}{summary(f)}</span>
+              </span>
+              <span className={`fl-dot ${formLive(f) ? 'is-on' : ''}`} title={formLive(f) ? 'Yayında' : 'Kapalı'} aria-label={formLive(f) ? 'Yayında' : 'Kapalı'} />
+              <span className="td-chev" aria-hidden="true">›</span>
+            </Link>
           ))}
         </div>
       )}
       {creating && <NewFormModal onClose={() => setCreating(false)} />}
-      {sharing && <ShareFormModal form={sharing} onClose={() => setSharing(null)} />}
     </div>
   );
 }

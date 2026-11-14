@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
-import { navigate } from '../router.jsx';
+import ApptSheet from '../components/ApptSheet.jsx';
 import { Badge, Empty, Spinner, useIsMobile } from '../components/ui.jsx';
 import { addDays, dayOfMonth, dayOfWeek, formatDate, formatDateShort, today, weekdayName, weekdayShort } from '../lib/util.js';
 
@@ -11,6 +11,8 @@ export default function AllCalendar() {
   const [formFilter, setFormFilter] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const [data, setData] = useState(null);
+  const [sheet, setSheet] = useState(null);
+  const [tick, setTick] = useState(0);
   const mobile = useIsMobile();
   const start = addDays(anchor, -((dayOfWeek(anchor) + 6) % 7));
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -18,7 +20,7 @@ export default function AllCalendar() {
 
   useEffect(() => {
     api.listAllAppointments({ from: start, to: end }).then(setData);
-  }, [start, end]);
+  }, [start, end, tick]);
 
   if (!data) return <div className="page"><Spinner /></div>;
   const items = data.items.filter((a) => (!formFilter || a.formId === formFilter) && (showCancelled || a.status !== 'iptal'));
@@ -29,7 +31,7 @@ export default function AllCalendar() {
       <div className="page-head">
         <div>
           <h1>Tüm randevular</h1>
-          {!mobile && <p className="muted small">Bir randevuya tıklayınca o formun takvimi açılır.</p>}
+          {!mobile && <p className="muted small">Bir randevuya dokununca işlemler açılır.</p>}
         </div>
       </div>
       {!data.forms.length ? (
@@ -85,7 +87,7 @@ export default function AllCalendar() {
                       const f = data.forms.find((x) => x.id === a.formId);
                       return (
                         <div key={a.id} className={`cal-item status-${a.status}`}>
-                        <button type="button" className="cal-main" onClick={() => navigate(`/panel/formlar/${a.formId}/randevular?tarih=${a.date}`)}>
+                        <button type="button" className="cal-main" onClick={() => setSheet(a)}>
                           <span className="cal-time">{a.start}<small>{a.end}</small></span>
                           <span className="cal-name">{a.name || 'İsimsiz'}{a.partySize > 1 ? ` · ${a.partySize} kişi` : ''}</span>
                           <span className="cal-meta">{a.service}{a.resource ? ` · ${a.resource}` : ''}</span>
@@ -112,6 +114,7 @@ export default function AllCalendar() {
           </div>
         </>
       )}
+      {sheet && <ApptSheet appt={sheet} isletme={data.forms.length > 1 ? (data.forms.find((f) => f.id === sheet.formId)?.isletme || '') : ''} onClose={() => setSheet(null)} onDone={() => setTick((t) => t + 1)} />}
     </div>
   );
 }

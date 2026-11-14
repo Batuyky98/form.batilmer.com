@@ -4,7 +4,11 @@ import { Link } from '../router.jsx';
 import { Badge, Field, Modal, Segmented, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
 import { addDays, dayOfMonth, dayOfWeek, formatDate, formatDateShort, today, weekdayName, weekdayShort } from '../lib/util.js';
 import { serviceById } from '../lib/availability.js';
-import ApptActions from '../components/ApptActions.jsx';
+import { navigate } from '../router.jsx';
+import { TelIcon, WaIcon } from '../components/ContactButtons.jsx';
+import { telUrl, whatsappUrl } from '../lib/shared.js';
+import { phoneKey } from '../lib/reminder.js';
+import { dayLabel } from '../components/ApptSheet.jsx';
 
 const STATUS_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
 
@@ -51,7 +55,7 @@ function ManualModal({ formId, cfg, initialDate, onClose, onDone }) {
     }
   }
   return (
-    <Modal title="Manuel randevu ekle" onClose={onClose} wide>
+    <Modal title="Randevu ekle" onClose={onClose} wide>
       <form className="stack" onSubmit={submit}>
         <p className="muted small">Telefonla ya da yüz yüze alınan randevular için. Saat, form ile aynı kurallara göre kontrol edilir (önceden bildirim süresi hariç).</p>
         <div className="grid-3">
@@ -97,14 +101,14 @@ function BlockModal({ formId, cfg, initialDate, onClose, onDone }) {
     e.preventDefault();
     try {
       await api.addBlock(formId, v);
-      toast('Saat bloklandı; bu aralıkta randevu alınamaz.');
+      toast('Saat kapatıldı; bu aralıkta randevu alınamaz.');
       onDone();
     } catch (err) {
       setError(err.message);
     }
   }
   return (
-    <Modal title="Saat blokla" onClose={onClose}>
+    <Modal title="Saati kapat (izin, toplantı…)" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="muted small">Toplantı, izin, bakım gibi durumlarda bu aralık formda kapalı görünür.</p>
         <div className="grid-3">
@@ -122,7 +126,7 @@ function BlockModal({ formId, cfg, initialDate, onClose, onDone }) {
         )}
         <Field label="Not (sadece panelde görünür)"><input value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} /></Field>
         {error && <div className="notice notice-err" role="alert">{error}</div>}
-        <div className="row-end"><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button className="btn btn-primary">Blokla</button></div>
+        <div className="row-end"><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button className="btn btn-primary">Kapat</button></div>
       </form>
     </Modal>
   );
@@ -161,25 +165,48 @@ function DetailModal({ appt, cfg, formId, onClose, onDone }) {
     }
   }
   const isPast = appt.date < today();
+  const tel = telUrl(appt.contact?.phone);
+  const wa = whatsappUrl(appt.contact?.phone);
+  const pk = phoneKey(appt.contact?.phone);
+  const near = isPast || appt.date === today();
+  const answers = sub ? (sub.order || []).filter((k) => sub.types[k] !== 'randevu' && !['tel', 'email'].includes(sub.types[k]) && sub.values[k] !== undefined && sub.values[k] !== '') : [];
   return (
-    <Modal title={`${formatDate(appt.date)} · ${appt.start}–${appt.end}`} onClose={onClose} wide>
-      <div className="stack">
-        <div className="row"><Badge tone={STATUS_TONE[appt.status]}>{api.STATUS_LABELS[appt.status]}</Badge>{appt.source === 'manuel' && <Badge tone="gray">Manuel</Badge>}</div>
-        <dl className="detail">
-          <div><dt>Hizmet</dt><dd>{svc?.name}</dd></div>
-          {res && <div><dt>{cfg.resourceLabel}</dt><dd>{res.name}</dd></div>}
-          {cfg.capacityMode === 'kisi' && <div><dt>Kişi sayısı</dt><dd>{appt.partySize}</dd></div>}
-          {sub && (sub.order || []).filter((k) => sub.types[k] !== 'randevu').map((k) => (
-            <div key={k}><dt>{sub.labels[k]}</dt><dd className="pre">{api.displayValue(sub.types[k], sub.values[k], cfg, { mask: true }) || '—'}</dd></div>
-          ))}
-        </dl>
+    <Modal title={appt.contact?.name || 'İsimsiz'} onClose={onClose}>
+      <div className="as">
+        <div className="as-meta">
+          <div><b>{dayLabel(appt.date)} · {appt.start}–{appt.end}</b></div>
+          <div className="muted">{[svc?.name, res?.name, cfg.capacityMode === 'kisi' ? `${appt.partySize} kişi` : ''].filter(Boolean).join(' · ')}</div>
+          <div className="as-badge row"><Badge tone={STATUS_TONE[appt.status]}>{api.STATUS_LABELS[appt.status]}</Badge>{appt.source === 'manuel' && <Badge tone="gray">Panelden eklendi</Badge>}</div>
+        </div>
+        <div className="as-icons as-icons-3">
+          {tel ? <a className="as-ic" href={tel}><i><TelIcon /></i>Ara</a> : <span className="as-ic is-off"><i><TelIcon /></i>Ara</span>}
+          {wa ? <a className="as-ic as-wa" href={wa} target="_blank" rel="noopener noreferrer"><i><WaIcon /></i>WhatsApp</a> : <span className="as-ic is-off"><i><WaIcon /></i>WhatsApp</span>}
+          {pk ? <button type="button" className="as-ic" onClick={() => { onClose(); navigate(`/panel/musteriler/${pk}`); }}><i>👤</i>Müşteri</button> : <span className="as-ic is-off"><i>👤</i>Müşteri</span>}
+        </div>
+        {appt.status === 'bekliyor' && <button type="button" className="as-big as-ok" onClick={() => status('onaylandi')}>✓ Randevuyu onayla</button>}
+        {appt.status === 'onaylandi' && near && (
+          <div className="as-two">
+            <button type="button" className="as-big as-ok" onClick={() => status('geldi')}>✓ Geldi</button>
+            <button type="button" className="as-big as-no" onClick={() => status('gelmedi')}>Gelmedi</button>
+          </div>
+        )}
+        {['geldi', 'gelmedi'].includes(appt.status) && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => status(appt.status === 'geldi' ? 'gelmedi' : 'geldi')}>Yanlış mı işaretlendi? "{appt.status === 'geldi' ? 'Gelmedi' : 'Geldi'}" yap</button>
+        )}
+        {answers.length > 0 && (
+          <div>
+            <div className="pf-label">Formda yazdıkları</div>
+            <dl className="detail">
+              {answers.map((k) => (
+                <div key={k}><dt>{sub.labels[k]}</dt><dd className="pre">{api.displayValue(sub.types[k], sub.values[k], cfg, { mask: true }) || '—'}</dd></div>
+              ))}
+            </dl>
+          </div>
+        )}
         {appt.status !== 'iptal' && (
-          <div className="row wrap">
-            {appt.status === 'bekliyor' && <button type="button" className="btn btn-primary" onClick={() => status('onaylandi')}>Onayla</button>}
-            {(isPast || appt.date === today()) && appt.status !== 'geldi' && <button type="button" className="btn" onClick={() => status('geldi')}>Geldi</button>}
-            {(isPast || appt.date === today()) && appt.status !== 'gelmedi' && <button type="button" className="btn" onClick={() => status('gelmedi')}>Gelmedi</button>}
-            {!isPast && <button type="button" className="btn" onClick={() => setMoving((m) => !m)}>Taşı</button>}
-            <button type="button" className="btn btn-danger-ghost" onClick={() => status('iptal')}>İptal et</button>
+          <div className="as-links">
+            {!isPast && <button type="button" onClick={() => setMoving((m) => !m)}>Başka saate taşı<span>{moving ? '⌃' : '›'}</span></button>}
+            {['bekliyor', 'onaylandi'].includes(appt.status) && <button type="button" className="as-danger" onClick={() => status('iptal')}>Randevuyu iptal et<span>›</span></button>}
           </div>
         )}
         {moving && (
@@ -256,14 +283,12 @@ export default function Appointments({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to="/panel/formlar" className="back">← Formlar</Link>
-          <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
+          <Link to={`/panel/formlar/${id}`} className="back">← {form.isletme || form.name}</Link>
           <h1>Randevular</h1>
         </div>
         <div className="row wrap">
-          <Link to={`/panel/formlar/${id}/kayitlar`} className="btn">Kayıtlar</Link>
-          <button type="button" className="btn" onClick={() => setModal({ type: 'block' })}>Saat blokla</button>
-          {!mobile && <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'manual' })}>+ Manuel randevu</button>}
+          <button type="button" className="btn" onClick={() => setModal({ type: 'block' })}>Saati kapat</button>
+          {!mobile && <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'manual' })}>+ Randevu ekle</button>}
         </div>
       </div>
 
@@ -320,7 +345,7 @@ export default function Appointments({ id }) {
               <div className="cal-items">
                 {blocks.map((b) => (
                   <div key={b.id} className="cal-block">
-                    <span>{b.start}–{b.end} · Bloklu{b.note ? ` · ${b.note}` : ''}</span>
+                    <span>{b.start}–{b.end} · Kapalı{b.note ? ` · ${b.note}` : ''}</span>
                     <button type="button" className="icon-btn" aria-label="Bloğu kaldır" onClick={async () => { await api.removeBlock(b.id); toast('Blok kaldırıldı.'); load(); }}>✕</button>
                   </div>
                 ))}
@@ -332,7 +357,6 @@ export default function Appointments({ id }) {
                       <span className="cal-meta">{serviceById(cfg, a.serviceId)?.name}{a.resourceId ? ` · ${cfg.resources.find((r) => r.id === a.resourceId)?.name || ''}` : ''}</span>
                       <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
                     </button>
-                    <ApptActions appt={a} phone={a.contact?.phone} compact={effView === 'hafta'} onDone={load} />
                   </div>
                 ))}
                 {!list.length && !blocks.length && !closed && <div className="cal-empty cal-empty-nice"><span aria-hidden="true">🗓️</span><b>Randevu yok</b></div>}

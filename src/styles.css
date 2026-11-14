@@ -1033,7 +1033,7 @@ h2 { letter-spacing: -0.01em; }
   .calendar-day .cal-main .badge { justify-self: start; margin-top: 4px; }
   .calendar-day .cal-item .qa { padding: 0 14px 12px 88px; }
   .calendar-day .cal-item .qa-btn { min-height: 38px; padding: 0 16px; font-size: 13.5px; }
-  .page-head .back { display: none; }
+  .page-head .back { display: inline-block; font-size: 14px; color: var(--blue); }
   .agenda { padding: 14px; border-radius: 18px; }
   .agenda-list { max-height: none; }
   .main:has(.fab) { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 90px); }
@@ -1559,3 +1559,48 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .as-links button { display: flex; justify-content: space-between; align-items: center; padding: 14px 4px; border: 0; border-top: 1px solid var(--line); background: none; font: inherit; font-size: 15.5px; font-weight: 600; color: var(--text); cursor: pointer; text-align: left; }
 .as-links button span { color: var(--faint); font-size: 20px; }
 .as-links .as-danger { color: var(--red-fg); }
+/* formlar listesi ve form sayfası */
+.fl, .fh { max-width: 760px; gap: 16px; }
+.fl-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.fl-head h1 { margin: 0; font-size: 28px; }
+.fl-search { height: 50px; border-radius: 16px; font-size: 16px; padding: 0 16px; width: 100%; }
+.fl-row { padding: 12px 16px; }
+.fl-mono { width: 46px; height: 46px; border-radius: 15px; flex: none; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 19px; }
+.fl-mono-lg { width: 60px; height: 60px; border-radius: 18px; font-size: 24px; }
+.fl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.fl-dot.is-on { background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 18%, transparent); }
+.fh-head { display: flex; gap: 14px; align-items: center; }
+.fh-head h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+.fh-biz { color: var(--muted); font-size: 15px; }
+.fh-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fh-tile { display: flex; flex-direction: column; justify-content: space-between; gap: 14px; min-height: 118px; padding: 16px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); color: var(--text); text-decoration: none; font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); }
+.fh-tile:hover { border-color: var(--line-strong); color: var(--text); }
+.fh-ic { font-size: 28px; line-height: 1; }
+.fh-t { display: flex; flex-direction: column; }
+.fh-t b { font-size: 17px; }
+.fh-t span { color: var(--muted); font-size: 13.5px; }
+.fh-tile-main { grid-column: 1 / -1; flex-direction: row; align-items: center; min-height: 0; padding: 18px; background: linear-gradient(135deg, #2f5bea, #6d4bea); border: 0; color: #fff; box-shadow: 0 14px 30px rgba(47, 91, 234, 0.25); }
+.fh-tile-main:hover { color: #fff; filter: brightness(1.05); }
+.fh-tile-main .fh-t { flex: 1; }
+.fh-tile-main .fh-t span { color: rgba(255, 255, 255, 0.85); }
+.fh-tile-main .td-chev { color: rgba(255, 255, 255, 0.8); }
+.fh-row { cursor: default; }
+.fh-row:hover { background: none; }
+@media (min-width: 901px) { .fh-tiles { grid-template-columns: repeat(4, 1fr); } }
+/* kayıtlar */
+.sb-head h1 + * { margin-top: 0; }
+.sb-head h1 { margin: 0; }
+.sb-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-top: -4px; }
+.sb-chips::-webkit-scrollbar { display: none; }
+.sb-dates { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+.sb-row { align-items: center; }
+.sb-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.sb-right small { color: var(--faint); font-size: 12.5px; }
+.as-icons-3 { grid-template-columns: repeat(3, 1fr); }
+.as .detail { margin: 6px 0 0; }
+/* form düzenleme: telefonda yana taşmasın */
+.builder-main, .builder-preview { min-width: 0; }
+.builder-main .table-wrap { overflow-x: auto; }
+.builder-main pre, .builder-main code, .builder-main textarea { max-width: 100%; }
+.builder-main pre { white-space: pre-wrap; word-break: break-all; }
+@media (max-width: 1100px) { .builder, .builder-single { grid-template-columns: minmax(0, 1fr); } }

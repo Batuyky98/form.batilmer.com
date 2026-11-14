@@ -5,9 +5,18 @@ import { Link, navigate } from '../router.jsx';
 import { Badge, Empty, Modal, Spinner, useConfirm, useIsMobile, useToast } from '../components/ui.jsx';
 import ContactButtons from '../components/ContactButtons.jsx';
 import { buildXlsx } from '../lib/xlsx.js';
-import { dateOfMs, download, formatBytes, formatDateTime, maskTc, today } from '../lib/util.js';
+import { download, formatBytes, formatDateTime, maskTc } from '../lib/util.js';
 
 const APPT_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
+// "10 dk", "3 sa", "dün", "4 g", sonra tarih
+function ago(ms) {
+  const d = (Date.now() - ms) / 60000;
+  if (d < 60) return `${Math.max(1, Math.round(d))} dk`;
+  if (d < 24 * 60) return `${Math.round(d / 60)} sa`;
+  if (d < 48 * 60) return 'dün';
+  if (d < 7 * 24 * 60) return `${Math.round(d / 1440)} g`;
+  return formatDateTime(ms).split(' ')[0];
+}
 const statusTone = (v) => api.SUBMISSION_STATUSES.find((s) => s.value === v)?.tone || 'gray';
 
 function ValueCell({ type, value, randevu, showTc }) {
@@ -177,91 +186,67 @@ export default function Submissions({ id }) {
   if (!form || !data) return <div className="page"><Spinner /></div>;
 
   const perms = data.perms;
-  const todayStr = today();
   const filtered = q || from || to || status;
-  const todayCount = data.rows.filter((r) => dateOfMs(r.createdAt) === todayStr).length;
   const hasTc = data.fields.some((f) => f.type === 'tc');
+  const totalAll = Object.values(data.counts).reduce((x, y) => x + y, 0);
   // Filtre yüzünden listeden düşse bile açık detay penceresi kapanmasın
   const detail = detailId ? data.rows.find((r) => r.id === detailId) || detailSnap : null;
 
   return (
     <div className="page page-wide">
-      <div className="page-head">
+      <div className="page-head sb-head">
         <div>
-          <Link to="/panel/formlar" className="back">← Formlar</Link>
-          <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
+          <Link to={`/panel/formlar/${id}`} className="back">← {form.isletme || form.name}</Link>
           <h1>Kayıtlar</h1>
         </div>
-        <div className="row">
-          <Link to={`/panel/formlar/${id}/istatistik`} className="btn">İstatistik</Link>
-          {form.perms.randevu && data.fields.some((f) => f.type === 'randevu') && <Link to={`/panel/formlar/${id}/randevular`} className="btn">Randevu takvimi</Link>}
-          {perms.excel && <button type="button" className="btn btn-primary" onClick={exportExcel} disabled={!data.rows.length}>Excel indir ({data.rows.length})</button>}
-        </div>
+        {perms.excel && !mobile && <button type="button" className="btn" onClick={exportExcel} disabled={!data.rows.length}>⬇ Excel ({data.rows.length})</button>}
       </div>
 
-      <div className="stat-row">
-        <div className="stat"><b>{data.rows.length}</b><span>{filtered ? 'Filtreye uyan' : 'Toplam kayıt'}</span></div>
-        <div className="stat"><b>{todayCount}</b><span>Bugün</span></div>
-        <button type="button" className={`stat stat-btn ${status === 'yeni' ? 'is-on' : ''}`} onClick={() => setStatus(status === 'yeni' ? '' : 'yeni')}>
-          <b>{data.counts.yeni || 0}</b><span>Yeni (bakılmamış)</span>
-        </button>
+      <input className="fl-search" type="search" placeholder="🔍  İsim, telefon veya not ara" aria-label="Kayıtlarda ara" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="sb-chips" role="tablist" aria-label="Durum">
+        <button type="button" role="tab" aria-selected={!status} className={`nf-chip ${!status ? 'is-on' : ''}`} onClick={() => setStatus('')}>Tümü {totalAll}</button>
+        {api.SUBMISSION_STATUSES.filter((x) => data.counts[x.value] || status === x.value).map((x) => (
+          <button type="button" role="tab" key={x.value} aria-selected={status === x.value} className={`nf-chip ${status === x.value ? 'is-on' : ''}`} onClick={() => setStatus(status === x.value ? '' : x.value)}>{x.label} {data.counts[x.value] || 0}</button>
+        ))}
+        <button type="button" className={`nf-chip ${filtersOpen || from || to ? 'is-on' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((o) => !o)}>📅 Tarih{from || to ? ' •' : ''}</button>
       </div>
-
-      <div className="filters card">
-        <div className="filter-search">
-          <input type="search" placeholder="Kayıtlarda ve notlarda ara…" aria-label="Kayıtlarda ara" value={q} onChange={(e) => setQ(e.target.value)} />
-          {mobile && (
-            <button type="button" className={`btn ${filtersOpen || status || from || to ? 'btn-primary' : ''}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen((o) => !o)}>
-              Filtreler{status || from || to ? ' •' : ''}
-            </button>
-          )}
+      {(filtersOpen || from || to) && (
+        <div className="sb-dates">
+          <label className="inline-field"><span>Başlangıç</span><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+          <label className="inline-field"><span>Bitiş</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+          {filtered && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setQ(''); setFrom(''); setTo(''); setStatus(''); }}>Temizle</button>}
+          {hasTc && <label className="inline-check"><input type="checkbox" checked={showTc} onChange={(e) => setShowTc(e.target.checked)} /> TC'yi açık göster</label>}
+          {perms.excel && mobile && <button type="button" className="btn btn-sm" onClick={exportExcel} disabled={!data.rows.length}>⬇ Excel ({data.rows.length})</button>}
         </div>
-        {(!mobile || filtersOpen) && (<>
-        <select aria-label="Durum filtresi" value={status} onChange={(e) => setStatus(e.target.value)} className="auto-w">
-          <option value="">Tüm durumlar</option>
-          {api.SUBMISSION_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label} ({data.counts[s.value] || 0})</option>)}
-        </select>
-        <label className="inline-field"><span>Başlangıç</span><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
-        <label className="inline-field"><span>Bitiş</span><input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-        {filtered && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setQ(''); setFrom(''); setTo(''); setStatus(''); }}>Filtreyi temizle</button>}
-        {hasTc && <label className="inline-check"><input type="checkbox" checked={showTc} onChange={(e) => setShowTc(e.target.checked)} /> TC'yi açık göster</label>}
-        </>)}
-      </div>
+      )}
 
       {!data.rows.length ? (
         <Empty title={filtered ? 'Filtreye uyan kayıt yok' : 'Henüz kayıt yok'}>Form doldurulduğunda kayıtlar burada görünecek.</Empty>
       ) : mobile ? (
-        // Telefonda tablo yerine kartlar
-        <ul className="sub-cards">
+        // Telefonda sade liste: isim, kısa bilgi, durum; dokununca detay
+        <div className="td-list">
           {data.rows.map((s) => {
             const titleCol = columns.find((c) => c.type === 'text') || columns[0];
-            const rest = columns.filter((c) => c !== titleCol);
             const lastNote = (s.notes || []).filter((n) => !n.system).slice(-1)[0];
-            const telCol = data.fields.find((f) => f.type === 'tel' && s.values[f.key]);
+            const info = columns
+              .filter((c) => c !== titleCol && !['tel', 'email', 'tc'].includes(c.type) && s.values[c.key] !== undefined && s.values[c.key] !== '')
+              .slice(0, 2)
+              .map((c) => api.displayValue(c.type, s.values[c.key], data.randevu))
+              .join(' · ');
             return (
-              <li key={s.id} className="sub-li">
-                <button type="button" className={`sub-card-m tone-${statusTone(s.status)}`} onClick={() => setDetailId(s.id)}>
-                  <div className="scm-top">
-                    <b className="scm-title">{titleCol ? <ValueCell type={titleCol.type} value={s.values[titleCol.key]} randevu={data.randevu} showTc={showTc} /> : 'Kayıt'}</b>
-                    <Badge tone={statusTone(s.status)}>{api.submissionStatusLabel(s.status)}</Badge>
-                  </div>
-                  {rest.map((c) => s.values[c.key] !== undefined && (
-                    <div key={c.key} className="scm-row">
-                      <span>{c.label}</span>
-                      <span>
-                        <ValueCell type={c.type} value={s.values[c.key]} randevu={data.randevu} showTc={showTc} />
-                        {c.type === 'randevu' && s.appointmentStatus && <> <Badge tone={APPT_TONE[s.appointmentStatus]}>{api.STATUS_LABELS[s.appointmentStatus]}</Badge></>}
-                      </span>
-                    </div>
-                  ))}
-                  {lastNote && <div className="scm-note">“{lastNote.text}”</div>}
-                  <div className="scm-foot">{formatDateTime(s.createdAt)}{s.manual ? ' · Manuel' : ''}<span aria-hidden="true">›</span></div>
-                </button>
-                {telCol && <ContactButtons phone={s.values[telCol.key]} className="scm-contact" />}
-              </li>
+              <button type="button" key={s.id} className="td-row sb-row" onClick={() => setDetailId(s.id)}>
+                <span className="td-who">
+                  <b>{titleCol ? api.displayValue(titleCol.type, s.values[titleCol.key], data.randevu, { mask: !showTc }) || 'Kayıt' : 'Kayıt'}</b>
+                  <span>{lastNote ? `“${lastNote.text}”` : info || (s.manual ? 'Panelden eklendi' : '')}</span>
+                </span>
+                <span className="sb-right">
+                  <Badge tone={statusTone(s.status)}>{api.submissionStatusLabel(s.status)}</Badge>
+                  <small>{ago(s.createdAt)}</small>
+                </span>
+              </button>
             );
           })}
-        </ul>
+        </div>
       ) : (
         <div className="table-wrap card">
           <table className="tbl tbl-hover">
@@ -278,7 +263,7 @@ export default function Submissions({ id }) {
                 const lastNote = (s.notes || []).filter((n) => !n.system).slice(-1)[0];
                 return (
                   <tr key={s.id} onClick={() => setDetailId(s.id)} className="clickable">
-                    <td className="nowrap">{formatDateTime(s.createdAt)} {s.manual && <Badge tone="gray">Manuel</Badge>}</td>
+                    <td className="nowrap">{formatDateTime(s.createdAt)} {s.manual && <Badge tone="gray">Panelden</Badge>}</td>
                     <td>
                       <Badge tone={statusTone(s.status)}>{api.submissionStatusLabel(s.status)}</Badge>
                       {lastNote && <div className="muted small note-preview" title={lastNote.text}>{lastNote.text}</div>}

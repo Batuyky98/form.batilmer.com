@@ -1120,7 +1120,7 @@ export default function FormBuilder({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to="/panel/formlar" className="back">← Formlar</Link>
+          <Link to={`/panel/formlar/${id}`} className="back">← {form.isletme || form.name}</Link>
           <h1>{form.name}</h1>
           <div className="row small muted">
             <span>{form.isletme}</span>

@@ -228,7 +228,7 @@ export default function Users() {
         <div className="card user-list">
           {users.map((u) => (
             <button key={u.id} type="button" className={`user-row ${sel?.id === u.id ? 'is-on' : ''}`} onClick={() => setSelected(u.id)}>
-              <div className="avatar" aria-hidden="true">{u.name.slice(0, 1)}</div>
+              <div className="avatar" aria-hidden="true">{(u.name.split(/\s+/).find((w) => w && !/\.$/.test(w)) || u.name).slice(0, 1).toLocaleUpperCase('tr')}</div>
               <div className="user-row-text">
                 <b>{u.name}</b>
                 <span>{u.email}</span>
