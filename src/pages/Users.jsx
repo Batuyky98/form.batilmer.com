@@ -9,7 +9,7 @@ const PERMS = [
   ['view', 'Kayıtları görüntüle', 'Görüntüle'],
   ['excel', 'Excel indir', 'Excel'],
   ['delete', 'Kayıt sil', 'Sil'],
-  ['edit', 'Formu düzenle', 'Düzenle'],
+  ['edit', 'Formu düzenle (önerilmez: formu Batilmer düzenler)', 'Düzenle*'],
   ['randevu', 'Randevuları yönet', 'Randevular'],
   ['notify', 'Bildirim', 'Bildirim 🔔']
 ];
@@ -102,6 +102,21 @@ function PermissionMatrix({ user, forms }) {
     }
   }
 
+  // İşletme personeli için önerilen: kayıtları görsün, randevuları yönetsin, bildirim alsın; formu düzenlemesin
+  async function preset(f) {
+    const current = perms[f.id] || {};
+    const next = { view: true, excel: false, delete: false, edit: false, randevu: !!f.hasRandevu, notify: true };
+    setPerms((p) => ({ ...p, [f.id]: next }));
+    try {
+      const saved = await api.setPermission(user.id, f.id, next);
+      setPerms((p) => ({ ...p, [f.id]: saved }));
+      toast('Standart yetki verildi.');
+    } catch (e) {
+      setPerms((p) => ({ ...p, [f.id]: current }));
+      toast(e.message, 'err');
+    }
+  }
+
   if (!perms) return <Spinner />;
   if (!forms.length) return <Empty title="Henüz form yok" />;
   if (user.role === 'admin') {
@@ -131,6 +146,7 @@ function PermissionMatrix({ user, forms }) {
           <tr>
             <th>Form</th>
             {PERMS.map(([k, label, short]) => <th key={k} className="center" title={label}>{short}</th>)}
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -144,12 +160,13 @@ function PermissionMatrix({ user, forms }) {
                     <input type="checkbox" aria-label={`${f.name}: ${label}`} checked={!!p[k]} disabled={k === 'randevu' && !f.hasRandevu && !p[k]} onChange={(e) => toggle(f.id, k, e.target.checked)} />
                   </td>
                 ))}
+                <td><button type="button" className="btn btn-sm" title="Görüntüle + Randevular + Bildirim (düzenleme kapalı)" onClick={() => preset(f)}>Standart yetki</button></td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <p className="muted small mt-sm"><b>Bildirim:</b> o formda yeni kayıt/randevu olunca kişiye panelde sesli uyarı ve telefon bildirimi gider (randevu bildirimi için "Randevuları yönet" de açık olmalı). Kişi telefonunda bir kez "İzin ver" demeli; tiki kaldırdığınız anda bildirimler durur.<br />"Kayıtları görüntüle" kapatılırsa o formdaki diğer yetkiler de kapanır. "Formu düzenle" ile kullanıcı alanları, seçenekleri ve görünümü değiştirebilir; form silme, link değiştirme, KVKK ayarları ve yetki verme yalnızca Ana Admin'dedir.</p>
+      <p className="muted small mt-sm"><b>Standart yetki</b> işletme personeli için önerilen ayardır: kayıtları görür, randevuları yönetir, bildirim alır; formu düzenleyemez. <b>Düzenle*</b>: form değişikliklerini işletme size söyler, siz yaparsınız; bu yetkiyi sadece gerçekten gerekirse verin.<br /><b>Bildirim:</b> o formda yeni kayıt/randevu olunca kişiye panelde sesli uyarı ve telefon bildirimi gider (randevu bildirimi için "Randevuları yönet" de açık olmalı). Kişi telefonunda bir kez "İzin ver" demeli; tiki kaldırdığınız anda bildirimler durur.<br />"Kayıtları görüntüle" kapatılırsa o formdaki diğer yetkiler de kapanır. "Formu düzenle" ile kullanıcı alanları, seçenekleri ve görünümü değiştirebilir; form silme, link değiştirme, KVKK ayarları ve yetki verme yalnızca Ana Admin'dedir.</p>
     </div>
   );
 }

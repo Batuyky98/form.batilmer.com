@@ -7,6 +7,7 @@ import { runScheduler } from './lib/api.js';
 
 import Login, { ResetPassword, ChangePassword } from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Today from './pages/Today.jsx';
 import FormBuilder from './pages/FormBuilder.jsx';
 import Submissions from './pages/Submissions.jsx';
 import Appointments from './pages/Appointments.jsx';
@@ -25,7 +26,8 @@ import { registerWorker } from './lib/push.js';
 import { applyTheme } from './lib/theme.js';
 
 const PANEL_ROUTES = [
-  ['/panel', Dashboard],
+  ['/panel', Today],
+  ['/panel/formlar', Dashboard],
   ['/panel/formlar/:id/duzenle', FormBuilder],
   ['/panel/formlar/:id/kayitlar', Submissions],
   ['/panel/formlar/:id/randevular', Appointments],

@@ -188,7 +188,7 @@ export default function Submissions({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to="/panel" className="back">← Formlar</Link>
+          <Link to="/panel/formlar" className="back">← Formlar</Link>
           <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
           <h1>Kayıtlar</h1>
         </div>

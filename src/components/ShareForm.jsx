@@ -3,6 +3,7 @@ import qrcode from 'qrcode-generator';
 import { Modal, copyText, useToast } from './ui.jsx';
 import { WaIcon } from './ContactButtons.jsx';
 import { formBaseUrl } from '../lib/util.js';
+import { markStepNow } from '../lib/onboarding.js';
 
 // Formu paylaş: linki kopyala, WhatsApp'ta gönder, telefonun paylaş menüsü, QR kod (kapıya / masaya)
 export default function ShareFormModal({ form, onClose }) {
@@ -19,9 +20,11 @@ export default function ShareFormModal({ form, onClose }) {
   const notLive = !form.publishedAt || form.control?.status !== 'aktif';
 
   async function copy() {
+    markStepNow('paylas');
     toast((await copyText(url)) ? 'Link kopyalandı.' : 'Kopyalanamadı; linki elle seçin.', 'ok');
   }
   async function share() {
+    markStepNow('paylas');
     try {
       await navigator.share({ title, text: `${title} için online randevu / başvuru:`, url });
     } catch {
@@ -39,7 +42,7 @@ export default function ShareFormModal({ form, onClose }) {
           <button type="button" className="btn btn-primary" onClick={copy}>Kopyala</button>
         </div>
         <div className="share-btns">
-          <a className="share-btn share-wa" href={wa} target="_blank" rel="noopener noreferrer"><WaIcon /> WhatsApp</a>
+          <a className="share-btn share-wa" href={wa} target="_blank" rel="noopener noreferrer" onClick={() => markStepNow('paylas')}><WaIcon /> WhatsApp</a>
           {canShare && <button type="button" className="share-btn" onClick={share}>📤 Diğer uygulamalar</button>}
           <a className="share-btn" href={url} target="_blank" rel="noopener noreferrer">↗ Formu aç</a>
         </div>
@@ -49,7 +52,7 @@ export default function ShareFormModal({ form, onClose }) {
           <div className="stack-sm">
             <b>Kare kod (QR)</b>
             <span className="muted small">Kapıya, masaya, kartvizite koyun; telefon kamerasıyla okutan müşteri doğrudan forma gelir.</span>
-            <a className="btn btn-sm" href={qr.png} download={`${form.slug}-qr.gif`}>QR'ı indir</a>
+            <a className="btn btn-sm" onClick={() => markStepNow('paylas')} href={qr.png} download={`${form.slug}-qr.gif`}>QR'ı indir</a>
           </div>
         </div>
         <div className="pf-hint">Instagram biyografisine ve Google İşletme profilindeki "Randevu" bağlantısına da bu linki koyabilirsiniz.</div>

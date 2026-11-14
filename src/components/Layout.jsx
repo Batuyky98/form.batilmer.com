@@ -17,15 +17,17 @@ const I = {
   shield: 'M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z',
   key: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3v-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7Z',
   out: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
+  today: 'M3 12h4l3-8 4 16 3-8h4',
   remind: 'M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5A8.4 8.4 0 1 1 21 11.5ZM12 8v4l2.5 1.5',
   people: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1'
 };
 
 const NAV = [
-  { to: '/panel', label: 'Formlar', icon: I.forms },
-  { to: '/panel/takvim', label: 'Tüm randevular', short: 'Takvim', icon: I.cal },
-  { to: '/panel/hatirlatmalar', label: 'Hatırlatmalar', short: 'Hatırlat', icon: I.remind },
+  { to: '/panel', label: 'Bugün', icon: I.today },
+  { to: '/panel/takvim', label: 'Takvim', icon: I.cal },
   { to: '/panel/musteriler', label: 'Müşteriler', icon: I.people },
+  { to: '/panel/formlar', label: 'Formlar', icon: I.forms },
+  { to: '/panel/hatirlatmalar', label: 'Hatırlatmalar', icon: I.remind },
   { to: '/panel/bildirimler', label: 'Bildirimler', icon: I.bell },
   { to: '/panel/kullanicilar', label: 'Kullanıcılar', icon: I.users, admin: true },
   { to: '/panel/giden-mailler', label: 'Giden mailler', icon: I.mail, admin: true },
@@ -41,13 +43,16 @@ function Icon({ d, size = 18 }) {
   );
 }
 
-const isActive = (path, to) => (to === '/panel' ? path === '/panel' || path.startsWith('/panel/formlar') : path.startsWith(to));
+// "Dr. Ayşe Yılmaz" → "A" (unvan atlanır)
+const initialOf = (n) => (String(n || '?').trim().split(/\s+/).find((w) => w && !/\.$/.test(w)) || '?').slice(0, 1).toLocaleUpperCase('tr');
+
+const isActive = (path, to) => (to === '/panel' ? path === '/panel' : path.startsWith(to));
 
 // Telefonda alttaki sekme çubuğu (uygulama gibi)
 function TabBar({ onMenu, menuOpen }) {
   const { path } = useLocation();
   const live = useLive();
-  const tabs = [NAV[0], NAV[1], NAV[2], NAV[3]];
+  const tabs = NAV.slice(0, 4);
   return (
     <nav className="tabbar" aria-label="Hızlı menü">
       {tabs.map((t) => (
@@ -59,10 +64,6 @@ function TabBar({ onMenu, menuOpen }) {
           <span>{t.short || t.label}</span>
         </Link>
       ))}
-      <button type="button" className={`tab ${menuOpen ? 'is-active' : ''}`} aria-expanded={menuOpen} onClick={onMenu}>
-        <span className="tab-icon"><Icon d={I.menu} size={22} /></span>
-        <span>Menü</span>
-      </button>
     </nav>
   );
 }
@@ -99,7 +100,7 @@ export default function Layout({ children }) {
           </nav>
           <div className="side-foot">
             <div className="me">
-              <div className="avatar" aria-hidden="true">{(user?.name || '?').slice(0, 1)}</div>
+              <div className="avatar" aria-hidden="true">{initialOf(user?.name)}</div>
               <div>
                 <div className="me-name">{user?.name}</div>
                 <div className="me-mail">{user?.email}</div>
@@ -120,10 +121,18 @@ export default function Layout({ children }) {
             <div className="appbar-actions">
               <ThemeToggle />
               <Bell className="bell-top" />
-              <Link to="/panel/guvenlik" className="appbar-me" title={user?.email}>
-                <span className="avatar avatar-sm" aria-hidden="true">{(user?.name || '?').slice(0, 1)}</span>
+              {/* Telefonda profil simgesi menüyü açar (ayarlar, hatırlatmalar, kullanıcılar, çıkış) */}
+              <button
+                type="button"
+                className="appbar-me"
+                title={user?.email}
+                aria-label="Menü"
+                aria-expanded={open}
+                onClick={() => (window.matchMedia('(max-width: 900px)').matches ? setOpen((o) => !o) : navigate('/panel/guvenlik'))}
+              >
+                <span className="avatar avatar-sm" aria-hidden="true">{initialOf(user?.name)}</span>
                 <span className="appbar-me-name">{user?.name}</span>
-              </Link>
+              </button>
             </div>
           </header>
           <main className="main">{children}</main>

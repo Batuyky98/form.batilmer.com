@@ -217,7 +217,7 @@ export default function Appointments({ id }) {
   const [error, setError] = useState('');
   const [resFilter, setResFilter] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState(() => (new URLSearchParams(window.location.search).get('yeni') === '1' ? { type: 'manual' } : null));
   const mobile = useIsMobile();
 
   // Telefonda: üstte haftanın günleri (şerit), altında seçili günün ajandası. Veri her zaman haftalık çekilir.
@@ -256,7 +256,7 @@ export default function Appointments({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to="/panel" className="back">← Formlar</Link>
+          <Link to="/panel/formlar" className="back">← Formlar</Link>
           <div className="eyebrow">{[form.isletme, form.name].filter(Boolean).join(' · ')}</div>
           <h1>Randevular</h1>
         </div>

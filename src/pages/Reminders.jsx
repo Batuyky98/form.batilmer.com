@@ -5,6 +5,7 @@ import { Badge, Empty, Segmented, Spinner, useAsync, useIsMobile, useToast } fro
 import { WaIcon } from '../components/ContactButtons.jsx';
 import { longDate } from '../lib/reminder.js';
 import { formatDateTime } from '../lib/util.js';
+import { markStepNow } from '../lib/onboarding.js';
 
 // Yarının (ve bugünün) randevularına WhatsApp'tan tek tıkla hatırlatma.
 // Düğme WhatsApp'ı müşterinin sohbetiyle ve hazır mesajla açar; personel gönder'e basar.
@@ -93,7 +94,7 @@ export default function Reminders() {
                       </div>
                     </>
                   ) : i.waUrl ? (
-                    <a className="rm-wa" href={i.waUrl} target="_blank" rel="noopener noreferrer" onClick={() => mark(i, true)}>
+                    <a className="rm-wa" href={i.waUrl} target="_blank" rel="noopener noreferrer" onClick={() => { markStepNow('hatirlat'); mark(i, true); }}>
                       <WaIcon /> WhatsApp ile hatırlat
                     </a>
                   ) : (
