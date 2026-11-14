@@ -1637,3 +1637,9 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .sc-save .btn:not(.btn-primary) { background: transparent; color: var(--surface); border-color: color-mix(in srgb, var(--surface) 40%, transparent); }
 @media (max-width: 900px) { .sc-save { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px); } .sc { padding-bottom: 90px; } }
 @media (max-width: 720px) { .sc-range { padding-left: 0; } .sc-wd .nf-link { margin-left: 0; } .sc-range input { flex: 1; width: auto; } }
+/* Telefonda bildirim paneli: zile değil ekrana hizalı, hiçbir zaman taşmaz */
+@media (max-width: 900px) {
+  .bell-top .bell-panel, .bell-panel { position: fixed; top: calc(env(safe-area-inset-top) + 64px); left: 12px; right: 12px; width: auto; max-height: calc(100vh - 64px - var(--tabbar-h) - 40px); }
+}
+/* + düğmeleri üst çubuğun (bildirim paneli) altında kalsın */
+.td-fab, .fab { z-index: 25; }
