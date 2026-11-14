@@ -4,7 +4,7 @@ import { addDays, dayOfMonth, formatBytes, formatDate, formatDateShort, monthSho
 import { firstBookableDate, isDateOpen, resourcesForService } from '../lib/availability.js';
 import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
-import { displayValue } from '../lib/shared.js';
+import { displayValue, servicePrice } from '../lib/shared.js';
 import { DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
@@ -177,10 +177,13 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
             <button key={s.id} type="button" role="radio" aria-checked={serviceId === s.id} className={`bf-svc-card ${serviceId === s.id ? 'is-on' : ''}`} onClick={() => set({ serviceId: s.id, resourceId: '', time: '' })}>
               <span className="bf-svc-tick" aria-hidden="true">✓</span>
               <b>{s.name}</b>
-              <span>{s.duration} {lang === 'en' ? 'min' : 'dk'}</span>
+              <span>{s.duration} {lang === 'en' ? 'min' : 'dk'}{servicePrice(cfg, s) && <> · <strong className="bf-svc-price">{servicePrice(cfg, s)}</strong></>}</span>
             </button>
           ))}
         </div>
+      )}
+      {services.length === 1 && servicePrice(cfg, services[0]) && (
+        <div className="bf-price-one">{lang === 'en' ? 'Price' : 'Ücret'}: <strong>{servicePrice(cfg, services[0])}</strong></div>
       )}
       <div className="bf-appt-row">
         {hasResources && (
@@ -308,6 +311,7 @@ function AppointmentCard({ a, lang }) {
     [t(lang, 'date'), `${weekdayName(a.date, lang)}, ${formatDate(a.date, lang)} · ${a.start}${a.end ? `–${a.end}` : ''}`],
     a.service && a.service !== a.term ? [t(lang, 'service'), a.service] : null,
     a.resource ? [a.resourceLabel || t(lang, 'service'), a.resource] : null,
+    a.price ? [lang === 'en' ? 'Price' : 'Ücret', a.price] : null,
     a.partySize ? [t(lang, 'partySize'), t(lang, 'persons', { n: a.partySize })] : null,
     a.address ? [t(lang, 'address'), a.address] : null,
     [t(lang, 'status'), t(lang, 'statusLabels')[a.status] || a.status]

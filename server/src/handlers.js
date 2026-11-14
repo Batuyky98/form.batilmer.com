@@ -18,7 +18,7 @@ import { t as tt } from '../../src/lib/i18n.js';
 import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
 import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
-import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
+import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 import { phoneKey, phonePretty, fillReminder, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
 
@@ -198,7 +198,7 @@ function appointmentCard(form, appt, cfg, lang, settings = {}) {
   const title = `${biz} – ${svc && svc !== term ? `${term}: ${svc}` : term}`;
   const cancel = cancelUrl(appt);
   return {
-    date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, resource: res, resourceLabel: cfg.resourceLabel || '',
+    date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, price: servicePrice(cfg, serviceById(cfg, appt.serviceId)), resource: res, resourceLabel: cfg.resourceLabel || '',
     partySize: cfg.capacityMode === 'kisi' ? appt.partySize : null, term, isletme: biz,
     cancelUrl: cancel, cancelCutoffHours: Number(cfg.cancelCutoffHours || 0),
     address: settings.address || '', directionsUrl: directionsUrl(settings),
@@ -895,6 +895,11 @@ function cleanDraft(draft, prev, user) {
   }
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
+  next.randevu.showPrices = !!next.randevu.showPrices;
+  for (const svc of next.randevu.services || []) {
+    const p = svc.price === '' || svc.price === null || svc.price === undefined ? '' : Number(svc.price);
+    svc.price = p === '' || !Number.isFinite(p) || p < 0 ? '' : Math.min(Math.round(p * 100) / 100, 10_000_000);
+  }
   const wa = next.randevu.wa || {};
   next.randevu.wa = {
     enabled: wa.enabled !== false,

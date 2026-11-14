@@ -1643,3 +1643,11 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 }
 /* + düğmeleri üst çubuğun (bildirim paneli) altında kalsın */
 .td-fab, .fab { z-index: 25; }
+/* hizmet fiyatı (formda) */
+.bf-svc-price { color: var(--bf-primary, #2f5bea); font-weight: 700; }
+.bf-price-one { font-size: 15px; margin: 0 0 10px; color: var(--bf-label, inherit); }
+.bf-price-one strong { color: var(--bf-primary, #2f5bea); }
+.tbl-compact input[aria-label="Fiyat"] { min-width: 96px; }
+/* Onay kartındaki ikincil düğmeler (Yol tarifi, Google Takvim, Kopyala) her tasarımda okunur kalsın */
+.bf-btn.bf-btn-light.bf-btn-light { background: color-mix(in srgb, var(--bf-primary) 8%, transparent) !important; color: var(--bf-link, var(--bf-primary)) !important; border: 1.5px solid color-mix(in srgb, var(--bf-primary) 45%, transparent) !important; box-shadow: none !important; animation: none !important; text-shadow: none !important; }
+.bf-btn.bf-btn-light.bf-btn-light::before, .bf-btn.bf-btn-light.bf-btn-light::after { display: none !important; }

@@ -161,6 +161,7 @@ g.draft.settings.customerMails = true; // kalıcı silmede giden maillerin de si
 g.draft.randevu.wa = { enabled: true, when: 'once', notifyAt: new Date(Date.now() + 3 * 3600e3).toISOString().slice(11, 16), text: 'Merhaba {ad}, {hayvan_adi} için {gun} saat {saat} randevunuz var. İptal: {iptal_linki}' };
 await rpc('a', 'saveDraft', fid, g.draft);
 await rpc('a', 'publishForm', fid, {});
+const addDays2 = (d, n) => new Date(Date.parse(d) + n * 864e5).toISOString().slice(0, 10);
 const tomorrow = new Date(Date.now() + 864e5 + 3 * 3600e3).toISOString().slice(0, 10);
 const submitT = async (name, phone, pet, i) => { const sl = await rpc('p', 'getAvailability', f.slug, { date: tomorrow, serviceId: 'svc_muayene' }); return rpc('p', 'submitForm', f.slug, { ad_soyad: name, telefon: phone, email: `${pet.toLowerCase()}@x.com`, hayvan_adi: pet, hayvan_turu: '🐱 Kedi', randevu: { date: tomorrow, time: sl[i].time, serviceId: 'svc_muayene' } }, { startedAt: Date.now() - 5000, kvkkAccepted: true }); };
 await submitT('Ali Veli', '+90 532 111 22 33', 'Pamuk', 3);
@@ -242,6 +243,21 @@ e = await ex(rpc('s', 'saveSchedule', fid, { closedDates: [tomorrow] }));
 ok(e?.code === 'yetki', 'randevu yetkisi olmayan saat değiştiremez');
 
 const izler = [];
+// hizmet fiyatı: tik kapalıyken görünmez, açıkken onay kartında
+const pf = await rpc('a', 'getForm', fid);
+pf.draft.randevu.services[0].price = 450;
+pf.draft.randevu.services[1].price = 'abc';
+pf.draft.randevu.showPrices = true;
+await rpc('a', 'saveDraft', fid, pf.draft);
+const pf2 = (await rpc('a', 'getForm', fid)).draft.randevu;
+ok(pf2.services[0].price === 450 && pf2.services[1].price === '', 'fiyat kaydedildi, geçersiz fiyat temizlendi');
+await rpc('a', 'publishForm', fid, {});
+const psl = await rpc('p', 'getAvailability', f.slug, { date: addDays2(tomorrow, 1), serviceId: pf2.services[0].id });
+const pres = await rpc('p', 'submitForm', f.slug, { ad_soyad: 'Fiyat Test', telefon: '0533 444 55 66', email: 'fiyat@x.com', hayvan_adi: 'Zıpzıp', hayvan_turu: '🐱 Kedi', randevu: { date: addDays2(tomorrow, 1), time: psl[0].time, serviceId: pf2.services[0].id } }, { startedAt: Date.now() - 5000, kvkkAccepted: true });
+ok(pres.appointment.price === '450 ₺', 'onay kartında fiyat: ' + pres.appointment.price);
+izler.push('Fiyat Test', 'Zıpzıp', '5334445566');
+
+
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));
 ok(e, 'kullanıcı test kayıtlarını silemez');

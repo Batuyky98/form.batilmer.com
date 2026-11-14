@@ -145,6 +145,7 @@ export function normalizeContent(c) {
   delete settings.notifyEmails;
   const randevu = { ...clone(DEFAULT_RANDEVU), ...(c.randevu || {}) };
   randevu.sms = { ...clone(DEFAULT_RANDEVU.sms), ...(c.randevu?.sms || {}) };
+  randevu.showPrices = !!randevu.showPrices;
   randevu.wa = { ...clone(DEFAULT_RANDEVU.wa), ...(c.randevu?.wa || {}) };
   const appearance = { ...clone(DEFAULT_APPEARANCE), ...(c.appearance || {}) };
   appearance.colors = { ...clone(DEFAULT_APPEARANCE.colors), ...(c.appearance?.colors || {}) };

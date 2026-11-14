@@ -33,6 +33,8 @@ export const DEFAULT_RANDEVU = {
   cancelCutoffHours: 2,
   perContactLimit: 2,
   reminderHours: 24,
+  // Hizmet fiyatları formda görünsün mü (her hizmette isteğe bağlı 'price')
+  showPrices: false,
   // WhatsApp ile tek tık hatırlatma (personel gönderir; ücretsiz)
   wa: { ...DEFAULT_WA },
   sms: { confirm: false, reminder: false } // canlıda SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) ile gönderilecek

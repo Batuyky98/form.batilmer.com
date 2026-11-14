@@ -744,23 +744,27 @@ function RandevuTab({ form, draft, setDraft, isAdmin }) {
       </section>
 
       <section className="sub-card stack">
-        <h3>Hizmetler</h3>
+        <div className="row-between">
+          <h3>Hizmetler</h3>
+          <Toggle id="svc-price" checked={!!cfg.showPrices} onChange={(v) => set({ showPrices: v })} label="Fiyatları göster" />
+        </div>
         <div className="table-wrap">
           <table className="tbl tbl-compact">
-            <thead><tr><th>Hizmet adı</th><th>Süre (dk)</th><th>Ara (dk)</th><th aria-label="İşlem" /></tr></thead>
+            <thead><tr><th>Hizmet adı</th><th>Süre (dk)</th><th>Ara (dk)</th>{cfg.showPrices && <th>Fiyat (₺)</th>}<th aria-label="İşlem" /></tr></thead>
             <tbody>
               {cfg.services.map((s, i) => (
                 <tr key={s.id}>
                   <td><div className="opt-row"><EmojiPick value={s.name} onChange={(v) => setService(i, { name: v })} /><input aria-label="Hizmet adı" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} /></div></td>
                   <td><input aria-label="Süre" type="number" min="5" step="5" value={s.duration} onChange={(e) => setService(i, { duration: Number(e.target.value) })} /></td>
                   <td><input aria-label="Arka arkaya randevu arası" type="number" min="0" step="5" value={s.buffer || 0} onChange={(e) => setService(i, { buffer: Number(e.target.value) })} /></td>
+                  {cfg.showPrices && <td><input aria-label="Fiyat" type="number" min="0" step="1" inputMode="decimal" placeholder="—" value={s.price ?? ''} onChange={(e) => setService(i, { price: e.target.value === '' ? '' : Number(e.target.value) })} /></td>}
                   <td><button type="button" className="icon-btn" aria-label="Hizmeti sil" disabled={cfg.services.length === 1} onClick={() => set({ services: cfg.services.filter((_, k) => k !== i) })}>✕</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="pf-hint">"Ara": randevudan sonra bırakılacak temizlik/hazırlık süresi.</div>
+        <div className="pf-hint">"Ara": randevudan sonra bırakılacak temizlik/hazırlık süresi.{cfg.showPrices ? ' Fiyatı boş bırakılan hizmette fiyat yazmaz.' : ' "Fiyatları göster" açılırsa müşteri her hizmetin fiyatını formda görür.'}</div>
         <div><button type="button" className="btn btn-sm" onClick={() => set({ services: [...cfg.services, { id: uid('svc_'), name: 'Yeni hizmet', duration: 30, buffer: 0 }] })}>+ Hizmet ekle</button></div>
       </section>
 

@@ -76,6 +76,10 @@ export function phoneIntl(raw) {
   if (d.length === 10 && d.startsWith('5')) return `90${d}`;
   return d;
 }
+// 450 → "450 ₺", 1250.5 → "1.250,5 ₺"
+export const formatPrice = (n) => (n === '' || n === null || n === undefined || Number.isNaN(Number(n)) ? '' : `${Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`);
+export const servicePrice = (cfg, s) => (cfg?.showPrices && s && s.price !== '' && s.price !== undefined && s.price !== null ? formatPrice(s.price) : '');
+
 export const telUrl = (raw) => {
   const d = phoneIntl(raw);
   return d ? `tel:+${d}` : '';
