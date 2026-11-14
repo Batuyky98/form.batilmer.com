@@ -221,6 +221,26 @@ lg.draft.appearance.logo = 'javascript:alert(1)';
 await rpc('a', 'saveDraft', fid, lg.draft);
 ok((await rpc('a', 'getForm', fid)).draft.appearance.logo === '', 'geçersiz logo reddedildi');
 
+// müsaitlik: randevu yetkisi olan personel (formu düzenleyemese de) saatleri yönetir
+const sc = await rpc('v', 'getSchedule', fid);
+ok(sc.hours && Array.isArray(sc.blocks), 'personel müsaitliği görebiliyor');
+e = await ex(rpc('v', 'saveDraft', fid, (await rpc('a', 'getForm', fid)).draft));
+ok(e?.code === 'yetki', 'personel formu düzenleyemiyor');
+const dow = new Date(tomorrow).getUTCDay();
+const pre = await rpc('v', 'saveSchedule', fid, { hours: { ...sc.hours, [dow]: [] } }, { dryRun: true });
+ok(pre.affected.length >= 1 && (await rpc('v', 'getSchedule', fid)).hours[dow].length > 0, `kaydetmeden önce etkilenen randevular söyleniyor (${pre.affected.length}), değişmedi`);
+await rpc('v', 'saveSchedule', fid, { closedDates: [tomorrow] });
+ok((await rpc('p', 'getAvailability', f.slug, { date: tomorrow, serviceId: 'svc_muayene' })).length === 0, 'kapatılan gün formda hemen kapandı');
+ok((await rpc('a', 'listAllAppointments', { from: tomorrow, to: tomorrow })).items.some((x) => x.status !== 'iptal'), 'kapalı güne denk gelen randevular iptal edilmedi');
+await rpc('v', 'saveSchedule', fid, { closedDates: [] });
+ok((await rpc('p', 'getAvailability', f.slug, { date: tomorrow, serviceId: 'svc_muayene' })).length > 0, 'gün yeniden açıldı');
+e = await ex(rpc('v', 'saveSchedule', fid, { hours: { 1: [{ start: '18:00', end: '09:00' }] } }));
+ok(e, 'ters saat aralığı reddedildi');
+await rpc('a', 'setPermission', sek.id, fid, { view: true, randevu: false });
+await rpc('s', 'login', 'sek@test.com', 'Sek.Sifre1234');
+e = await ex(rpc('s', 'saveSchedule', fid, { closedDates: [tomorrow] }));
+ok(e?.code === 'yetki', 'randevu yetkisi olmayan saat değiştiremez');
+
 const izler = [];
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));

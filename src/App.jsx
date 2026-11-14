@@ -9,6 +9,7 @@ import Login, { ResetPassword, ChangePassword } from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Today from './pages/Today.jsx';
 import FormHub from './pages/FormHub.jsx';
+import Schedule from './pages/Schedule.jsx';
 import FormBuilder from './pages/FormBuilder.jsx';
 import Submissions from './pages/Submissions.jsx';
 import Appointments from './pages/Appointments.jsx';
@@ -34,6 +35,7 @@ const PANEL_ROUTES = [
   ['/panel/formlar/:id/kayitlar', Submissions],
   ['/panel/formlar/:id/randevular', Appointments],
   ['/panel/formlar/:id/istatistik', Stats],
+  ['/panel/formlar/:id/saatler', Schedule],
   ['/panel/takvim', AllCalendar],
   ['/panel/hatirlatmalar', Reminders],
   ['/panel/musteriler', Customers],

@@ -116,3 +116,6 @@ export const listCustomers = serverOnly('listCustomers', () => ({ items: [], tot
 export const getCustomer = serverOnly('getCustomer', () => { throw new Error('Demo modunda kullanılamaz.'); });
 export const addCustomerNote = serverOnly('addCustomerNote', () => { throw new Error('Demo modunda kullanılamaz.'); });
 export const deleteCustomerNote = serverOnly('deleteCustomerNote', () => true);
+// Müsaitlik: çalışma saatleri, kapalı günler (randevu yetkisi yeterli)
+export const getSchedule = serverOnly('getSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const saveSchedule = serverOnly('saveSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });

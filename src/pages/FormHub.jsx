@@ -68,6 +68,12 @@ export default function FormHub({ id }) {
             <span className="td-chev" aria-hidden="true">›</span>
           </Link>
         )}
+        {f.hasRandevu && f.perms.randevu && (
+          <Link to={`${base}/saatler`} className="fh-tile">
+            <span className="fh-ic" aria-hidden="true">🕒</span>
+            <span className="fh-t"><b>Müsaitlik</b><span>Saat kapat, tatil, çalışma saatleri</span></span>
+          </Link>
+        )}
         <Link to={`${base}/kayitlar`} className="fh-tile">
           <span className="fh-ic" aria-hidden="true">📥</span>
           <span className="fh-t"><b>Kayıtlar</b><span>{f.total ? `${f.total} kayıt${f.todayCount ? ` · bugün ${f.todayCount}` : ''}` : 'Henüz kayıt yok'}</span></span>

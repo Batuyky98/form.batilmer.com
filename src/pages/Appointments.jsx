@@ -287,7 +287,7 @@ export default function Appointments({ id }) {
           <h1>Randevular</h1>
         </div>
         <div className="row wrap">
-          <button type="button" className="btn" onClick={() => setModal({ type: 'block' })}>Saati kapat</button>
+          <Link to={`/panel/formlar/${id}/saatler`} className="btn">🕒 Müsaitlik</Link>
           {!mobile && <button type="button" className="btn btn-primary" onClick={() => setModal({ type: 'manual' })}>+ Randevu ekle</button>}
         </div>
       </div>

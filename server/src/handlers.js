@@ -1793,9 +1793,67 @@ H.addBlock = async (ctx, formId, { date, start, end, resourceId, note } = {}) =>
   if (!isDate(date) || !tm.test(String(start || '')) || !tm.test(String(end || '')) || start >= end) fail('Geçerli bir tarih ve saat aralığı girin.');
   return ctx.db.tx(async (q) => {
     const { user, form } = await requirePerm(ctx, q, formId, 'randevu', { lock: true });
+    if ((await q('SELECT id FROM blocks WHERE form_id = ? AND date = ? AND start = ? AND end_time = ? AND COALESCE(resource_id, \'\') = ?', [form.id, date, start, end, resourceId || ''])).length) fail('Bu saat zaten kapalı.');
     await q('INSERT INTO blocks (id, form_id, date, start, end_time, resource_id, note) VALUES (?, ?, ?, ?, ?, ?, ?)', [uid('b_'), form.id, date, start, end, resourceId || null, str(note, 300)]);
     await log(q, user.id, 'Saat blokladı', `${form.name} ${date} ${start}-${end}`);
     return true;
+  });
+};
+
+// ---------------------------------------------------------------- müsaitlik (işletme kendisi yönetir)
+// Formu düzenleme yetkisi olmayan personel de (randevu yetkisiyle) sadece çalışma saatlerini,
+// kapalı günleri ve kapalı saatleri değiştirebilir. Değişiklik hemen geçerli olur (ayrıca yayınlamaya gerek yok).
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+function cleanHours(hours) {
+  const out = {};
+  for (const d of [0, 1, 2, 3, 4, 5, 6]) {
+    const list = (Array.isArray(hours?.[d]) ? hours[d] : [])
+      .map((r) => ({ start: String(r?.start || ''), end: String(r?.end || '') }))
+      .filter((r) => HM.test(r.start) && HM.test(r.end));
+    if (list.some((r) => r.start >= r.end)) fail('Bitiş saati başlangıçtan sonra olmalı.');
+    list.sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 1; i < list.length; i++) if (list[i].start < list[i - 1].end) fail('Aynı gündeki saat aralıkları çakışıyor.');
+    if (list.length > 4) fail('Bir güne en fazla 4 aralık eklenebilir.');
+    out[d] = list;
+  }
+  return out;
+}
+
+async function upcomingBlocks(q, formId) {
+  return (await q('SELECT * FROM blocks WHERE form_id = ? AND date >= ? ORDER BY date, start', [formId, today()])).map((b) => ({ id: b.id, date: b.date, start: b.start, end: b.end_time, note: b.note, resourceId: b.resource_id }));
+}
+
+H.getSchedule = async (ctx, formId) => {
+  const q = ctx.db.query;
+  const { form } = await requirePerm(ctx, q, formId, 'randevu');
+  const cfg = content(form).randevu;
+  return { form: { id: form.id, name: form.name, isletme: form.isletme }, hours: cfg.hours, closedDates: (cfg.closedDates || []).filter((d) => d >= today()), blocks: await upcomingBlocks(q, form.id), resourceLabel: cfg.resourceLabel, resources: (cfg.resources || []).map((r) => ({ id: r.id, name: r.name })) };
+};
+
+// patch: { hours?, closedDates? }  dryRun: sadece etkilenen randevuları döndür
+H.saveSchedule = async (ctx, formId, patch = {}, { dryRun = false } = {}) => {
+  return ctx.db.tx(async (q) => {
+    const { user, form } = await requirePerm(ctx, q, formId, 'randevu', { lock: true });
+    const cur = content(form).randevu;
+    const next = { ...cur };
+    if (patch.hours !== undefined) next.hours = cleanHours(patch.hours);
+    if (patch.closedDates !== undefined) {
+      if (!Array.isArray(patch.closedDates)) fail('Geçersiz tarih listesi.');
+      const keep = (cur.closedDates || []).filter((d) => d < today()); // geçmiş kayıtlar silinmesin
+      next.closedDates = [...new Set([...keep, ...patch.closedDates.map(String).filter(isDate)])].sort().slice(-400);
+    }
+    const affected = (await findAffectedAppointments(q, form, next))
+      .map((a) => ({ id: a.id, date: a.date, start: a.start, name: a.contact?.name || '' }))
+      .sort((x, y) => `${x.date} ${x.start}`.localeCompare(`${y.date} ${y.start}`));
+    if (dryRun) return { affected };
+    for (const col of ['draft', 'published']) {
+      const c = form[col];
+      if (!c) continue;
+      c.randevu = { ...c.randevu, hours: next.hours, closedDates: next.closedDates };
+      await q(`UPDATE forms SET ${col} = ?, updated_at = ? WHERE id = ?`, [S(c), now(), form.id]);
+    }
+    await log(q, user.id, patch.hours !== undefined ? 'Çalışma saatlerini güncelledi' : 'Kapalı günleri güncelledi', form.name);
+    return { affected, hours: next.hours, closedDates: next.closedDates.filter((d) => d >= today()) };
   });
 };
 
