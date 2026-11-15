@@ -4,6 +4,7 @@ import { Link } from '../router.jsx';
 import { Badge, Empty, Spinner, useAsync, useConfirm, useToast } from '../components/ui.jsx';
 import ContactButtons from '../components/ContactButtons.jsx';
 import { formatDateTime, formatDateShort, weekdayShort } from '../lib/util.js';
+import { MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 
 const STATUS_TONE = { bekliyor: 'amber', onaylandi: 'green', iptal: 'gray', geldi: 'blue', gelmedi: 'red' };
 const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toLocaleUpperCase('tr') || '?';
@@ -29,11 +30,13 @@ export default function Customers() {
         </div>
       </div>
       <input className="search cu-search" type="search" placeholder="İsim veya telefon ara…" aria-label="Müşteri ara" value={q} onChange={(e) => setQ(e.target.value)} />
+      {MARKETING_FEATURE && (<>
       <div className="sb-chips">
         <button type="button" className={`nf-chip ${!onlyMkt ? 'is-on' : ''}`} onClick={() => setOnlyMkt(false)}>Tümü</button>
         <button type="button" className={`nf-chip ${onlyMkt ? 'is-on' : ''}`} onClick={() => setOnlyMkt(true)}>📣 Kampanya izni olanlar</button>
       </div>
       {onlyMkt && <div className="pf-hint">Kampanya mesajını sadece bu listedekilere gönderin. İşletmenin İYS'ye (İleti Yönetim Sistemi) kayıtlı olması gerekir; randevu hatırlatması için izin gerekmez.</div>}
+      </>)}
       {loading && !data && <Spinner />}
       {error && <div className="notice notice-err">{error.message}</div>}
       {data && !data.items.length && (
@@ -54,7 +57,7 @@ export default function Customers() {
                   {c.next && <Badge tone="green">Randevu: {formatDateShort(c.next.slice(0, 10))} {c.next.slice(11)}</Badge>}
                   {c.visits > 0 && <Badge tone="blue">{c.visits} ziyaret</Badge>}
                   {c.noShow > 0 && <Badge tone="red">{c.noShow} gelmedi</Badge>}
-                  {c.marketing && <Badge tone="green">📣 İzinli</Badge>}
+                  {MARKETING_FEATURE && c.marketing && <Badge tone="green">📣 İzinli</Badge>}
                   <span className="muted small">{c.records} kayıt</span>
                 </span>
               </Link>
@@ -122,7 +125,7 @@ function CustomerCardInner({ phoneKey }) {
           <h1>{c.name || 'İsimsiz müşteri'}</h1>
           <div className="muted">{c.phone}{c.email ? ` · ${c.email}` : ''}</div>
           <div className="muted small">İlk kayıt {dateOnly(c.firstAt)} · son {dateOnly(c.lastAt)}</div>
-          <div className="cu-mkt">{c.marketingAt ? <Badge tone="green">📣 Kampanya izni var · {dateOnly(c.marketingAt)}</Badge> : <Badge>Kampanya izni yok</Badge>}</div>
+          {MARKETING_FEATURE && <div className="cu-mkt">{c.marketingAt ? <Badge tone="green">📣 Kampanya izni var · {dateOnly(c.marketingAt)}</Badge> : <Badge>Kampanya izni yok</Badge>}</div>}
         </div>
         <ContactButtons phone={c.phoneRaw} className="cu-contact" />
       </div>

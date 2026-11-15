@@ -76,6 +76,9 @@ export function buildKvkkText({ isletme = '', settings = {}, fields = [], randev
   return parts.join('\n');
 }
 
+// Kampanya izni özelliği şimdilik KAPALI (panelde ve formda görünmez). İleride açmak için true yapın.
+export const MARKETING_FEATURE = false;
+
 export const DEFAULT_MARKETING_LABEL = 'Kampanya, indirim ve duyurulardan SMS, e-posta veya WhatsApp ile haberdar olmak istiyorum. (İsteğe bağlı)';
 
 export function buildMarketingText({ isletme = '', settings = {} }) {

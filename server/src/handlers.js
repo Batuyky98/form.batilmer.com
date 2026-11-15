@@ -21,7 +21,7 @@ import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 import { phoneKey, phonePretty, fillReminder, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
-import { DEFAULT_MARKETING_LABEL } from '../../src/lib/kvkkTemplate.js';
+import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../../src/lib/kvkkTemplate.js';
 
 // ---------------------------------------------------------------- hata
 export class ApiError extends Error {
@@ -1191,7 +1191,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         labels: Object.fromEntries(fields.map((f) => [f.key, f.label])),
         types: Object.fromEntries(fields.map((f) => [f.key, f.type])),
         order: fields.map((f) => f.key),
-        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, marketingAt: c.settings.marketing?.enabled && marketingAccepted === true ? now() : null, appointmentId: null
+        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, marketingAt: MARKETING_FEATURE && c.settings.marketing?.enabled && marketingAccepted === true ? now() : null, appointmentId: null
       };
 
       // Randevu: form satırı kilitli olduğu için aynı anda iki kişi aynı saati alamaz

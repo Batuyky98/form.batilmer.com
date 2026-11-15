@@ -8,7 +8,7 @@ import { displayValue, servicePrice } from '../lib/shared.js';
 import { DEFAULT_STYLE } from '../lib/formStyles.js';
 import LineIcon, { splitEmoji } from './LineIcon.jsx';
 import ManageMine from './ManageMine.jsx';
-import { DEFAULT_MARKETING_LABEL } from '../lib/kvkkTemplate.js';
+import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
@@ -473,7 +473,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     const payload = Object.fromEntries(Object.entries(values).filter(([k]) => vis[k]));
     setBusy(true);
     try {
-      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, marketingAccepted: !!(s.marketing?.enabled && marketing), turnstileToken });
+      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, marketingAccepted: !!(MARKETING_FEATURE && s.marketing?.enabled && marketing), turnstileToken });
       setDone(res);
       onDone?.(res);
     } catch (err) {
@@ -709,7 +709,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {lastStep && s.marketing?.enabled && (
+      {MARKETING_FEATURE && lastStep && s.marketing?.enabled && (
         <div className="bf-kvkk bf-marketing">
           <label className="bf-choice">
             <input id="bf-marketing" type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />

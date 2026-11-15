@@ -269,8 +269,8 @@ const mkSend = async (name, phone, mk, i) => { const sl = await rpc('p', 'getAva
 await mkSend('İzinli Müşteri', '0535 101 20 30', true, 0);
 await mkSend('İzinsiz Müşteri', '0535 101 20 31', false, 4);
 const mkList = await rpc('a', 'listCustomers', { marketing: true });
-ok(mkList.items.some((x) => x.key === '5351012030') && !mkList.items.some((x) => x.key === '5351012031'), 'kampanya izni sadece işaretleyende kayıtlı');
-ok(!!(await rpc('a', 'getCustomer', '5351012030')).marketingAt && !(await rpc('a', 'getCustomer', '5351012031')).marketingAt, 'müşteri kartında kampanya izni');
+ok(mkList.items.length === 0, 'kampanya izni özelliği kapalı: işaretlense bile kaydedilmiyor');
+ok(!(await rpc('a', 'getCustomer', '5351012030')).marketingAt, 'müşteri kartında izin yok (özellik kapalı)');
 izler.push('İzinli Müşteri', 'İzinsiz Müşteri', '5351012030', '5351012031', 'Mırmır');
 
 // Randevumu yönet: tik kapalıyken kapalı; açıkken telefon + ad eşleşirse görünür ve iptal edilir

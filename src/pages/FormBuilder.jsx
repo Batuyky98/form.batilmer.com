@@ -14,7 +14,7 @@ import { directionsUrl } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
 import { DEFAULT_WA, DEFAULT_WA_TEXT, WA_VARS, fillReminder } from '../lib/reminder.js';
-import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL } from '../lib/kvkkTemplate.js';
+import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
@@ -659,7 +659,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         {isAdmin && !s.kvkk.enabled && <div className="notice notice-warn">KVKK onayı kapalı. Kişisel veri topluyorsanız aydınlatma yükümlülüğünün başka şekilde karşılandığından emin olun.</div>}
       </section>
 
-      <section className="sub-card stack">
+      {MARKETING_FEATURE && <section className="sub-card stack">
         <div className="row-between">
           <h3>📣 Kampanya izni (ticari ileti) {!isAdmin && <Badge tone="gray">Sadece Ana Admin</Badge>}</h3>
           <Toggle id="st-mk" disabled={!isAdmin} checked={!!s.marketing?.enabled} onChange={(v) => set({ marketing: { ...s.marketing, label: s.marketing?.label || DEFAULT_MARKETING_LABEL, enabled: v, text: v && !s.marketing?.text ? buildMarketingText({ isletme: form.isletme || form.name, settings: s }) : s.marketing?.text } })} label={s.marketing?.enabled ? 'Açık' : 'Kapalı'} />
@@ -674,7 +674,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
             {isAdmin && <div><button type="button" className="btn btn-sm" onClick={() => set({ marketing: { ...s.marketing, text: buildMarketingText({ isletme: form.isletme || form.name, settings: s }) } })}>Hazır metni yeniden yaz</button></div>}
           </>
         )}
-      </section>
+      </section>}
 
       <section className="sub-card stack">
         <h3>Açık rıza metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
