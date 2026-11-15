@@ -896,6 +896,7 @@ function cleanDraft(draft, prev, user) {
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
   next.randevu.showPrices = !!next.randevu.showPrices;
+  next.randevu.selfManage = !!next.randevu.selfManage;
   for (const svc of next.randevu.services || []) {
     const p = svc.price === '' || svc.price === null || svc.price === undefined ? '' : Number(svc.price);
     svc.price = p === '' || !Number.isFinite(p) || p < 0 ? '' : Math.min(Math.round(p * 100) / 100, 10_000_000);
@@ -1890,6 +1891,26 @@ H.getAppointmentByToken = async (ctx, tok) => {
     canCancel: ['bekliyor', 'onaylandi'].includes(a.status) && now() < cutoffMs, cutoffHours: cfg.cancelCutoffHours,
     address: c.settings.address || '', directionsUrl: directionsUrl(c.settings), icsUrl: a.status === 'iptal' ? '' : `${config.publicUrl}/api/ics/${a.cancelToken}`
   };
+};
+
+// "Randevumu yönet": müşteri telefon + ad soyadla kendi aktif randevularını görür.
+// İkisi birden eşleşmezse hiçbir şey dönmez (numaranın kayıtlı olup olmadığı da belli olmaz).
+const normName = (s) => String(s || '').toLocaleLowerCase('tr').replace(/[^a-zçğıöşü0-9]/g, '');
+H.findMyAppointments = async (ctx, slug, { phone = '', name = '' } = {}) => {
+  if (!rateLimit(`mine:ip:${ctx.ip}`, 10, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.', 'sinir', 429);
+  const form = await formBySlug(ctx.db.query, slug);
+  if (!form?.published || !content(form).randevu?.selfManage) fail('Bu özellik bu formda kapalı.', 'yetki', 403);
+  const pk = phoneKey(phone);
+  const nm = normName(name);
+  if (!pk || nm.length < 3) fail('Telefon numaranızı ve randevudaki ad soyadınızı yazın.');
+  if (!rateLimit(`mine:tel:${form.id}:${pk}`, 5, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.', 'sinir', 429);
+  const cfg = content(form).randevu;
+  const rows = (await ctx.db.query(`SELECT * FROM appointments WHERE form_id = ? AND date >= ? AND status IN ${PENDING_SQL} ORDER BY date, start`, [form.id, today()])).map(mapAppt);
+  const mine = rows.filter((a) => phoneKey(a.contact?.phone) === pk && normName(a.contact?.name) === nm);
+  return mine.map((a) => {
+    const cutoff = dateTimeToMs(a.date, a.start) - Number(cfg.cancelCutoffHours || 0) * 3600000;
+    return { token: a.cancelToken, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(cfg, a.serviceId)?.name || '', canCancel: now() < cutoff, cutoffHours: Number(cfg.cancelCutoffHours || 0) };
+  });
 };
 
 H.cancelByToken = async (ctx, tok) => {

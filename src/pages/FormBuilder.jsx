@@ -870,6 +870,14 @@ function RandevuTab({ form, draft, setDraft, isAdmin }) {
         )}
       </section>
 
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>🗓 Randevumu yönet</h3>
+          <Toggle id="self-manage" checked={!!cfg.selfManage} onChange={(v) => set({ selfManage: v })} label={cfg.selfManage ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken formun sağ üstünde "Randevumu yönet" bağlantısı çıkar. Müşteri telefon numarası ve ad soyadıyla aktif randevusunu görür, iptal edebilir (iptal süresi kuralı geçerlidir). İki bilgi birden eşleşmezse hiçbir şey gösterilmez; çok deneme yapan kısa süre engellenir.</div>
+      </section>
+
       <WaReminderSection form={form} draft={draft} cfg={cfg} set={set} />
 
       <section className="sub-card stack">

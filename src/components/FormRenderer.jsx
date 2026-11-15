@@ -7,6 +7,7 @@ import { t } from '../lib/i18n.js';
 import { displayValue, servicePrice } from '../lib/shared.js';
 import { DEFAULT_STYLE } from '../lib/formStyles.js';
 import LineIcon, { splitEmoji } from './LineIcon.jsx';
+import ManageMine from './ManageMine.jsx';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
@@ -360,7 +361,7 @@ function AppointmentCard({ a, lang }) {
 }
 
 // ------------------------------------------------------------ ana bileşen
-export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '' }) {
+export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine }) {
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
   const lang = s.language || 'tr';
   useGoogleFont(a.font);
@@ -372,6 +373,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const [kvkkError, setKvkkError] = useState('');
   const [consent, setConsent] = useState(false);
   const [consentError, setConsentError] = useState('');
+  const [mineOpen, setMineOpen] = useState(false);
   const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
   const [globalError, setGlobalError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -520,6 +522,11 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   return (
     <form className={className} style={appearanceStyle(a)} onSubmit={lastStep ? submit : (e) => { e.preventDefault(); nextStep(); }} noValidate lang={lang}>
       {decor}
+      {cfg?.selfManage && fields.some((f) => f.type === 'randevu') && (
+        <div className="bf-mine-link-row">
+          <button type="button" className="bf-mine-link" onClick={() => !preview && setMineOpen(true)}>🗓 {lang === 'en' ? 'Manage my booking' : 'Randevumu yönet'}</button>
+        </div>
+      )}
       {steps && style === 'sekme' && (
         <div className="bf-tabs" aria-label={`${stepNo + 1} / ${steps.length}`}>
           {steps.map((st, i) => (i < stepNo ? (
@@ -700,6 +707,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
+      {mineOpen && findMine && <ManageMine lang={lang} find={findMine} cancel={cancelMine} className={className} vars={appearanceStyle(a)} onClose={() => setMineOpen(false)} />}
       {legal && (
         <div className="bf-legal" role="dialog" aria-modal="true" aria-label={legal.title} onMouseDown={(e) => e.target === e.currentTarget && setLegal(null)}>
           <div className="bf-legal-box">

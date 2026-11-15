@@ -257,6 +257,23 @@ const pres = await rpc('p', 'submitForm', f.slug, { ad_soyad: 'Fiyat Test', tele
 ok(pres.appointment.price === '450 ₺', 'onay kartında fiyat: ' + pres.appointment.price);
 izler.push('Fiyat Test', 'Zıpzıp', '5334445566');
 
+// Randevumu yönet: tik kapalıyken kapalı; açıkken telefon + ad eşleşirse görünür ve iptal edilir
+e = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '0533 444 55 66', name: 'Fiyat Test' }));
+ok(e?.code === 'yetki', 'Randevumu yönet kapalıyken çalışmıyor');
+const mg = await rpc('a', 'getForm', fid);
+mg.draft.randevu.selfManage = true;
+await rpc('a', 'saveDraft', fid, mg.draft);
+await rpc('a', 'publishForm', fid, {});
+ok((await rpc('p', 'findMyAppointments', f.slug, { phone: '05334445566', name: 'Yanlış İsim' })).length === 0, 'ad eşleşmezse randevu gösterilmiyor');
+const mine = await rpc('p', 'findMyAppointments', f.slug, { phone: '+90 533 444 55 66', name: 'fiyat  test' });
+ok(mine.length === 1 && mine[0].token && mine[0].canCancel && !('name' in mine[0]) && !('phone' in mine[0]), 'telefon + ad eşleşince aktif randevu bulundu (kişisel veri dönmüyor)');
+await rpc('p', 'cancelByToken', mine[0].token);
+ok((await rpc('p', 'findMyAppointments', f.slug, { phone: '05334445566', name: 'Fiyat Test' })).length === 0, 'iptal edilen randevu listeden çıktı');
+let limited = false;
+for (let k = 0; k < 6; k++) { const r = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '05001112233', name: 'Deneme Kisi' })); if (r?.code === 'sinir') limited = true; }
+ok(limited, 'aynı numaraya çok deneme engellendi');
+
+
 
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));

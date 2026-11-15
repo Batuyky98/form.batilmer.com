@@ -91,6 +91,8 @@ export default function PublicForm({ slug }) {
         turnstileKey={data.turnstileKey || ''}
         loadSlots={(p) => api.getAvailability(slug, p)}
         onSubmit={(values, meta) => api.submitForm(slug, values, meta)}
+        findMine={(p) => api.findMyAppointments(slug, p)}
+        cancelMine={(tok) => api.cancelByToken(tok)}
         onDone={(res) => {
           if (res?.afterSubmit === 'yonlendir' && res.redirectUrl && /^https?:\/\//.test(res.redirectUrl)) {
             if (isEmbedded) post({ type: 'batilmer:redirect', url: res.redirectUrl });

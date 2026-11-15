@@ -86,6 +86,7 @@ export const getAvailability = call('getAvailability');
 export const submitForm = call('submitForm');
 export const getAppointmentByToken = call('getAppointmentByToken');
 export const cancelByToken = call('cancelByToken');
+export const findMyAppointments = serverOnly('findMyAppointments', () => []);
 // kayıtlar
 export const listSubmissions = call('listSubmissions');
 export const setSubmissionStatus = call('setSubmissionStatus');
