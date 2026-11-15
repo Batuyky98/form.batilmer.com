@@ -38,7 +38,8 @@ export const DEFAULT_RANDEVU = {
   // Formda 'Randevumu yönet' (telefon + ad soyadla randevuyu bul, iptal et)
   selfManage: false,
   // Google yorum isteği: randevu 'Geldi' olunca puan istenir; herkese Google düğmesi gösterilir
-  review: { enabled: false, googleUrl: '', text: '' },
+  // mode: 'google' = link doğrudan Google yorum ekranını açar (tek adım) · 'puan' = önce bizde 1-5 yıldız
+  review: { enabled: false, googleUrl: '', text: '', mode: 'google' },
   // WhatsApp ile tek tık hatırlatma (personel gönderir; ücretsiz)
   wa: { ...DEFAULT_WA },
   sms: { confirm: false, reminder: false } // canlıda SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) ile gönderilecek

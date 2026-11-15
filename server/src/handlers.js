@@ -902,7 +902,7 @@ function cleanDraft(draft, prev, user) {
   next.randevu.selfManage = !!next.randevu.selfManage;
   const rv = next.randevu.review || {};
   const gUrl = String(rv.googleUrl || '').trim();
-  next.randevu.review = { enabled: !!rv.enabled, googleUrl: /^https:\/\/[^\s"'<>]{4,490}$/i.test(gUrl) ? gUrl : '', text: String(rv.text || '').slice(0, 1000) };
+  next.randevu.review = { enabled: !!rv.enabled, googleUrl: /^https:\/\/[^\s"'<>]{4,490}$/i.test(gUrl) ? gUrl : '', text: String(rv.text || '').slice(0, 1000), mode: rv.mode === 'puan' ? 'puan' : 'google' };
   for (const svc of next.randevu.services || []) {
     const p = svc.price === '' || svc.price === null || svc.price === undefined ? '' : Number(svc.price);
     svc.price = p === '' || !Number.isFinite(p) || p < 0 ? '' : Math.min(Math.round(p * 100) / 100, 10_000_000);
@@ -1628,15 +1628,16 @@ H.listReviews = async (ctx) => {
   const ids = forms.map((f) => f.id);
   const rows = await q(`SELECT r.*, a.contact, a.date, a.start, a.service_id FROM reviews r JOIN appointments a ON a.id = r.appointment_id WHERE r.form_id IN (${ph(ids)}) AND r.sent_at IS NOT NULL ORDER BY COALESCE(r.rated_at, r.sent_at) DESC LIMIT 500`, ids);
   const rated = rows.filter((r) => r.rating);
+  const shown = rows.filter((r) => r.rating || r.google_at);
   const dist = [1, 2, 3, 4, 5].map((n) => rated.filter((r) => Number(r.rating) === n).length);
   const stats = {
     sent: rows.length, rated: rated.length, google: rows.filter((r) => r.google_at).length,
     avg: rated.length ? Math.round((rated.reduce((s, r) => s + Number(r.rating), 0) / rated.length) * 10) / 10 : null, dist
   };
-  const items = rated.map((r) => {
+  const items = shown.map((r) => {
     const form = forms.find((f) => f.id === r.form_id);
     return {
-      id: r.id, formId: r.form_id, isletme: form.isletme || form.name, rating: Number(r.rating), comment: r.comment || '', ratedAt: num(r.rated_at),
+      id: r.id, formId: r.form_id, isletme: form.isletme || form.name, rating: r.rating ? Number(r.rating) : null, comment: r.comment || '', ratedAt: num(r.rated_at) || num(r.google_at),
       name: J(r.contact, {}).name || '', date: r.date, service: serviceById(content(form).randevu, r.service_id)?.name || '', google: !!r.google_at, customerKey: r.phone_key || ''
     };
   });
@@ -1659,7 +1660,7 @@ H.getReviewPage = async (ctx, tok) => {
   const a = content(x.form).appearance || {};
   return {
     isletme: x.form.isletme || x.form.name, service: serviceById(x.cfg, x.r.service_id)?.name || '', date: x.r.date,
-    rated: !!x.r.rating, rating: x.r.rating ? Number(x.r.rating) : null, googleUrl: x.cfg.review.googleUrl, logo: a.logo || '', primary: a.primary || '#2F5BEA'
+    rated: !!x.r.rating, rating: x.r.rating ? Number(x.r.rating) : null, googleUrl: x.cfg.review.googleUrl, mode: x.cfg.review.mode === 'puan' ? 'puan' : 'google', logo: a.logo || '', primary: a.primary || '#2F5BEA'
   };
 };
 

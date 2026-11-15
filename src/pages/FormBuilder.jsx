@@ -940,13 +940,17 @@ function RandevuTab({ form, draft, setDraft, isAdmin }) {
           <h3>⭐ Google yorum isteği</h3>
           <Toggle id="rv-on" checked={!!cfg.review?.enabled} onChange={(v) => set({ review: { ...(cfg.review || {}), enabled: v } })} label={cfg.review?.enabled ? 'Açık' : 'Kapalı'} />
         </div>
-        <div className="pf-hint">Açıkken randevusu "Geldi" olarak işaretlenen müşteriler <b>Yorumlar</b> ekranına düşer. Personel tek dokunuşla WhatsApp'tan puan isteği gönderir; müşteri 1-5 yıldız verir ve herkese "Google'da paylaş" düğmesi gösterilir. 1-2 yıldızda işletmeye hemen bildirim gelir.</div>
+        <div className="pf-hint">Açıkken randevusu "Geldi" olarak işaretlenen müşteriler <b>Yorumlar</b> ekranına düşer. Personel tek dokunuşla WhatsApp'tan yorum isteği gönderir; müşteri linke dokununca Google yorum ekranı açılır.</div>
         {cfg.review?.enabled && (
           <>
             <Field label="Google yorum linkiniz" htmlFor="rv-url" hint='Google İşletme Profili → "Yorum isteyin" / "Yorum formunu paylaşın" bağlantısı (https://g.page/r/... gibi).'>
               <input id="rv-url" type="url" placeholder="https://g.page/r/..." value={cfg.review.googleUrl || ''} onChange={(e) => set({ review: { ...cfg.review, googleUrl: e.target.value.trim() } })} />
             </Field>
             {!cfg.review.googleUrl && <div className="notice notice-warn">Link girilmeden yorum isteği çalışmaz.</div>}
+            <Field label="Müşteri linke dokununca">
+              <Segmented label="Yorum akışı" value={cfg.review.mode === 'puan' ? 'puan' : 'google'} onChange={(v) => set({ review: { ...cfg.review, mode: v } })} options={[{ value: 'google', label: 'Doğrudan Google yorum ekranı (tek adım)' }, { value: 'puan', label: 'Önce bizde 1-5 yıldız' }]} />
+            </Field>
+            <div className="pf-hint">{cfg.review.mode === 'puan' ? 'Müşteri önce bizim sayfada puan verir (1-2 yıldızda size bildirim gelir), sonra herkese "Google\'da yorum yaz" düğmesi gösterilir. İki adım olduğu için Google\'a giden sayısı daha az olur.' : 'Önerilen. Müşteri linke dokunduğu anda Google\'ın yorum ekranı açılır; yıldızı ve yorumu doğrudan Google\'da verir. Panelde kime gönderildiği ve kimin Google\'a gittiği görünür.'}</div>
             <Field label="Mesaj metni" htmlFor="rv-text" hint="{ad}, {isletme}, {hizmet}, {puan_linki} yer tutucularını kullanabilirsiniz. {puan_linki} mutlaka olmalı.">
               <textarea id="rv-text" rows={3} value={cfg.review.text || DEFAULT_REVIEW_TEXT} onChange={(e) => set({ review: { ...cfg.review, text: e.target.value } })} />
             </Field>

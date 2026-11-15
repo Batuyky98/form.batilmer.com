@@ -276,7 +276,7 @@ izler.push('İzinli Müşteri', 'İzinsiz Müşteri', '5351012030', '5351012031'
 // Google yorum isteği
 ok((await rpc('a', 'listReviewQueue')).items.length === 0, 'yorum isteği kapalıyken liste boş');
 const rvf = await rpc('a', 'getForm', fid);
-rvf.draft.randevu.review = { enabled: true, googleUrl: 'https://g.page/r/test-isletme/review', text: '' };
+rvf.draft.randevu.review = { enabled: true, googleUrl: 'https://g.page/r/test-isletme/review', text: '', mode: 'puan' };
 await rpc('a', 'saveDraft', fid, rvf.draft);
 await rpc('a', 'publishForm', fid, {});
 const izinliAppt = (await rpc('a', 'listAllAppointments', { from: addDays2(tomorrow, 2), to: addDays2(tomorrow, 2) })).items.find((x) => x.name === 'İzinli Müşteri');
@@ -301,6 +301,12 @@ const rl = await rpc('a', 'listReviews');
 ok(rl.stats.rated === 1 && rl.stats.avg === 2 && rl.stats.google === 1 && rl.items[0].comment === 'Çok bekledim', 'Yorumlar ekranı: ortalama, Google tıklaması, yorum');
 ok((await rpc('a', 'getCustomer', '5351012030')).items.some((i) => i.appt?.review?.rating === 2), 'müşteri kartında puan');
 izler.push('Çok bekledim');
+// Tek adım (varsayılan): link doğrudan Google'a
+delete rvf.draft.randevu.review.mode;
+await rpc('a', 'saveDraft', fid, rvf.draft);
+await rpc('a', 'publishForm', fid, {});
+const pg2 = await rpc('p', 'getReviewPage', rtok);
+ok(pg2.mode === 'google' && pg2.googleUrl === 'https://g.page/r/test-isletme/review', 'varsayılan: link doğrudan Google yorum ekranına gider');
 
 // Randevumu yönet: tik kapalıyken kapalı; açıkken telefon + ad eşleşirse görünür ve iptal edilir
 e = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '0533 444 55 66', name: 'Fiyat Test' }));

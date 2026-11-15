@@ -47,12 +47,12 @@ export default function Reviews() {
         <>
           {s && (
             <div className="rw-kpis">
-              <div className="rw-kpi rw-kpi-main"><b>{s.avg ?? '–'}</b><Stars n={Math.round(s.avg || 0)} size={18} /><span>{s.rated} puan</span></div>
+              {s.rated > 0 ? <div className="rw-kpi rw-kpi-main"><b>{s.avg ?? '–'}</b><Stars n={Math.round(s.avg || 0)} size={18} /><span>{s.rated} puan (bizim sayfada)</span></div> : <div className="rw-kpi rw-kpi-main"><b>{s.sent ? `%${Math.round((s.google / s.sent) * 100)}` : '–'}</b><span>Google'a gitme oranı</span></div>}
               <div className="rw-kpi"><b>{s.sent}</b><span>İstek gönderildi</span></div>
               <div className="rw-kpi"><b>{s.google}</b><span>Google'a yönlendi</span></div>
             </div>
           )}
-          <Segmented label="Sekme" value={tab} onChange={setTab} options={[{ value: 'iste', label: `Puan iste · ${items.length}` }, { value: 'gelen', label: `Gelen puanlar · ${list.data?.items.length || 0}` }]} />
+          <Segmented label="Sekme" value={tab} onChange={setTab} options={[{ value: 'iste', label: `Puan iste · ${items.length}` }, { value: 'gelen', label: `Sonuçlar · ${list.data?.items.length || 0}` }]} />
 
           {tab === 'iste' && (
             !items.length ? (
@@ -80,7 +80,7 @@ export default function Reviews() {
 
           {tab === 'gelen' && (
             !list.data?.items.length ? (
-              <div className="td-empty"><span aria-hidden="true">⭐</span><b>Henüz puan gelmedi</b><span>Puan isteği gönderdiğiniz müşteriler değerlendirince burada görünür.</span></div>
+              <div className="td-empty"><span aria-hidden="true">⭐</span><b>Henüz sonuç yok</b><span>İstek gönderdiğiniz müşteriler linke dokununca burada görünür.</span></div>
             ) : (
               <>
                 {s?.rated > 0 && (
@@ -92,15 +92,15 @@ export default function Reviews() {
                 )}
                 <div className="td-list">
                   {list.data.items.map((r) => (
-                    <div key={r.id} className={`rw-row ${r.rating <= 2 ? 'is-low' : ''}`}>
+                    <div key={r.id} className={`rw-row ${r.rating && r.rating <= 2 ? 'is-low' : ''}`}>
                       <div className="rw-row-top">
-                        <Stars n={r.rating} />
+                        {r.rating ? <Stars n={r.rating} /> : <span className="rw-g">Google yorum ekranını açtı ✓</span>}
                         <span className="muted small">{formatDateTime(r.ratedAt)}</span>
                       </div>
                       {r.comment && <p className="rw-comment">“{r.comment}”</p>}
                       <div className="muted small">
                         {r.customerKey ? <Link to={`/panel/musteriler/${r.customerKey}`}>{r.name || 'İsimsiz'}</Link> : r.name || 'İsimsiz'} · {[r.service, list.data.forms.length > 1 ? r.isletme : ''].filter(Boolean).join(' · ')}
-                        {r.google && <span className="rw-g"> · Google'a gitti ✓</span>}
+                        {r.google && r.rating && <span className="rw-g"> · Google'a gitti ✓</span>}
                       </div>
                     </div>
                   ))}

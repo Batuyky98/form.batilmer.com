@@ -17,7 +17,13 @@ export default function ReviewPage({ token }) {
 
   useEffect(() => {
     document.title = 'Değerlendirme';
-    api.getReviewPage(token).then(setD).catch(() => setD(null));
+    api.getReviewPage(token).then((x) => {
+      setD(x);
+      // Tek adım: link doğrudan Google yorum ekranına geçer (tıklama kaydedilir)
+      if (x?.mode === 'google') {
+        api.reviewGoogleClick(token).catch(() => null).then((u) => window.location.replace(u || x.googleUrl));
+      }
+    }).catch(() => setD(null));
   }, [token]);
 
   async function send() {
@@ -42,6 +48,18 @@ export default function ReviewPage({ token }) {
   if (!d) return <div className="rv-wrap"><div className="rv-card"><h1>Bağlantı geçersiz</h1><p className="rv-muted">Bu değerlendirme bağlantısı artık kullanılamıyor.</p></div></div>;
 
   const style = { '--rv': d.primary || '#2F5BEA' };
+  if (d.mode === 'google') {
+    return (
+      <div className="rv-wrap" style={style}>
+        <div className="rv-card">
+          {d.logo ? <img className="rv-logo" src={d.logo} alt={d.isletme} /> : <div className="rv-biz">{d.isletme}</div>}
+          <div className="spinner" />
+          <p className="rv-muted">Google yorum sayfası açılıyor…</p>
+          <a className="rv-btn rv-btn-g" href={d.googleUrl}>Açılmadıysa dokunun</a>
+        </div>
+      </div>
+    );
+  }
   const finished = done || d.rated;
   return (
     <div className="rv-wrap" style={style}>
