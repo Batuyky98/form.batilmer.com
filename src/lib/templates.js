@@ -158,6 +158,7 @@ export function normalizeContent(c) {
   randevu.sms = { ...clone(DEFAULT_RANDEVU.sms), ...(c.randevu?.sms || {}) };
   randevu.showPrices = !!randevu.showPrices;
   randevu.wa = { ...clone(DEFAULT_RANDEVU.wa), ...(c.randevu?.wa || {}) };
+  randevu.review = { ...clone(DEFAULT_RANDEVU.review), ...(c.randevu?.review || {}) };
   const appearance = { ...clone(DEFAULT_APPEARANCE), ...(c.appearance || {}) };
   appearance.colors = { ...clone(DEFAULT_APPEARANCE.colors), ...(c.appearance?.colors || {}) };
   return {

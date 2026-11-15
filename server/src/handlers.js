@@ -20,7 +20,7 @@ import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/l
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
-import { phoneKey, phonePretty, fillReminder, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
+import { phoneKey, phonePretty, fillReminder, fillReview, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
 import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../../src/lib/kvkkTemplate.js';
 
 // ---------------------------------------------------------------- hata
@@ -154,6 +154,7 @@ async function forgetSubmissions(q, formId, ids) {
     files.push(...(await q(`SELECT id FROM files WHERE submission_id IN (${m})`, part)).map((r) => r.id));
     await q(`DELETE FROM files WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM outbox WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM reviews WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM appointments WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM submissions WHERE id IN (${m})`, part);
   }
@@ -899,6 +900,9 @@ function cleanDraft(draft, prev, user) {
   next.randevu.term = str(next.randevu.term, 40);
   next.randevu.showPrices = !!next.randevu.showPrices;
   next.randevu.selfManage = !!next.randevu.selfManage;
+  const rv = next.randevu.review || {};
+  const gUrl = String(rv.googleUrl || '').trim();
+  next.randevu.review = { enabled: !!rv.enabled, googleUrl: /^https:\/\/[^\s"'<>]{4,490}$/i.test(gUrl) ? gUrl : '', text: String(rv.text || '').slice(0, 1000) };
   for (const svc of next.randevu.services || []) {
     const p = svc.price === '' || svc.price === null || svc.price === undefined ? '' : Number(svc.price);
     svc.price = p === '' || !Number.isFinite(p) || p < 0 ? '' : Math.min(Math.round(p * 100) / 100, 10_000_000);
@@ -1569,6 +1573,122 @@ H.markReminded = async (ctx, id, done = true) => {
   });
 };
 
+// ---------------------------------------------------------------- Google yorum isteği
+// Randevu "Geldi" olunca müşteriden puan istenir. Google kurallarına uygun olarak HERKESE aynı şekilde
+// sorulur ve puan ne olursa olsun Google'da paylaşma düğmesi gösterilir (memnun olmayan gizlenmez).
+const reviewOn = (c) => !!(c.randevu?.review?.enabled && c.randevu.review.googleUrl);
+const reviewUrl = (tok) => `${config.publicUrl}/yorum/${tok}`;
+
+H.listReviewQueue = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => reviewOn(content(f)));
+  if (!forms.length) return { items: [], forms: [] };
+  const ids = forms.map((f) => f.id);
+  const from = addDays(today(), -7);
+  const appts = (await q(`SELECT * FROM appointments WHERE form_id IN (${ph(ids)}) AND status = 'geldi' AND date >= ? AND date <= ? ORDER BY date DESC, start DESC`, [...ids, from, today()])).map(mapAppt);
+  const items = [];
+  for (const a of appts) {
+    const pk = phoneKey(a.contact?.phone);
+    let r = (await q('SELECT * FROM reviews WHERE appointment_id = ?', [a.id]))[0];
+    if (r?.sent_at) continue;
+    // Aynı müşteriye 30 gün içinde ikinci kez sorulmaz
+    if (pk && (await q('SELECT id FROM reviews WHERE form_id = ? AND phone_key = ? AND sent_at > ? AND appointment_id <> ?', [a.formId, pk, now() - 30 * 864e5, a.id])).length) continue;
+    if (!r) {
+      r = { id: uid('rv_'), token: randomToken(16) };
+      await q('INSERT INTO reviews (id, form_id, appointment_id, submission_id, phone_key, token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [r.id, a.formId, a.id, a.submissionId, pk || null, r.token, now()]);
+    }
+    const form = forms.find((f) => f.id === a.formId);
+    const cfg = content(form).randevu;
+    const service = serviceById(cfg, a.serviceId)?.name || '';
+    const text = fillReview(cfg.review.text, { name: a.contact?.name, isletme: form.isletme || form.name, service, url: reviewUrl(r.token) });
+    items.push({
+      id: r.id, apptId: a.id, formId: a.formId, isletme: form.isletme || form.name, date: a.date, start: a.start, name: a.contact?.name || '', phone: phonePretty(a.contact?.phone),
+      service, waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '', customerKey: pk
+    });
+  }
+  return { items, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+H.markReviewSent = async (ctx, id) => {
+  return ctx.db.tx(async (q) => {
+    const r = (await q('SELECT * FROM reviews WHERE id = ?', [String(id || '')]))[0];
+    if (!r) fail('Bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, r.form_id, 'randevu');
+    await q('UPDATE reviews SET sent_at = ?, sent_by = ? WHERE id = ? AND sent_at IS NULL', [now(), str(user.name, 150), r.id]);
+    return true;
+  });
+};
+
+H.listReviews = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'view', { randevu: true })).filter((f) => content(f).randevu?.review?.enabled);
+  if (!forms.length) return { items: [], stats: null, forms: [] };
+  const ids = forms.map((f) => f.id);
+  const rows = await q(`SELECT r.*, a.contact, a.date, a.start, a.service_id FROM reviews r JOIN appointments a ON a.id = r.appointment_id WHERE r.form_id IN (${ph(ids)}) AND r.sent_at IS NOT NULL ORDER BY COALESCE(r.rated_at, r.sent_at) DESC LIMIT 500`, ids);
+  const rated = rows.filter((r) => r.rating);
+  const dist = [1, 2, 3, 4, 5].map((n) => rated.filter((r) => Number(r.rating) === n).length);
+  const stats = {
+    sent: rows.length, rated: rated.length, google: rows.filter((r) => r.google_at).length,
+    avg: rated.length ? Math.round((rated.reduce((s, r) => s + Number(r.rating), 0) / rated.length) * 10) / 10 : null, dist
+  };
+  const items = rated.map((r) => {
+    const form = forms.find((f) => f.id === r.form_id);
+    return {
+      id: r.id, formId: r.form_id, isletme: form.isletme || form.name, rating: Number(r.rating), comment: r.comment || '', ratedAt: num(r.rated_at),
+      name: J(r.contact, {}).name || '', date: r.date, service: serviceById(content(form).randevu, r.service_id)?.name || '', google: !!r.google_at, customerKey: r.phone_key || ''
+    };
+  });
+  return { items, stats, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+// Herkese açık puan sayfası (müşteri). Kişisel veri dönmez; sadece işletme, hizmet ve tarih.
+async function loadReview(q, tok) {
+  if (!/^[a-f0-9]{32}$/.test(String(tok || ''))) return null;
+  const r = (await q('SELECT r.*, a.date, a.service_id FROM reviews r JOIN appointments a ON a.id = r.appointment_id WHERE r.token = ?', [tok]))[0];
+  if (!r) return null;
+  const form = await loadForm(q, r.form_id);
+  if (!form || !reviewOn(content(form))) return null;
+  return { r, form, cfg: content(form).randevu };
+}
+
+H.getReviewPage = async (ctx, tok) => {
+  const x = await loadReview(ctx.db.query, tok);
+  if (!x) return null;
+  const a = content(x.form).appearance || {};
+  return {
+    isletme: x.form.isletme || x.form.name, service: serviceById(x.cfg, x.r.service_id)?.name || '', date: x.r.date,
+    rated: !!x.r.rating, rating: x.r.rating ? Number(x.r.rating) : null, googleUrl: x.cfg.review.googleUrl, logo: a.logo || '', primary: a.primary || '#2F5BEA'
+  };
+};
+
+H.submitReview = async (ctx, tok, { rating, comment = '' } = {}) => {
+  if (!rateLimit(`review:${ctx.ip}`, 20, 15 * 60000)) fail('Çok fazla deneme yaptınız.', 'sinir', 429);
+  const n = Math.round(Number(rating));
+  if (!(n >= 1 && n <= 5)) fail('1 ile 5 arasında bir puan seçin.');
+  return ctx.db.tx(async (q) => {
+    const x = await loadReview(q, tok);
+    if (!x) fail('Bağlantı geçersiz veya süresi dolmuş.', 'yok', 404);
+    if (x.r.rating) fail('Bu ziyaret için puanınız zaten alındı. Teşekkürler!');
+    await q('UPDATE reviews SET rating = ?, comment = ?, rated_at = ? WHERE id = ?', [n, str(comment, 1000), now(), x.r.id]);
+    if (n <= 2) {
+      const svc = serviceById(x.cfg, x.r.service_id)?.name || '';
+      await q('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+        uid('n_'), x.form.id, 'yorum', `Düşük puan: ${'★'.repeat(n)}${'☆'.repeat(5 - n)}`, str(`${x.form.isletme || x.form.name} · ${svc} · ${formatDateShort(x.r.date)}. Müşteriyi arayıp gönlünü almak için dokunun.`, 500), '/panel/yorumlar?sekme=gelen', now()
+      ]);
+    }
+    return { googleUrl: x.cfg.review.googleUrl };
+  });
+};
+
+H.reviewGoogleClick = async (ctx, tok) => {
+  const x = await loadReview(ctx.db.query, tok);
+  if (!x) return null;
+  await ctx.db.query('UPDATE reviews SET google_at = COALESCE(google_at, ?) WHERE id = ?', [now(), x.r.id]);
+  return x.cfg.review.googleUrl;
+};
+
 // ---------------------------------------------------------------- müşteri kartı
 // Müşteri = telefon numarası. Kullanıcı sadece görme yetkisi olduğu formlardaki kayıtları görür.
 H.listCustomers = async (ctx, { q: search = '', marketing = false } = {}) => {
@@ -1620,6 +1740,7 @@ H.getCustomer = async (ctx, key) => {
   if (!rows.length) fail('Bu numarayla kayıt bulunamadı.', 'yok', 404);
   const apptIds = rows.map((r) => r.appointmentId).filter(Boolean);
   const appts = apptIds.length ? Object.fromEntries((await q(`SELECT * FROM appointments WHERE id IN (${ph(apptIds)})`, apptIds)).map(mapAppt).map((a) => [a.id, a])) : {};
+  const revs = apptIds.length ? Object.fromEntries((await q(`SELECT appointment_id, rating, comment FROM reviews WHERE rating IS NOT NULL AND appointment_id IN (${ph(apptIds)})`, apptIds)).map((r) => [r.appointment_id, { rating: Number(r.rating), comment: r.comment || '' }])) : {};
   let name = '';
   let email = '';
   const stats = { records: rows.length, appointments: 0, geldi: 0, gelmedi: 0, iptal: 0 };
@@ -1636,7 +1757,7 @@ H.getCustomer = async (ctx, key) => {
     if (a) {
       stats.appointments += 1;
       if (stats[a.status] !== undefined) stats[a.status] += 1;
-      appt = { id: a.id, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(c.randevu, a.serviceId)?.name || '', resource: (c.randevu.resources || []).find((x) => x.id === a.resourceId)?.name || '' };
+      appt = { id: a.id, review: revs[a.id] || null, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(c.randevu, a.serviceId)?.name || '', resource: (c.randevu.resources || []).find((x) => x.id === a.resourceId)?.name || '' };
       if (a.date >= today() && ['bekliyor', 'onaylandi'].includes(a.status)) upcoming.push({ ...appt, formId: form.id, isletme: form.isletme || form.name });
     }
     // Kartta kısa özet: iletişim ve randevu dışındaki alanlar (hayvan adı, şikâyet…)
@@ -1997,7 +2118,7 @@ H.purgeFormData = async (ctx, formId, confirmSlug) => {
     if (String(confirmSlug || '').trim() !== form.slug) fail('Onay için formun linkini aynen yazın.');
     const ids = (await q('SELECT id FROM files WHERE form_id = ?', [form.id])).map((r) => r.id);
     const [{ c: subs }] = await q('SELECT COUNT(*) AS c FROM submissions WHERE form_id = ?', [form.id]);
-    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes', 'outbox']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
+    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes', 'outbox', 'reviews']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
     await log(q, admin.id, `Test kayıtlarını temizledi (${Number(subs)} kayıt)`, form.name);
     return { ids, subs: Number(subs) };
   });
@@ -2012,7 +2133,7 @@ H.purgeItem = async (ctx, kind, id) => {
     if (kind === 'form') {
       if (!(await q('SELECT id FROM forms WHERE id = ? AND deleted_at IS NOT NULL', [id])).length) fail('Bulunamadı.', 'yok', 404);
       files = (await q('SELECT id FROM files WHERE form_id = ?', [id])).map((r) => r.id);
-      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs', 'outbox']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
+      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs', 'outbox', 'reviews']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
       await q('DELETE FROM forms WHERE id = ?', [id]);
     } else if (kind === 'submission') {
       const s = (await q('SELECT * FROM submissions WHERE id = ? AND deleted_at IS NOT NULL', [id]))[0];

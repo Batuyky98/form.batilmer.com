@@ -273,6 +273,35 @@ ok(mkList.items.length === 0, 'kampanya izni özelliği kapalı: işaretlense bi
 ok(!(await rpc('a', 'getCustomer', '5351012030')).marketingAt, 'müşteri kartında izin yok (özellik kapalı)');
 izler.push('İzinli Müşteri', 'İzinsiz Müşteri', '5351012030', '5351012031', 'Mırmır');
 
+// Google yorum isteği
+ok((await rpc('a', 'listReviewQueue')).items.length === 0, 'yorum isteği kapalıyken liste boş');
+const rvf = await rpc('a', 'getForm', fid);
+rvf.draft.randevu.review = { enabled: true, googleUrl: 'https://g.page/r/test-isletme/review', text: '' };
+await rpc('a', 'saveDraft', fid, rvf.draft);
+await rpc('a', 'publishForm', fid, {});
+const izinliAppt = (await rpc('a', 'listAllAppointments', { from: addDays2(tomorrow, 2), to: addDays2(tomorrow, 2) })).items.find((x) => x.name === 'İzinli Müşteri');
+await rpc('a', 'setAppointmentStatus', izinliAppt.id, 'geldi');
+new DatabaseSync(`${DATA}/batilmer.sqlite`).prepare('UPDATE appointments SET date = ? WHERE id = ?').run(new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10), izinliAppt.id);
+const rq = await rpc('v', 'listReviewQueue');
+const rqi = rq.items.find((x) => x.apptId === izinliAppt.id);
+ok(rqi && rqi.waUrl.includes('wa.me/905351012030') && decodeURIComponent(rqi.waUrl).includes('/yorum/'), '"Geldi" olan müşteri yorum listesinde, WhatsApp mesajı hazır');
+const rtok = decodeURIComponent(rqi.waUrl).match(/\/yorum\/([a-f0-9]{32})/)[1];
+await rpc('v', 'markReviewSent', rqi.id);
+ok(!(await rpc('v', 'listReviewQueue')).items.some((x) => x.id === rqi.id), 'gönderilen istek listeden çıktı');
+const pg = await rpc('p', 'getReviewPage', rtok);
+ok(pg && pg.isletme && !JSON.stringify(pg).includes('İzinli') && !JSON.stringify(pg).includes('5351012030'), 'puan sayfası kişisel veri göstermiyor');
+const sr = await rpc('p', 'submitReview', rtok, { rating: 2, comment: 'Çok bekledim' });
+ok(sr.googleUrl === 'https://g.page/r/test-isletme/review', 'düşük puanda da Google linki veriliyor (kurala uygun)');
+e = await ex(rpc('p', 'submitReview', rtok, { rating: 5 }));
+ok(e, 'aynı ziyarete ikinci kez puan verilemiyor');
+const lowN = (await rpc('vbg', 'pollNotifications', 0)).items.find((x) => x.kind === 'yorum');
+ok(lowN && lowN.title.includes('Düşük puan') && !lowN.body.includes('İzinli'), 'düşük puanda bildirim, kişisel veri yok');
+await rpc('p', 'reviewGoogleClick', rtok);
+const rl = await rpc('a', 'listReviews');
+ok(rl.stats.rated === 1 && rl.stats.avg === 2 && rl.stats.google === 1 && rl.items[0].comment === 'Çok bekledim', 'Yorumlar ekranı: ortalama, Google tıklaması, yorum');
+ok((await rpc('a', 'getCustomer', '5351012030')).items.some((i) => i.appt?.review?.rating === 2), 'müşteri kartında puan');
+izler.push('Çok bekledim');
+
 // Randevumu yönet: tik kapalıyken kapalı; açıkken telefon + ad eşleşirse görünür ve iptal edilir
 e = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '0533 444 55 66', name: 'Fiyat Test' }));
 ok(e?.code === 'yetki', 'Randevumu yönet kapalıyken çalışmıyor');

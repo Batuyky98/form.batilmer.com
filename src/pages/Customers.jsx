@@ -161,6 +161,7 @@ function CustomerCardInner({ phoneKey }) {
                     <b>{i.appt ? `${formatDateShort(i.appt.date)} ${i.appt.start}` : dateOnly(i.createdAt)}</b>
                     {i.appt ? <Badge tone={STATUS_TONE[i.appt.status]}>{api.STATUS_LABELS[i.appt.status]}</Badge> : <Badge>{api.submissionStatusLabel ? api.submissionStatusLabel(i.status) : i.status}</Badge>}
                     {i.manual && <span className="muted small">panelden eklendi</span>}
+                    {i.appt?.review && <span className="rw-stars" title={i.appt.review.comment || ''}>{'★'.repeat(i.appt.review.rating)}<i>{'★'.repeat(5 - i.appt.review.rating)}</i></span>}
                   </div>
                   <div className="muted small">{[i.appt?.service, i.appt?.resource, i.isletme === i.formName ? i.formName : `${i.isletme} · ${i.formName}`].filter(Boolean).join(' · ')}</div>
                   {i.details.length > 0 && (

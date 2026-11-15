@@ -82,6 +82,7 @@ export default function Today() {
   const [forms, setForms] = useState(null);
   const [appts, setAppts] = useState(null);
   const [rem, setRem] = useState(null);
+  const [rq, setRq] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [sharing, setSharing] = useState(null);
   const [picking, setPicking] = useState(false);
@@ -91,6 +92,7 @@ export default function Today() {
     api.listForms().then(setForms).catch(() => setForms([]));
     api.listAllAppointments({ from: today(), to: today() }).then(setAppts).catch(() => setAppts({ forms: [], items: [] }));
     api.listReminders({ day: 'yarin' }).then(setRem).catch(() => setRem(null));
+    api.listReviewQueue().then(setRq).catch(() => setRq(null));
   };
   useEffect(() => {
     load();
@@ -150,6 +152,17 @@ export default function Today() {
           <span className="td-nudge-text">
             <b>Yarın {rem.items.length} randevu var</b>
             <span>{remLeft ? `${remLeft} kişiye hatırlatma gönderilmedi · 1 dakikalık iş` : 'Hepsine hatırlatma gönderildi'}</span>
+          </span>
+          <span className="td-chev" aria-hidden="true">›</span>
+        </Link>
+      )}
+
+      {rq?.items?.length > 0 && (
+        <Link to="/panel/yorumlar" className="td-nudge td-nudge-star">
+          <span className="td-nudge-ic" aria-hidden="true">⭐</span>
+          <span className="td-nudge-text">
+            <b>{rq.items.length} müşteriden puan isteyin</b>
+            <span>Son günlerde gelenler · Google puanınızı yükseltir</span>
           </span>
           <span className="td-chev" aria-hidden="true">›</span>
         </Link>

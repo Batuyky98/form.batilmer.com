@@ -95,3 +95,15 @@ export function reminderTargets(when, ref = today()) {
   if (when === 'ikisi') return [addDays(ref, 1), ref];
   return [addDays(ref, 1)];
 }
+
+// Yorum isteği mesajı
+export const DEFAULT_REVIEW_TEXT = 'Merhaba {ad}, {isletme} olarak bizi tercih ettiğiniz için teşekkür ederiz. Deneyiminizi 10 saniyede puanlar mısınız? {puan_linki}';
+export function fillReview(text, p) {
+  return String(text || DEFAULT_REVIEW_TEXT)
+    .replace(/\{ad\}/g, p.name || '')
+    .replace(/\{isletme\}/g, p.isletme || '')
+    .replace(/\{hizmet\}/g, p.service || '')
+    .replace(/\{puan_linki\}/g, p.url || '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}

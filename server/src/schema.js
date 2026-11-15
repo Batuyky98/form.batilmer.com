@@ -275,5 +275,30 @@ export const MIGRATIONS = [
     version: 6,
     name: 'kampanya (ticari ileti) izni',
     up: ['ALTER TABLE submissions ADD COLUMN marketing_at BIGINT NULL']
+  },
+  {
+    version: 7,
+    name: 'google yorum isteği ve puanlar',
+    up: [
+      `CREATE TABLE reviews (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        appointment_id VARCHAR(40) NOT NULL,
+        submission_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        token CHAR(32) NOT NULL,
+        sent_at BIGINT NULL,
+        sent_by VARCHAR(150) NULL,
+        rating INT NULL,
+        comment TEXT NULL,
+        rated_at BIGINT NULL,
+        google_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_reviews_form ON reviews (form_id, created_at)',
+      'CREATE INDEX idx_reviews_token ON reviews (token)',
+      'CREATE INDEX idx_reviews_appt ON reviews (appointment_id)',
+      'CREATE INDEX idx_reviews_phone ON reviews (phone_key)'
+    ]
   }
 ];

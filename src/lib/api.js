@@ -120,3 +120,10 @@ export const deleteCustomerNote = serverOnly('deleteCustomerNote', () => true);
 // Müsaitlik: çalışma saatleri, kapalı günler (randevu yetkisi yeterli)
 export const getSchedule = serverOnly('getSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });
 export const saveSchedule = serverOnly('saveSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });
+// Google yorum isteği
+export const listReviewQueue = serverOnly('listReviewQueue', () => ({ items: [], forms: [] }));
+export const markReviewSent = serverOnly('markReviewSent', () => true);
+export const listReviews = serverOnly('listReviews', () => ({ items: [], stats: null, forms: [] }));
+export const getReviewPage = serverOnly('getReviewPage', () => null);
+export const submitReview = serverOnly('submitReview', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const reviewGoogleClick = serverOnly('reviewGoogleClick', () => null);

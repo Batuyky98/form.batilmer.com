@@ -37,6 +37,8 @@ export const DEFAULT_RANDEVU = {
   showPrices: false,
   // Formda 'Randevumu yönet' (telefon + ad soyadla randevuyu bul, iptal et)
   selfManage: false,
+  // Google yorum isteği: randevu 'Geldi' olunca puan istenir; herkese Google düğmesi gösterilir
+  review: { enabled: false, googleUrl: '', text: '' },
   // WhatsApp ile tek tık hatırlatma (personel gönderir; ücretsiz)
   wa: { ...DEFAULT_WA },
   sms: { confirm: false, reminder: false } // canlıda SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) ile gönderilecek

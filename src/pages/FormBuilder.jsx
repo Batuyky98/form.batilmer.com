@@ -13,7 +13,7 @@ import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
-import { DEFAULT_WA, DEFAULT_WA_TEXT, WA_VARS, fillReminder } from '../lib/reminder.js';
+import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview } from '../lib/reminder.js';
 import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
@@ -933,6 +933,26 @@ function RandevuTab({ form, draft, setDraft, isAdmin }) {
           <Toggle id="self-manage" checked={!!cfg.selfManage} onChange={(v) => set({ selfManage: v })} label={cfg.selfManage ? 'Açık' : 'Kapalı'} />
         </div>
         <div className="pf-hint">Açıkken formun sağ üstünde "Randevumu yönet" bağlantısı çıkar. Müşteri telefon numarası ve ad soyadıyla aktif randevusunu görür, iptal edebilir (iptal süresi kuralı geçerlidir). İki bilgi birden eşleşmezse hiçbir şey gösterilmez; çok deneme yapan kısa süre engellenir.</div>
+      </section>
+
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>⭐ Google yorum isteği</h3>
+          <Toggle id="rv-on" checked={!!cfg.review?.enabled} onChange={(v) => set({ review: { ...(cfg.review || {}), enabled: v } })} label={cfg.review?.enabled ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken randevusu "Geldi" olarak işaretlenen müşteriler <b>Yorumlar</b> ekranına düşer. Personel tek dokunuşla WhatsApp'tan puan isteği gönderir; müşteri 1-5 yıldız verir ve herkese "Google'da paylaş" düğmesi gösterilir. 1-2 yıldızda işletmeye hemen bildirim gelir.</div>
+        {cfg.review?.enabled && (
+          <>
+            <Field label="Google yorum linkiniz" htmlFor="rv-url" hint='Google İşletme Profili → "Yorum isteyin" / "Yorum formunu paylaşın" bağlantısı (https://g.page/r/... gibi).'>
+              <input id="rv-url" type="url" placeholder="https://g.page/r/..." value={cfg.review.googleUrl || ''} onChange={(e) => set({ review: { ...cfg.review, googleUrl: e.target.value.trim() } })} />
+            </Field>
+            {!cfg.review.googleUrl && <div className="notice notice-warn">Link girilmeden yorum isteği çalışmaz.</div>}
+            <Field label="Mesaj metni" htmlFor="rv-text" hint="{ad}, {isletme}, {hizmet}, {puan_linki} yer tutucularını kullanabilirsiniz. {puan_linki} mutlaka olmalı.">
+              <textarea id="rv-text" rows={3} value={cfg.review.text || DEFAULT_REVIEW_TEXT} onChange={(e) => set({ review: { ...cfg.review, text: e.target.value } })} />
+            </Field>
+            <div className="wa-bubble">{fillReview(cfg.review.text, { name: 'Ayşe Yılmaz', isletme: form?.isletme || form?.name, service: cfg.services?.[0]?.name, url: `${formBaseUrl().replace(/^https?:\/\//, '')}/yorum/…` })}</div>
+          </>
+        )}
       </section>
 
       <WaReminderSection form={form} draft={draft} cfg={cfg} set={set} />

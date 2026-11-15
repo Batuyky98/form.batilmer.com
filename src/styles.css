@@ -1719,3 +1719,52 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .fe-demo-l { font-weight: 600; font-size: 13px; }
 .fe-demo-box { display: block; min-height: 36px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 13.5px; }
 .fe-demo-box i { font-style: normal; opacity: 0.6; }
+/* müşteri puan sayfası */
+.rv-wrap { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px 16px; background: #F3F5F9; color: #0F172A; font-family: Inter, system-ui, sans-serif; }
+.rv-card { width: 100%; max-width: 440px; background: #fff; border-radius: 26px; padding: 28px 22px; box-shadow: 0 20px 50px -20px rgba(15, 23, 42, 0.25); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+.rv-card h1 { margin: 6px 0 0; font-size: 22px; letter-spacing: -0.01em; }
+.rv-logo { max-height: 60px; max-width: 220px; object-fit: contain; }
+.rv-biz { font-weight: 800; font-size: 18px; color: var(--rv); }
+.rv-muted { color: #5B6878; margin: 0; font-size: 14.5px; }
+.rv-stars { display: flex; gap: 6px; margin-top: 12px; }
+.rv-stars button { border: 0; background: none; font-size: 44px; line-height: 1; color: #D9DEE7; cursor: pointer; padding: 2px; transition: transform 0.12s, color 0.12s; }
+.rv-stars button.is-on { color: #F5B301; }
+.rv-stars button:active { transform: scale(0.9); }
+.rv-word { min-height: 22px; font-weight: 700; color: #3A4556; }
+.rv-card textarea { width: 100%; border: 1.5px solid #E1E7EE; border-radius: 16px; padding: 12px 14px; font: inherit; font-size: 15px; background: #F7F9FC; resize: vertical; }
+.rv-err { color: #B42318; font-size: 14px; }
+.rv-btn { width: 100%; min-height: 52px; margin-top: 6px; border: 0; border-radius: 999px; background: var(--rv); color: #fff; font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.rv-btn:disabled { opacity: 0.6; }
+.rv-thanks { font-size: 44px; }
+.rv-google { width: 100%; margin-top: 12px; padding: 16px; border-radius: 18px; background: #F7F9FC; border: 1px solid #E8ECF2; display: flex; flex-direction: column; gap: 4px; }
+.rv-google span { color: #5B6878; font-size: 14px; }
+.rv-btn-g { background: #fff; color: #1F2937; border: 1.5px solid #D9DEE7; margin-top: 10px; }
+.rv-foot { color: #7A8597; font-size: 13px; }
+/* yorumlar */
+.rw { max-width: 760px; gap: 16px; }
+.rw header h1 { margin: 0; font-size: 28px; }
+.rw header p { margin: 4px 0 0; }
+.rw-stars { color: #F5B301; letter-spacing: 1px; white-space: nowrap; }
+.rw-stars i { font-style: normal; color: var(--line-strong); }
+.rw-kpis { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.rw-kpi { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); }
+.rw-kpi b { font-family: var(--display); font-size: 26px; line-height: 1.1; }
+.rw-kpi span { color: var(--muted); font-size: 13px; }
+.rw-kpi-main b { font-size: 32px; }
+.rw-dist { display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; }
+.rw-bar { display: grid; grid-template-columns: 30px 1fr 28px; align-items: center; gap: 10px; font-size: 13px; }
+.rw-bar span { color: var(--muted); }
+.rw-bar i { height: 8px; border-radius: 4px; background: #F5B301; min-width: 2px; }
+.rw-bar i.is-low { background: var(--red); }
+.rw-bar b { text-align: right; }
+.rw-row { padding: 14px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.rw-row:first-child { border-top: 0; }
+.rw-row.is-low { background: color-mix(in srgb, var(--red) 5%, var(--card)); }
+.rw-row-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rw-comment { margin: 2px 0; font-size: 15px; }
+.rw-g { color: var(--green-fg); }
+.td-nudge-star { background: color-mix(in srgb, #F5B301 10%, var(--card)); border-color: color-mix(in srgb, #F5B301 40%, var(--line)); }
+.td-nudge-star .td-nudge-ic { background: #F5B301; }
+@media (max-width: 720px) { .rw-kpis { grid-template-columns: 1fr 1fr; } .rw-kpi-main { grid-column: 1 / -1; } }
+.rw-kpi .rw-stars { color: #F5B301; font-size: 18px; }
+.rw-kpi .rw-stars i { color: var(--line-strong); }
