@@ -187,7 +187,7 @@ export const TEMPLATES = [
       f('telefon', 'tel', 'Telefon', { required: true, placeholder: '05xx xxx xx xx' }),
       f('email', 'email', 'E-posta', { required: true }),
       f('hayvan_adi', 'text', 'Hayvanınızın adı', { required: true }),
-      f('hayvan_turu', 'radio', 'Dostunuz', { required: true, options: ['🐱 Kedi', '🐶 Köpek', '🐦 Kuş', '🐰 Tavşan', '🐾 Diğer'] }),
+      f('hayvan_turu', 'radio', 'Dostunuz', { required: true, options: ['🐱 Kedi', '🐶 Köpek', '🐦 Kuş', '🐾 Diğer'] }),
       f('randevu', 'randevu', 'Randevu', { required: true }),
       f('aciklama', 'textarea', 'Şikayet / açıklama', { maxLength: 500 })
     ],
