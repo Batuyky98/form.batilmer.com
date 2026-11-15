@@ -14,6 +14,7 @@ import { directionsUrl } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
 import { DEFAULT_WA, DEFAULT_WA_TEXT, WA_VARS, fillReminder } from '../lib/reminder.js';
+import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL } from '../lib/kvkkTemplate.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
@@ -626,6 +627,25 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 
       <section className="sub-card stack">
         <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <div className="kv-box">
+          <div className="pf-label">Veri sorumlusu (işletme) bilgileri</div>
+          <div className="grid-2">
+            <Field label="Şirket unvanı" htmlFor="kv-co" hint="Vergi levhasındaki ad. Ör: Vital Veteriner Hizmetleri Ltd. Şti."><input id="kv-co" disabled={!isAdmin} placeholder={form.isletme || ''} value={s.kvkk.company || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, company: e.target.value } })} /></Field>
+            <Field label="KVKK başvuru e-postası" htmlFor="kv-em"><input id="kv-em" disabled={!isAdmin} type="email" placeholder="info@isletme.com" value={s.kvkk.contactEmail || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, contactEmail: e.target.value } })} /></Field>
+            <Field label="Telefon" htmlFor="kv-tel"><input id="kv-tel" disabled={!isAdmin} type="tel" placeholder="0212 …" value={s.kvkk.contactPhone || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, contactPhone: e.target.value } })} /></Field>
+            <Field label="Adres" hint="Ayarlar'daki işletme adresi kullanılır."><input disabled value={s.address || '— Yukarıdan işletme adresini girin —'} /></Field>
+          </div>
+          {isAdmin && (
+            <button type="button" className="btn btn-primary" onClick={async () => {
+              const has = (s.kvkk.text || '').trim();
+              if (has && !(await confirm({ title: 'Metin yeniden oluşturulsun mu?', message: 'Mevcut aydınlatma metninin yerine forma göre hazırlanan yeni metin yazılacak.', confirmText: 'Oluştur' }))) return;
+              const text = buildKvkkText({ isletme: form.isletme || form.name, settings: s, fields: draft.fields, randevu: draft.randevu });
+              set({ kvkk: { ...s.kvkk, enabled: true, text } });
+              toast('Aydınlatma metni forma göre hazırlandı. Kontrol edip Yayınla deyin.');
+            }}>✨ Forma göre hazır metni oluştur</button>
+          )}
+          <div className="pf-hint">Metin; formdaki alanlara, randevu, WhatsApp hatırlatma ve saklama süresi ayarlarına göre otomatik yazılır. Alan eklerseniz ya da ayar değiştirirseniz düğmeye tekrar basın. Hukuki tavsiye değildir; ilk kurulumda bir avukata kontrol ettirin.</div>
+        </div>
         <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster (işaretlenmeden gönderilemez)" />
         {s.kvkk.enabled && (
           <>
@@ -637,6 +657,23 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
           </>
         )}
         {isAdmin && !s.kvkk.enabled && <div className="notice notice-warn">KVKK onayı kapalı. Kişisel veri topluyorsanız aydınlatma yükümlülüğünün başka şekilde karşılandığından emin olun.</div>}
+      </section>
+
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>📣 Kampanya izni (ticari ileti) {!isAdmin && <Badge tone="gray">Sadece Ana Admin</Badge>}</h3>
+          <Toggle id="st-mk" disabled={!isAdmin} checked={!!s.marketing?.enabled} onChange={(v) => set({ marketing: { ...s.marketing, label: s.marketing?.label || DEFAULT_MARKETING_LABEL, enabled: v, text: v && !s.marketing?.text ? buildMarketingText({ isletme: form.isletme || form.name, settings: s }) : s.marketing?.text } })} label={s.marketing?.enabled ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken formun sonunda <b>isteğe bağlı, işaretsiz</b> bir kutu çıkar. İşaretleyenin onay zamanı kayda yazılır; Müşteriler ekranında "Kampanya izni olanlar" diye ayrılır. Randevu hatırlatması için bu izin gerekmez; indirim/kampanya mesajı için gerekir (işletme ayrıca İYS'ye kayıtlı olmalı).</div>
+        {s.marketing?.enabled && (
+          <>
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.marketing.label} onChange={(e) => set({ marketing: { ...s.marketing, label: e.target.value } })} /></Field>
+            <Field label="Ayrıntı metni" hint="Formda &quot;Ayrıntılar&quot; bağlantısında açılır.">
+              <textarea disabled={!isAdmin} rows={6} value={s.marketing.text || ''} onChange={(e) => set({ marketing: { ...s.marketing, text: e.target.value } })} />
+            </Field>
+            {isAdmin && <div><button type="button" className="btn btn-sm" onClick={() => set({ marketing: { ...s.marketing, text: buildMarketingText({ isletme: form.isletme || form.name, settings: s }) } })}>Hazır metni yeniden yaz</button></div>}
+          </>
+        )}
       </section>
 
       <section className="sub-card stack">

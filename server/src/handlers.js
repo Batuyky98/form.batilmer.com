@@ -21,6 +21,7 @@ import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
 import { phoneKey, phonePretty, fillReminder, waLink, waPhoneOk, DEFAULT_WA } from '../../src/lib/reminder.js';
+import { DEFAULT_MARKETING_LABEL } from '../../src/lib/kvkkTemplate.js';
 
 // ---------------------------------------------------------------- hata
 export class ApiError extends Error {
@@ -91,7 +92,7 @@ function mapSub(r) {
   return {
     id: r.id, formId: r.form_id, values: J(r.vals, {}), labels: J(r.labels, {}), types: J(r.types, {}), order: J(r.ord, []),
     status: r.status || 'yeni', notes: J(r.notes, []), appointmentId: r.appointment_id, manual: !!Number(r.manual),
-    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
+    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), marketingAt: num(r.marketing_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
   };
 }
 
@@ -889,6 +890,7 @@ function cleanDraft(draft, prev, user) {
   if (user.role !== 'admin') {
     next.settings.kvkk = clone(prev.settings.kvkk);
     next.settings.consent = clone(prev.settings.consent);
+    next.settings.marketing = clone(prev.settings.marketing);
     // Müşteriye mail ve SMS ücretli ek özellik: sadece Ana Admin açıp kapatır
     next.settings.customerMails = !!prev.settings.customerMails;
     next.randevu.sms = clone(prev.randevu.sms);
@@ -917,6 +919,9 @@ function cleanDraft(draft, prev, user) {
   next.settings.address = str(next.settings.address, 300);
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
+  next.settings.marketing.text = String(next.settings.marketing.text || '').slice(0, 30000);
+  next.settings.marketing.label = str(next.settings.marketing.label, 300) || DEFAULT_MARKETING_LABEL;
+  for (const k of ['company', 'contactEmail', 'contactPhone']) next.settings.kvkk[k] = str(next.settings.kvkk[k], 200);
   for (const k of ['kvkk', 'consent']) if (next.settings[k].url && !/^https?:\/\//i.test(next.settings[k].url)) next.settings[k].url = '';
   next.settings.mapsUrl = /^https:\/\/[^\s"'<>]{4,490}$/i.test(String(next.settings.mapsUrl || '').trim()) ? String(next.settings.mapsUrl).trim() : '';
   const keys = next.fields.map((x) => x.key);
@@ -1090,7 +1095,7 @@ H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize }
 };
 
 H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
-  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, turnstileToken = '' } = meta || {};
+  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, marketingAccepted = false, turnstileToken = '' } = meta || {};
   const pre = await formBySlug(ctx.db.query, slug);
   const lang = pre?.published?.settings?.language || 'tr';
   // Bot: gizli alan doluysa ya da 2 saniyeden hızlı gönderildiyse sessizce "başarılı" de, kaydetme
@@ -1186,7 +1191,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         labels: Object.fromEntries(fields.map((f) => [f.key, f.label])),
         types: Object.fromEntries(fields.map((f) => [f.key, f.type])),
         order: fields.map((f) => f.key),
-        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, appointmentId: null
+        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, marketingAt: c.settings.marketing?.enabled && marketingAccepted === true ? now() : null, appointmentId: null
       };
 
       // Randevu: form satırı kilitli olduğu için aynı anda iki kişi aynı saati alamaz
@@ -1231,8 +1236,8 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         await q('INSERT INTO files (id, form_id, submission_id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [up.id, form.id, sub.id, up.name, up.mime, up.buffer.length, now()]);
       }
 
-      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)', [
-        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now(), phoneKey(contact.phone) || null
+      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, marketing_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)', [
+        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, sub.marketingAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now(), phoneKey(contact.phone) || null
       ]);
 
       const ar = c.settings.autoReply;
@@ -1377,7 +1382,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       headers.push('Randevu durumu');
     } else headers.push(labels[k]);
   }
-  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı');
+  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı', 'Kampanya izni zamanı');
   const fmt = (ms) => (ms ? formatDateTime(ms) : '');
   const data = subs.map((s) => {
     const row = [fmt(s.createdAt)];
@@ -1392,7 +1397,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       } else row.push(displayValue(types[k], v, cfg));
     }
     const userNotes = (s.notes || []).filter((n) => !n.system);
-    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt));
+    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt), fmt(s.marketingAt));
     return row;
   });
   await log(q, user.id, `Excel indirdi (${subs.length} kayıt)`, form.name);
@@ -1563,25 +1568,27 @@ H.markReminded = async (ctx, id, done = true) => {
 
 // ---------------------------------------------------------------- müşteri kartı
 // Müşteri = telefon numarası. Kullanıcı sadece görme yetkisi olduğu formlardaki kayıtları görür.
-H.listCustomers = async (ctx, { q: search = '' } = {}) => {
+H.listCustomers = async (ctx, { q: search = '', marketing = false } = {}) => {
   const user = await requireUser(ctx);
   const q = ctx.db.query;
   const forms = await permittedForms(q, user, 'view');
   if (!forms.length) return { items: [], total: 0 };
   const ids = forms.map((f) => f.id);
-  const rows = await q(`SELECT id, form_id, vals, types, labels, phone_key, appointment_id, created_at FROM submissions WHERE form_id IN (${ph(ids)}) AND deleted_at IS NULL AND phone_key IS NOT NULL ORDER BY created_at DESC LIMIT 20000`, ids);
+  const rows = await q(`SELECT id, form_id, vals, types, labels, phone_key, appointment_id, created_at, marketing_at FROM submissions WHERE form_id IN (${ph(ids)}) AND deleted_at IS NULL AND phone_key IS NOT NULL ORDER BY created_at DESC LIMIT 20000`, ids);
   const appts = Object.fromEntries((await q(`SELECT id, status, date, start FROM appointments WHERE form_id IN (${ph(ids)})`, ids)).map((a) => [a.id, a]));
   const map = new Map();
   for (const r of rows) {
     let c = map.get(r.phone_key);
     if (!c) {
       const ct = subContact(r);
-      c = { key: r.phone_key, name: ct.name, phone: phonePretty(r.phone_key), email: ct.email, records: 0, visits: 0, noShow: 0, last: 0, next: '', forms: new Set() };
+      c = { key: r.phone_key, name: ct.name, phone: phonePretty(r.phone_key), email: ct.email, records: 0, visits: 0, noShow: 0, last: 0, next: '', forms: new Set(), marketing: false, mAt: 0, lastAt: 0 };
       map.set(r.phone_key, c);
     }
     if (!c.name) c.name = subContact(r).name;
     c.records += 1;
     c.last = Math.max(c.last, num(r.created_at));
+    // En son kayıttaki tercih geçerli (izin verip sonra vermediyse izin yok sayılır)
+    if (num(r.created_at) >= c.lastAt) { c.lastAt = num(r.created_at); c.marketing = !!r.marketing_at; c.mAt = num(r.marketing_at) || 0; }
     const f = forms.find((x) => x.id === r.form_id);
     if (f) c.forms.add(f.isletme || f.name);
     const a = appts[r.appointment_id];
@@ -1594,6 +1601,7 @@ H.listCustomers = async (ctx, { q: search = '' } = {}) => {
   const s = String(search || '').trim().toLocaleLowerCase('tr');
   const digits = s.replace(/\D/g, '');
   let items = [...map.values()].map((c) => ({ ...c, forms: [...c.forms] }));
+  if (marketing) items = items.filter((c) => c.marketing);
   if (s) items = items.filter((c) => c.name.toLocaleLowerCase('tr').includes(s) || (digits.length >= 3 && c.key.includes(phoneKey(digits) || digits.replace(/^0/, ''))));
   return { items: items.slice(0, 300), total: items.length };
 };
@@ -1642,7 +1650,8 @@ H.getCustomer = async (ctx, key) => {
     : [];
   upcoming.sort((x, y) => `${x.date}${x.start}`.localeCompare(`${y.date}${y.start}`));
   const noteForms = [...new Map(items.map((i) => [i.formId, { id: i.formId, name: i.isletme === i.formName ? i.formName : `${i.isletme} – ${i.formName}` }])).values()];
-  return { key: pk, name, phone: phonePretty(pk), phoneRaw: pk, email, stats, upcoming, items, notes, noteForms, firstAt: rows[rows.length - 1].createdAt, lastAt: rows[0].createdAt };
+  const latest = rows[0];
+  return { key: pk, name, phone: phonePretty(pk), phoneRaw: pk, email, stats, upcoming, items, notes, noteForms, firstAt: rows[rows.length - 1].createdAt, lastAt: rows[0].createdAt, marketingAt: latest.marketingAt || null };
 };
 
 H.addCustomerNote = async (ctx, key, formId, text) => {

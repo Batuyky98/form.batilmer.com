@@ -270,5 +270,10 @@ export const MIGRATIONS = [
       'CREATE INDEX idx_outbox_sub ON outbox (submission_id)',
       'CREATE INDEX idx_outbox_form ON outbox (form_id)'
     ]
+  },
+  {
+    version: 6,
+    name: 'kampanya (ticari ileti) izni',
+    up: ['ALTER TABLE submissions ADD COLUMN marketing_at BIGINT NULL']
   }
 ];

@@ -84,6 +84,16 @@ export const DEFAULT_SETTINGS = {
     label: 'Kişisel verilerimin işlenmesine ilişkin aydınlatma metnini okudum, onaylıyorum.',
     url: '',
     // Aydınlatma metninin kendisi (panelden yazılır; formda pencerede açılır). Boşsa sadece link kullanılır.
+    text: '',
+    // Veri sorumlusu bilgileri (hazır metin bunlarla doldurulur)
+    company: '',
+    contactEmail: '',
+    contactPhone: ''
+  },
+  // Kampanya / ticari ileti izni: HER ZAMAN isteğe bağlı, kutu işaretsiz gelir. Onay zamanı kayda yazılır.
+  marketing: {
+    enabled: false,
+    label: 'Kampanya, indirim ve duyurulardan SMS, e-posta veya WhatsApp ile haberdar olmak istiyorum. (İsteğe bağlı)',
     text: ''
   },
   // Açık rıza: ayrı kutu ve ayrı metin. required = işaretlenmeden form gönderilemez.
@@ -140,6 +150,7 @@ export function normalizeContent(c) {
   const settings = { ...clone(DEFAULT_SETTINGS), ...(c.settings || {}) };
   settings.kvkk = { ...clone(DEFAULT_SETTINGS.kvkk), ...(c.settings?.kvkk || {}) };
   settings.consent = { ...clone(DEFAULT_SETTINGS.consent), ...(c.settings?.consent || {}) };
+  settings.marketing = { ...clone(DEFAULT_SETTINGS.marketing), ...(c.settings?.marketing || {}) };
   settings.autoReply = { ...clone(DEFAULT_SETTINGS.autoReply), ...(c.settings?.autoReply || {}) };
   // Eski sürümdeki "bildirim gidecek e-postalar" kaldırıldı (elle yazılan adreslere kişisel veri gitmesin)
   delete settings.notifyEmails;

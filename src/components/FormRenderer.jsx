@@ -8,6 +8,7 @@ import { displayValue, servicePrice } from '../lib/shared.js';
 import { DEFAULT_STYLE } from '../lib/formStyles.js';
 import LineIcon, { splitEmoji } from './LineIcon.jsx';
 import ManageMine from './ManageMine.jsx';
+import { DEFAULT_MARKETING_LABEL } from '../lib/kvkkTemplate.js';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
@@ -372,6 +373,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const [kvkk, setKvkk] = useState(false);
   const [kvkkError, setKvkkError] = useState('');
   const [consent, setConsent] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const [consentError, setConsentError] = useState('');
   const [mineOpen, setMineOpen] = useState(false);
   const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
@@ -471,7 +473,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     const payload = Object.fromEntries(Object.entries(values).filter(([k]) => vis[k]));
     setBusy(true);
     try {
-      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, turnstileToken });
+      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, marketingAccepted: !!(s.marketing?.enabled && marketing), turnstileToken });
       setDone(res);
       onDone?.(res);
     } catch (err) {
@@ -704,6 +706,18 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
             </span>
           </label>
           {consentError && <div className="bf-error" role="alert">{consentError}</div>}
+        </div>
+      )}
+
+      {lastStep && s.marketing?.enabled && (
+        <div className="bf-kvkk bf-marketing">
+          <label className="bf-choice">
+            <input id="bf-marketing" type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+            <span>
+              {s.marketing.label || DEFAULT_MARKETING_LABEL}
+              {(s.marketing.text || s.marketing.url) && <LegalLink lang={lang} doc={s.marketing} title={lang === 'en' ? 'Details' : 'Ayrıntılar'} onOpen={setLegal} />}
+            </span>
+          </label>
         </div>
       )}
 

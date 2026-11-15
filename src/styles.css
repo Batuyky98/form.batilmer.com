@@ -1710,3 +1710,6 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .bf-mine-done span:last-child { color: var(--bf-muted); font-size: 14px; }
 .bf-mine-again { align-self: center; border: 0; background: none; color: var(--bf-link, var(--bf-primary)); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .bf.bf-mine-host { position: fixed; inset: 0; z-index: 1000; padding: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; display: block; }
+.cu-mkt { margin-top: 6px; }
+.kv-box { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; background: var(--surface-3); }
+.kv-box .btn { align-self: flex-start; }

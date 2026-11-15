@@ -257,6 +257,22 @@ const pres = await rpc('p', 'submitForm', f.slug, { ad_soyad: 'Fiyat Test', tele
 ok(pres.appointment.price === '450 ₺', 'onay kartında fiyat: ' + pres.appointment.price);
 izler.push('Fiyat Test', 'Zıpzıp', '5334445566');
 
+// KVKK: hazır aydınlatma metni + kampanya izni
+const { buildKvkkText } = await import('../src/lib/kvkkTemplate.js');
+const kf = await rpc('a', 'getForm', fid);
+const kt = buildKvkkText({ isletme: 'Vital Veteriner', settings: { ...kf.draft.settings, address: 'Moda Cad. 24', kvkk: { company: 'Vital Vet Ltd. Şti.', contactEmail: 'kvkk@vital.com' } }, fields: kf.draft.fields, randevu: kf.draft.randevu });
+ok(kt.includes('Vital Vet Ltd. Şti.') && kt.includes('telefon numaranız') && kt.includes('"Hayvanınızın adı"') && kt.includes('WhatsApp') && kt.includes('kvkk@vital.com') && kt.includes('11. maddesi'), 'hazır aydınlatma metni forma göre doldu');
+kf.draft.settings.marketing = { enabled: true, label: 'Kampanyalardan haberdar olmak istiyorum', text: 'x' };
+await rpc('a', 'saveDraft', fid, kf.draft);
+await rpc('a', 'publishForm', fid, {});
+const mkSend = async (name, phone, mk, i) => { const sl = await rpc('p', 'getAvailability', f.slug, { date: addDays2(tomorrow, 2), serviceId: 'svc_muayene' }); return rpc('p', 'submitForm', f.slug, { ad_soyad: name, telefon: phone, email: `m${i}@x.com`, hayvan_adi: 'Mırmır', hayvan_turu: '🐱 Kedi', randevu: { date: addDays2(tomorrow, 2), time: sl[i].time, serviceId: 'svc_muayene' } }, { startedAt: Date.now() - 5000, kvkkAccepted: true, marketingAccepted: mk }); };
+await mkSend('İzinli Müşteri', '0535 101 20 30', true, 0);
+await mkSend('İzinsiz Müşteri', '0535 101 20 31', false, 4);
+const mkList = await rpc('a', 'listCustomers', { marketing: true });
+ok(mkList.items.some((x) => x.key === '5351012030') && !mkList.items.some((x) => x.key === '5351012031'), 'kampanya izni sadece işaretleyende kayıtlı');
+ok(!!(await rpc('a', 'getCustomer', '5351012030')).marketingAt && !(await rpc('a', 'getCustomer', '5351012031')).marketingAt, 'müşteri kartında kampanya izni');
+izler.push('İzinli Müşteri', 'İzinsiz Müşteri', '5351012030', '5351012031', 'Mırmır');
+
 // Randevumu yönet: tik kapalıyken kapalı; açıkken telefon + ad eşleşirse görünür ve iptal edilir
 e = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '0533 444 55 66', name: 'Fiyat Test' }));
 ok(e?.code === 'yetki', 'Randevumu yönet kapalıyken çalışmıyor');
