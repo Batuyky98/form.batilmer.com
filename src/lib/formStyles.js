@@ -9,6 +9,10 @@ export const FORM_STYLES = [
     apply: { primary: '#2F5BEA', text: '#0F172A', background: 'beyaz', bgColor: '#FFFFFF', dark: false, radius: 'hafif', colors: {} }
   },
   {
+    id: 'sekme', name: 'Sekmeli adımlar', desc: 'Adımlar sekmede; seçenekler simgeli kutucuk', font: 'Figtree',
+    apply: { primary: '#3F6688', text: '#16222F', background: 'beyaz', bgColor: '#FFFFFF', dark: false, radius: 'tam', colors: { fieldBg: '#F5F7FA', fieldBorder: '#E1E7EE', label: '#16222F', selectedBg: '#3F6688', selectedText: '#FFFFFF', help: '#5B6878' } }
+  },
+  {
     id: 'adim', name: 'Adım adım', desc: 'Uygulama gibi; sorular adım adım gelir', font: 'Plus Jakarta Sans',
     apply: { primary: '#0F9F6E', text: '#0B1B16', background: 'beyaz', bgColor: '#FFFFFF', dark: false, radius: 'tam', colors: { selectedBg: '#0B1B16' } }
   },

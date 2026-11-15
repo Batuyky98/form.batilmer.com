@@ -6,6 +6,7 @@ import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
 import { displayValue, servicePrice } from '../lib/shared.js';
 import { DEFAULT_STYLE } from '../lib/formStyles.js';
+import LineIcon, { splitEmoji } from './LineIcon.jsx';
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
@@ -47,6 +48,17 @@ export function appearanceStyle(a) {
 }
 
 // ------------------------------------------------------------ Cloudflare Turnstile (anahtar tanımlıysa)
+// Sekmeli tasarımda seçenek kutucuğu: emoji varsa üstte çizgi simge, altta metin
+function ChoiceTile({ o }) {
+  const { emoji, text } = splitEmoji(o);
+  return (
+    <span className="bf-tile">
+      {emoji && <span className="bf-tile-ic"><LineIcon emoji={emoji} /></span>}
+      <span className="bf-tile-t">{text}</span>
+    </span>
+  );
+}
+
 function Turnstile({ siteKey, onToken }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -375,6 +387,24 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
 
   // "Adım adım" tasarımı: randevu alanı varsa 1) hizmet ve zaman 2) bilgiler 3) onay; yoksa 4'erli gruplar
   const steps = useMemo(() => {
+    if (style === 'sekme') {
+      // Sekmeli adımlar: 1) detaylar (ör. Dostunuz) 2) hizmet ve saat 3) iletişim; son adımda gönderilir
+      const shown = fields.filter((f) => vis[f.key]);
+      const isContact = (f) => ['tel', 'email', 'tc', 'textarea', 'dosya'].includes(f.type) || (f.type === 'text' && /^(ad\b|adı|adınız|ad soyad|ad-soyad|isim|full name|name)/i.test(String(f.label || '').trim()));
+      const groups = [
+        { keys: shown.filter((f) => f.type !== 'randevu' && !isContact(f)).map((f) => f.key), title: '' },
+        { keys: shown.filter((f) => f.type === 'randevu').map((f) => f.key), title: lang === 'en' ? 'Service & Time' : 'Hizmet & Zaman' },
+        { keys: shown.filter((f) => f.type !== 'randevu' && isContact(f)).map((f) => f.key), title: lang === 'en' ? 'Contact' : 'İletişim' }
+      ].filter((g) => g.keys.length);
+      if (groups[0] && !groups[0].title) {
+        const g0 = shown.filter((f) => groups[0].keys.includes(f.key));
+        const first = g0.find((f) => ['radio', 'select', 'checkbox'].includes(f.type)) || g0[0];
+        groups[0].title = splitEmoji(first?.label || '').text.slice(0, 22) || t(lang, 'stepInfo');
+      }
+      if (groups.length < 2) return null;
+      groups[groups.length - 1].final = true;
+      return groups;
+    }
     if (style !== 'adim') return null;
     const shown = fields.filter((f) => vis[f.key]);
     const appt = shown.filter((f) => f.type === 'randevu');
@@ -490,7 +520,21 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   return (
     <form className={className} style={appearanceStyle(a)} onSubmit={lastStep ? submit : (e) => { e.preventDefault(); nextStep(); }} noValidate lang={lang}>
       {decor}
-      {steps && (
+      {steps && style === 'sekme' && (
+        <div className="bf-tabs" aria-label={`${stepNo + 1} / ${steps.length}`}>
+          {steps.map((st, i) => (i < stepNo ? (
+            <button key={i} type="button" className="bf-tab is-done" aria-label={`${i + 1}. ${st.title}`} onClick={() => { setErrors({}); setStep(i); }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+            </button>
+          ) : (
+            <div key={i} className={`bf-tab ${i === stepNo ? 'is-cur' : ''}`} aria-current={i === stepNo ? 'step' : undefined}>
+              <span className="bf-tab-n">{i + 1}</span>
+              {i === stepNo && <b>{st.title}</b>}
+            </div>
+          )))}
+        </div>
+      )}
+      {steps && style !== 'sekme' && (
         <div className="bf-steps">
           <div className="bf-steps-bar">{steps.map((st, i) => <i key={i} className={i < stepNo ? 'done' : i === stepNo ? 'cur' : ''} />)}</div>
           <div className="bf-steps-meta"><span><b>{stepNo + 1}</b> / {steps.length} · {steps[stepNo].title}</span></div>
@@ -508,7 +552,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {steps && steps[stepNo].final && (
+      {steps && steps[stepNo].final && style !== 'sekme' && (
         <div className="bf-recap" key="recap">
           {fields.filter((f) => vis[f.key] && values[f.key] !== undefined && f.type !== 'dosya').map((f) => (
             <div key={f.key}><span>{f.label}</span><b>{f.type === 'randevu' ? displayValue('randevu', values[f.key], cfg) : Array.isArray(values[f.key]) ? values[f.key].join(', ') : String(values[f.key])}</b></div>
@@ -558,7 +602,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
                   {(f.options || []).map((o) => (
                     <label key={o} className="bf-choice">
                       <input type="radio" name={id} checked={values[f.key] === o} onChange={() => set(f.key, o)} />
-                      <span>{o}</span>
+                      {style === 'sekme' ? <ChoiceTile o={o} /> : <span>{o}</span>}
                     </label>
                   ))}
                 </div>
@@ -574,7 +618,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
                         const next = e.target.checked ? [...arr, o] : arr.filter((x) => x !== o);
                         set(f.key, next.length ? next : undefined);
                       }} />
-                      <span>{o}</span>
+                      {style === 'sekme' ? <ChoiceTile o={o} /> : <span>{o}</span>}
                     </label>
                   ))}
                 </div>
@@ -675,8 +719,8 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
 
       {steps ? (
         <div className="bf-nav">
-          {stepNo > 0 && <button type="button" className="bf-back" aria-label={t(lang, 'back')} onClick={() => { setErrors({}); setStep(stepNo - 1); }}>←</button>}
-          <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : lastStep ? a.buttonText || t(lang, 'submit') : `${t(lang, 'next')} →`}</button>
+          {stepNo > 0 && <button type="button" className="bf-back" aria-label={t(lang, 'back')} onClick={() => { setErrors({}); setStep(stepNo - 1); }}>{style === 'sekme' ? <>← {t(lang, 'back')}</> : '←'}</button>}
+          <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : lastStep ? a.buttonText || t(lang, 'submit') : style === 'sekme' ? `${lang === 'en' ? 'Continue' : 'Devam'} →` : `${t(lang, 'next')} →`}</button>
         </div>
       ) : (
         <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : a.buttonText || t(lang, 'submit')}</button>

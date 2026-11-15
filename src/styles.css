@@ -1651,3 +1651,40 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 /* Onay kartındaki ikincil düğmeler (Yol tarifi, Google Takvim, Kopyala) her tasarımda okunur kalsın */
 .bf-btn.bf-btn-light.bf-btn-light { background: color-mix(in srgb, var(--bf-primary) 8%, transparent) !important; color: var(--bf-link, var(--bf-primary)) !important; border: 1.5px solid color-mix(in srgb, var(--bf-primary) 45%, transparent) !important; box-shadow: none !important; animation: none !important; text-shadow: none !important; }
 .bf-btn.bf-btn-light.bf-btn-light::before, .bf-btn.bf-btn-light.bf-btn-light::after { display: none !important; }
+/* ============================================================
+   11. tasarım: Sekmeli adımlar (adım sekmeleri, simgeli kutucuklar, yumuşak alanlar)
+   ============================================================ */
+.bf-style-sekme { --bf-radius: 16px; }
+.bf-style-sekme .bf-tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+.bf-style-sekme .bf-tab { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 52px; height: 48px; padding: 0 12px; border: 0; border-radius: 16px; background: #EEF0F4; color: #4A5565; font: inherit; font-weight: 700; flex: none; }
+.bf-style-sekme .bf-tab .bf-tab-n { width: 28px; height: 28px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-size: 13.5px; color: #4A5565; }
+.bf-style-sekme .bf-tab.is-cur { flex: 1; justify-content: flex-start; padding: 0 12px; background: var(--bf-primary); color: #fff; animation: bf-rise 0.35s var(--bf-ease, ease) backwards; }
+.bf-style-sekme .bf-tab.is-cur .bf-tab-n { color: var(--bf-primary); }
+.bf-style-sekme .bf-tab.is-cur b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bf-style-sekme .bf-tab.is-done { background: #DDF3EE; color: #1E8A72; cursor: pointer; }
+.bf-style-sekme .bf-label { font-weight: 700; font-size: 15px; color: var(--bf-label, var(--bf-text)); margin-bottom: 2px; }
+.bf-style-sekme input:not([type=checkbox]):not([type=radio]), .bf-style-sekme select, .bf-style-sekme textarea { min-height: 52px; border-radius: 16px; background: var(--bf-field-bg); border: 1.5px solid var(--bf-border); font-size: 16px; padding: 12px 16px; }
+.bf-style-sekme textarea { min-height: 110px; }
+/* seçenekler: 2 sütun simgeli kutucuk */
+.bf-style-sekme .bf-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bf-style-sekme .bf-choices .bf-choice { display: flex; justify-content: center; align-items: center; min-height: 92px; padding: 14px 10px; border-radius: 18px; border: 1.5px solid var(--bf-border); background: #FAFBFC; color: var(--bf-text); font-weight: 600; text-align: center; }
+.bf-style-sekme .bf-choices .bf-choice:hover { transform: none; border-color: color-mix(in srgb, var(--bf-primary) 50%, var(--bf-border)); }
+.bf-style-sekme .bf-choices .bf-choice:has(input:checked) { background: color-mix(in srgb, var(--bf-primary) 7%, #fff); border-color: var(--bf-primary); color: var(--bf-text); box-shadow: 0 0 0 1px var(--bf-primary) inset; }
+.bf-style-sekme .bf-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.bf-style-sekme .bf-tile-ic { color: color-mix(in srgb, var(--bf-primary) 85%, #000); display: grid; place-items: center; height: 32px; }
+.bf-style-sekme .bf-choice:has(input:checked) .bf-tile-ic { color: var(--bf-primary); }
+.bf-style-sekme .bf-tile-emoji { font-size: 26px; line-height: 1; }
+.bf-style-sekme .bf-tile-t { font-size: 16px; }
+/* hizmet, gün, saat */
+.bf-style-sekme .bf-svc-card { border-radius: 18px; background: #FAFBFC; }
+.bf-style-sekme .bf-day { border-radius: 16px; }
+.bf-style-sekme .bf-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.bf-style-sekme .bf-slot { min-height: 52px; border-radius: 16px; background: #fff; font-size: 16px; font-weight: 700; }
+/* düğmeler */
+.bf-style-sekme .bf-btn { align-self: stretch; height: 56px; border-radius: 999px; font-size: 16.5px; box-shadow: 0 12px 24px -12px color-mix(in srgb, var(--bf-primary) 70%, transparent); }
+.bf-style-sekme .bf-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bf-style-sekme .bf-nav .bf-btn:only-child { grid-column: 1 / -1; }
+.bf-style-sekme .bf-back { height: 56px; border-radius: 999px; border: 1.5px solid var(--bf-border); background: #fff; color: var(--bf-text); font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; width: auto; }
+.bf-style-sekme .bf-nav .bf-btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 14px; }
+@container (max-width: 360px) { .bf-style-sekme .bf-choices { grid-template-columns: 1fr 1fr; gap: 8px; } .bf-style-sekme .bf-tab.is-cur b { font-size: 13.5px; } }
+.bf-style-sekme .bf-slot.is-on { background: var(--bf-primary); border-color: var(--bf-primary); color: #fff; }

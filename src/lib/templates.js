@@ -462,4 +462,4 @@ export function buildFormContent(templateId) {
   };
 }
 
-export const GOOGLE_FONTS = ['Inter', 'Plus Jakarta Sans', 'Outfit', 'Manrope', 'Poppins', 'Montserrat', 'Roboto', 'Open Sans', 'Nunito', 'Lato', 'Raleway', 'Playfair Display', 'Fraunces', 'Space Grotesk'];
+export const GOOGLE_FONTS = ['Inter', 'Figtree', 'Plus Jakarta Sans', 'Outfit', 'Manrope', 'Poppins', 'Montserrat', 'Roboto', 'Open Sans', 'Nunito', 'Lato', 'Raleway', 'Playfair Display', 'Fraunces', 'Space Grotesk'];
