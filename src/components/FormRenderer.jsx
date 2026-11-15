@@ -365,12 +365,12 @@ function AppointmentCard({ a, lang }) {
 }
 
 // ------------------------------------------------------------ ana bileşen
-export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine }) {
+export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine, initial }) {
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
   const lang = s.language || 'tr';
   useGoogleFont(a.font);
   const style = a.style || DEFAULT_STYLE;
-  const [values, setValues] = useState({});
+  const [values, setValues] = useState(() => initial?.values || {});
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [kvkk, setKvkk] = useState(false);
@@ -378,7 +378,10 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const [consent, setConsent] = useState(false);
   const [marketing, setMarketing] = useState(false);
   const [consentError, setConsentError] = useState('');
-  const [mineOpen, setMineOpen] = useState(false);
+  const [mineOpen, setMineOpen] = useState(() => !!initial?.manage);
+  const pickedKey = useMemo(() => Object.keys(initial?.values || {})[0] || '', []);
+  const pv = pickedKey ? values[pickedKey] : null;
+  const picked = pv?.date && pv?.time ? { date: pv.date, time: pv.time, svc: (content.randevu?.services || []).find((x) => x.id === pv.serviceId)?.name || '' } : null;
   const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
   const [globalError, setGlobalError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -531,6 +534,9 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         <div className="bf-mine-link-row">
           <button type="button" className="bf-mine-link" onClick={() => !preview && setMineOpen(true)}>🗓 {lang === 'en' ? 'Manage my booking' : 'Randevumu yönet'}</button>
         </div>
+      )}
+      {picked && !done && (
+        <div className="bf-picked">🗓 {lang === 'en' ? 'Selected' : 'Seçtiğiniz saat'}: <b>{formatDate(picked.date, lang)} · {picked.time}{picked.svc ? ` · ${picked.svc}` : ''}</b></div>
       )}
       {steps && style === 'sekme' && (
         <div className="bf-tabs" aria-label={`${stepNo + 1} / ${steps.length}`}>

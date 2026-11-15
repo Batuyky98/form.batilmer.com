@@ -324,6 +324,18 @@ let limited = false;
 for (let k = 0; k < 6; k++) { const r = await ex(rpc('p', 'findMyAppointments', f.slug, { phone: '05001112233', name: 'Deneme Kisi' })); if (r?.code === 'sinir') limited = true; }
 ok(limited, 'aynı numaraya çok deneme engellendi');
 
+// ücretsiz sohbet asistanı
+ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi dönmüyor');
+{
+  const g = await rpc('a', 'getForm', fid);
+  g.draft.settings.assistant = { ...g.draft.settings.assistant, enabled: true, greeting: 'Selam', whatsapp: '0555 700 80 90', faq: [{ q: 'Otopark?', a: 'Var' }, { q: '', a: 'boş' }] };
+  await rpc('a', 'saveDraft', fid, g.draft);
+  await rpc('a', 'publishForm', fid, {});
+  const as = await rpc('p', 'getAssistant', f.slug);
+  ok(as && as.greeting === 'Selam' && as.whatsapp === '05557008090' && as.faq.length === 1 && as.services.length > 0, 'asistan açıkken menü bilgileri geliyor');
+  ok(!JSON.stringify(as).includes('Fiyat Test') && !('rows' in as), 'asistan kişisel veri döndürmüyor');
+}
+
 
 
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak

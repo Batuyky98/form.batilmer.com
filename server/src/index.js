@@ -67,7 +67,7 @@ function securityHeaders(res, pathname) {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   if (isHttps) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
   // Formlar (/f/...) her siteye iframe ile gömülebilir; panel sadece kendi içinde
-  if (!pathname.startsWith('/f/') && !pathname.startsWith('/embed.js')) {
+  if (!pathname.startsWith('/f/') && !pathname.startsWith('/asistan') && !pathname.startsWith('/embed.js')) {
     res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
     res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   }
@@ -199,7 +199,7 @@ async function serveStatic(req, res, pathname) {
       const ext = path.extname(full).toLowerCase();
       const cache = rel.startsWith('/assets/')
         ? 'public, max-age=31536000, immutable'
-        : rel === '/embed.js'
+        : rel === '/embed.js' || rel === '/asistan.js'
           ? 'public, max-age=3600'
           : rel === '/sw.js' || rel === '/manifest.webmanifest'
             ? 'no-cache'

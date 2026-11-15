@@ -15,7 +15,7 @@ import { today, addDays, dateTimeToMs, dateOfMs, dayOfWeek, formatDateTime, form
 import { validateAll, fileExt } from '../../src/lib/validators.js';
 import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
-import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
+import { checkSlot, getSlots, endTime, serviceById, firstBookableDate, ACTIVE_STATUSES } from '../../src/lib/availability.js';
 import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
@@ -926,6 +926,14 @@ function cleanDraft(draft, prev, user) {
   next.settings.marketing.text = String(next.settings.marketing.text || '').slice(0, 30000);
   next.settings.marketing.label = str(next.settings.marketing.label, 300) || DEFAULT_MARKETING_LABEL;
   for (const k of ['company', 'contactEmail', 'contactPhone']) next.settings.kvkk[k] = str(next.settings.kvkk[k], 200);
+  const as = next.settings.assistant || {};
+  next.settings.assistant = {
+    enabled: !!as.enabled,
+    greeting: str(as.greeting, 300),
+    whatsapp: String(as.whatsapp || '').replace(/[^\d+]/g, '').slice(0, 16),
+    items: Object.fromEntries(['randevu', 'fiyat', 'saat', 'adres', 'sss', 'yonet', 'wa'].map((k) => [k, as.items?.[k] !== false])),
+    faq: (Array.isArray(as.faq) ? as.faq : []).map((x) => ({ q: str(x?.q, 200), a: str(x?.a, 1500) })).filter((x) => x.q && x.a).slice(0, 30)
+  };
   for (const k of ['kvkk', 'consent']) if (next.settings[k].url && !/^https?:\/\//i.test(next.settings[k].url)) next.settings[k].url = '';
   next.settings.mapsUrl = /^https:\/\/[^\s"'<>]{4,490}$/i.test(String(next.settings.mapsUrl || '').trim()) ? String(next.settings.mapsUrl).trim() : '';
   const keys = next.fields.map((x) => x.key);
@@ -1092,6 +1100,30 @@ async function dayData(q, formId, date) {
 }
 
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+
+// Ücretsiz sohbet asistanı: herkese açık bilgiler (kişisel veri yok)
+H.getAssistant = async (ctx, slug) => {
+  const form = await formBySlug(ctx.db.query, slug);
+  if (!form?.published) return null;
+  const c = content(form);
+  const as = c.settings.assistant || {};
+  if (!as.enabled) return null;
+  const state = await formIsOpen(ctx.db.query, form);
+  const cfg = c.randevu;
+  const hasAppt = c.fields.some((f) => f.type === 'randevu');
+  const a = c.appearance || {};
+  return {
+    slug: form.slug, isletme: form.isletme || form.name, greeting: as.greeting, items: as.items, faq: as.faq,
+    whatsapp: as.whatsapp, open: !!state.open, lang: c.settings.language || 'tr',
+    address: c.settings.address || '', directions: directionsUrl(c.settings) || '',
+    phone: c.settings.kvkk?.contactPhone || '',
+    primary: a.primary || '#2F5BEA', logo: a.logo || '',
+    hasAppt, selfManage: !!cfg?.selfManage,
+    services: hasAppt ? (cfg.services || []).map((s) => ({ id: s.id, name: s.name, duration: s.duration, price: servicePrice(cfg, s) })) : [],
+    hours: hasAppt ? cfg.hours : null, closedDates: hasAppt ? (cfg.closedDates || []).filter((d) => d >= today()) : [],
+    firstDate: hasAppt ? firstBookableDate(cfg) : '', maxDaysAhead: hasAppt ? Number(cfg.maxDaysAhead || 30) : 0
+  };
+};
 
 H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize } = {}) => {
   if (!isDate(date)) return [];

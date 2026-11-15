@@ -104,6 +104,14 @@ export const DEFAULT_SETTINGS = {
     text: '',
     url: ''
   },
+  // Ücretsiz sohbet asistanı (yapay zekâ yok): fiyat, saat, adres, boş saatler, sık sorulanlar
+  assistant: {
+    enabled: false,
+    greeting: '',
+    whatsapp: '',
+    items: { randevu: true, fiyat: true, saat: true, adres: true, sss: true, yonet: true, wa: true },
+    faq: []
+  },
   afterSubmit: 'mesaj', // 'mesaj' | 'yonlendir'
   successMessage: 'Teşekkürler! Bilgileriniz bize ulaştı.',
   redirectUrl: '',
@@ -151,6 +159,8 @@ export function normalizeContent(c) {
   settings.kvkk = { ...clone(DEFAULT_SETTINGS.kvkk), ...(c.settings?.kvkk || {}) };
   settings.consent = { ...clone(DEFAULT_SETTINGS.consent), ...(c.settings?.consent || {}) };
   settings.marketing = { ...clone(DEFAULT_SETTINGS.marketing), ...(c.settings?.marketing || {}) };
+  settings.assistant = { ...clone(DEFAULT_SETTINGS.assistant), ...(c.settings?.assistant || {}) };
+  settings.assistant.items = { ...clone(DEFAULT_SETTINGS.assistant.items), ...(c.settings?.assistant?.items || {}) };
   settings.autoReply = { ...clone(DEFAULT_SETTINGS.autoReply), ...(c.settings?.autoReply || {}) };
   // Eski sürümdeki "bildirim gidecek e-postalar" kaldırıldı (elle yazılan adreslere kişisel veri gitmesin)
   delete settings.notifyEmails;

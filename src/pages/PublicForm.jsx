@@ -12,6 +12,20 @@ const isEmbedded = (() => {
   }
 })();
 
+// Sohbet asistanından gelindiyse: ?tarih=2026-11-17&saat=14:00&hizmet=svc_asi → randevu hazır seçili; ?yonet=1 → Randevumu yönet açık
+function initialFromUrl(content) {
+  const q = new URLSearchParams(window.location.search);
+  const out = {};
+  const rf = (content?.fields || []).find((f) => f.type === 'randevu');
+  const date = q.get('tarih');
+  const time = q.get('saat');
+  if (rf && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && /^\d{2}:\d{2}$/.test(time || '')) {
+    const svc = (content.randevu?.services || []).find((s) => s.id === q.get('hizmet'));
+    out[rf.key] = { date, time, ...(svc ? { serviceId: svc.id } : {}) };
+  }
+  return { values: out, manage: q.get('yonet') === '1' };
+}
+
 function post(msg) {
   if (!isEmbedded) return;
   // Yükseklik bilgisi hassas değil; site adresini bilmediğimiz için '*' kullanılıyor.
@@ -92,6 +106,7 @@ export default function PublicForm({ slug }) {
         loadSlots={(p) => api.getAvailability(slug, p)}
         onSubmit={(values, meta) => api.submitForm(slug, values, meta)}
         findMine={(p) => api.findMyAppointments(slug, p)}
+        initial={initialFromUrl(content)}
         cancelMine={(tok) => api.cancelByToken(tok)}
         onDone={(res) => {
           if (res?.afterSubmit === 'yonlendir' && res.redirectUrl && /^https?:\/\//.test(res.redirectUrl)) {

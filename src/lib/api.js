@@ -127,3 +127,4 @@ export const listReviews = serverOnly('listReviews', () => ({ items: [], stats: 
 export const getReviewPage = serverOnly('getReviewPage', () => null);
 export const submitReview = serverOnly('submitReview', () => { throw new Error('Demo modunda kullanılamaz.'); });
 export const reviewGoogleClick = serverOnly('reviewGoogleClick', () => null);
+export const getAssistant = serverOnly('getAssistant', () => null);

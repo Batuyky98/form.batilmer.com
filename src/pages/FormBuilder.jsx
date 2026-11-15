@@ -645,6 +645,8 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         )}
       </section>
 
+      <AssistantSection form={form} s={s} set={set} />
+
       <section className="sub-card stack">
         <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
         <div className="kv-box">
@@ -765,6 +767,55 @@ function PurgeData({ form }) {
 
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
+
+const AS_ITEMS = [['randevu', '🗓 Randevu al'], ['fiyat', '💰 Fiyatlar'], ['saat', '🕒 Çalışma saatleri'], ['adres', '📍 Adres'], ['sss', '❓ Sık sorulanlar'], ['yonet', '📅 Randevumu yönet'], ['wa', '💬 WhatsApp']];
+
+// Ücretsiz sohbet asistanı (yapay zekâ yok): işletme sitesine tek satırla eklenen balon
+function AssistantSection({ form, s, set }) {
+  const toast = useToast();
+  const as = s.assistant;
+  const put = (patch) => set({ assistant: { ...as, ...patch } });
+  const faq = as.faq || [];
+  const setFaq = (i, patch) => put({ faq: faq.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
+  const code = `<script src="${formBaseUrl()}/asistan.js" data-form="${form.slug}" defer></script>`;
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>💬 Sohbet asistanı <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="as-on" checked={!!as.enabled} onChange={(v) => put({ enabled: v })} label={as.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Sitenizin köşesinde sohbet balonu çıkar. Müşteri düğmelere dokunarak fiyatları, çalışma saatlerini, adresi ve boş randevu saatlerini görür; saate dokununca form o saat seçili açılır. Bilgiler paneldeki ayarlardan otomatik gelir.</div>
+      {as.enabled && (
+        <>
+          <Field label="Karşılama mesajı" htmlFor="as-gr"><input id="as-gr" maxLength={300} placeholder={`Merhaba 👋 ${form.isletme || form.name}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`} value={as.greeting || ''} onChange={(e) => put({ greeting: e.target.value })} /></Field>
+          <div className="pf-label">Menüde görünsün</div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            {AS_ITEMS.map(([k, t]) => (
+              <button key={k} type="button" className={`nf-chip ${as.items[k] ? 'is-on' : ''}`} aria-pressed={!!as.items[k]} onClick={() => put({ items: { ...as.items, [k]: !as.items[k] } })}>{as.items[k] ? '✓ ' : ''}{t}</button>
+            ))}
+          </div>
+          <Field label="WhatsApp numarası" htmlFor="as-wa" hint="Boş bırakılırsa WhatsApp düğmesi çıkmaz."><input id="as-wa" type="tel" placeholder="0532 000 00 00" value={as.whatsapp || ''} onChange={(e) => put({ whatsapp: e.target.value })} /></Field>
+          <div className="pf-label">Sık sorulanlar</div>
+          {faq.map((f, i) => (
+            <div key={i} className="as-faq">
+              <input aria-label="Soru" placeholder="Soru (ör: Otopark var mı?)" value={f.q} onChange={(e) => setFaq(i, { q: e.target.value })} />
+              <textarea aria-label="Cevap" rows={2} placeholder="Cevap" value={f.a} onChange={(e) => setFaq(i, { a: e.target.value })} />
+              <button type="button" className="link-sm" onClick={() => put({ faq: faq.filter((_, j) => j !== i) })}>Sil</button>
+            </div>
+          ))}
+          {faq.length < 30 && <div><button type="button" className="btn btn-sm" onClick={() => put({ faq: [...faq, { q: '', a: '' }] })}>+ Soru ekle</button></div>}
+          <div className="pf-label">Sitenize ekleyin (tek satır, &lt;/body&gt; öncesine)</div>
+          <pre className="as-code">{code}</pre>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button type="button" className="btn btn-sm" onClick={async () => toast((await copyText(code)) ? 'Kopyalandı.' : 'Kopyalanamadı.', 'ok')}>Kodu kopyala</button>
+            <a className="btn btn-sm" href={`/asistan/${form.slug}`} target="_blank" rel="noopener noreferrer">Asistanı aç ↗</a>
+          </div>
+          <div className="pf-hint">Değişiklikler formu yayınlayınca asistana yansır.</div>
+        </>
+      )}
+    </section>
+  );
+}
 
 function RandevuTab({ form, draft, setDraft, isAdmin }) {
   const cfg = draft.randevu || clone(DEFAULT_RANDEVU);

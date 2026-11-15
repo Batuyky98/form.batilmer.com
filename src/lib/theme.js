@@ -2,7 +2,7 @@
 // Müşterinin gördüğü sayfalar (/f/..., /iptal/..., /test-sitesi) panel temasından etkilenmez:
 // onların görünümü form ayarlarından gelir.
 const KEY = 'bf_tema';
-export const isPublicPath = (p = window.location.pathname) => /^\/(f|iptal|yorum|test-sitesi)(\/|$)/.test(p);
+export const isPublicPath = (p = window.location.pathname) => /^\/(f|iptal|yorum|asistan|test-sitesi)(\/|$)/.test(p);
 
 export function storedTheme() {
   try {

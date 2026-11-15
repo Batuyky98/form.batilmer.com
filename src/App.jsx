@@ -18,6 +18,7 @@ import { Trash, Logs, Outbox } from './pages/AdminPages.jsx';
 import PublicForm from './pages/PublicForm.jsx';
 import CancelPage from './pages/CancelPage.jsx';
 import ReviewPage from './pages/ReviewPage.jsx';
+import AssistantPage from './pages/AssistantPage.jsx';
 import Reviews from './pages/Reviews.jsx';
 import EmbedTest from './pages/EmbedTest.jsx';
 import Stats from './pages/Stats.jsx';
@@ -80,6 +81,7 @@ function Routes() {
   if ((m = matchPath('/f/:slug', path))) return <PublicForm slug={m.slug} />;
   if ((m = matchPath('/iptal/:token', path))) return <CancelPage token={m.token} />;
   if ((m = matchPath('/yorum/:token', path))) return <ReviewPage token={m.token} />;
+  if ((m = matchPath('/asistan/:slug', path))) return <AssistantPage slug={m.slug} />;
   if (path === '/test-sitesi') return <EmbedTest />;
   if ((m = matchPath('/sifre-sifirla/:token', path))) return <ResetPassword token={m.token} />;
 
