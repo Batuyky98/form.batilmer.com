@@ -1713,3 +1713,9 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 .cu-mkt { margin-top: 6px; }
 .kv-box { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; background: var(--surface-3); }
 .kv-box .btn { align-self: flex-start; }
+/* alan görünümü: başlık / kutu içi */
+.fe-disp { display: flex; flex-direction: column; gap: 8px; }
+.fe-disp-demo { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--surface-3); }
+.fe-demo-l { font-weight: 600; font-size: 13px; }
+.fe-demo-box { display: block; min-height: 36px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 13.5px; }
+.fe-demo-box i { font-style: normal; opacity: 0.6; }

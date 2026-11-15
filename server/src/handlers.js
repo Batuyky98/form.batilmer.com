@@ -933,6 +933,9 @@ function cleanDraft(draft, prev, user) {
       fld.options = (fld.options || []).map((o) => String(o).trim()).filter(Boolean);
       if (!fld.options.length) fail(`"${fld.label}" alanına en az bir seçenek ekleyin.`);
     }
+    if (!['baslik', 'kutu', 'ikisi'].includes(fld.display)) delete fld.display;
+    fld.label = str(fld.label, 200);
+    fld.placeholder = str(fld.placeholder, 200);
     if (fld.type === 'dosya') fld.maxMB = Math.min(config.maxUploadMB, Math.max(1, Number(fld.maxMB) || 2));
   }
   return next;

@@ -105,6 +105,7 @@ function ConditionEditor({ field, prevFields, onChange }) {
   );
 }
 
+const TEXTLIKE_FIELDS = ['text', 'email', 'tel', 'tc', 'number', 'textarea'];
 const ACCEPT_OPTIONS = [['pdf', 'PDF'], ['jpg', 'JPG'], ['png', 'PNG'], ['doc', 'Word'], ['xls', 'Excel']];
 
 function FieldEditor({ field, onChange, allKeys, prevFields }) {
@@ -113,15 +114,34 @@ function FieldEditor({ field, onChange, allKeys, prevFields }) {
   return (
     <div className="field-editor stack">
       <div className="grid-2">
-        <Field label="Etiket" htmlFor={`fe-l-${field.id}`}>
+        <Field label="Başlık (etiket)" htmlFor={`fe-l-${field.id}`} hint={field.display === 'kutu' ? 'Formda görünmez; Excel ve kayıtlarda bu ad kullanılır.' : ''}>
           <input id={`fe-l-${field.id}`} value={field.label} onChange={(e) => set({ label: e.target.value })} />
         </Field>
         <Field label="Teknik anahtar" htmlFor={`fe-k-${field.id}`} hint={keyTaken ? 'Bu anahtar başka alanda da var!' : 'Excel ve veritabanında kullanılır. Kayıt geldikten sonra değiştirmeyin.'}>
           <input id={`fe-k-${field.id}`} value={field.key} onChange={(e) => set({ key: slugify(e.target.value).replace(/-/g, '_') })} />
         </Field>
       </div>
-      {field.type !== 'randevu' && !['radio', 'checkbox'].includes(field.type) && (
-        <Field label={field.type === 'select' ? 'Boş seçenek metni' : 'Placeholder (kutu içi örnek metin)'} htmlFor={`fe-p-${field.id}`}>
+      {TEXTLIKE_FIELDS.includes(field.type) && (
+        <div className="fe-disp">
+          <div className="pf-label">Formda nasıl görünsün?</div>
+          <Segmented
+            label="Görünüm"
+            value={field.display || ''}
+            onChange={(v) => set({ display: v })}
+            options={[{ value: '', label: 'Tasarıma göre' }, { value: 'baslik', label: 'Başlık' }, { value: 'kutu', label: 'Kutu içi yazı' }, { value: 'ikisi', label: 'İkisi de' }]}
+          />
+          <div className="fe-disp-demo" aria-hidden="true">
+            {(field.display === 'baslik' || field.display === 'ikisi') && <span className="fe-demo-l">{field.label || 'Başlık'}{field.required ? ' *' : ''}</span>}
+            <span className="fe-demo-box">{field.display === 'kutu' ? `${field.placeholder || field.label}${field.required ? ' *' : ''}` : field.display === 'ikisi' ? field.placeholder || <i>kutu içi yazı boş</i> : field.display === 'baslik' ? '' : <i>Görünüm sekmesindeki tasarıma göre</i>}</span>
+          </div>
+        </div>
+      )}
+      {field.type !== 'randevu' && !['radio', 'checkbox'].includes(field.type) && field.display !== 'baslik' && (
+        <Field
+          label={field.type === 'select' ? 'Boş seçenek metni' : 'Kutu içi yazı (placeholder)'}
+          htmlFor={`fe-p-${field.id}`}
+          hint={field.display === 'kutu' ? 'Boş bırakırsanız başlık yazısı kutunun içinde görünür.' : 'Kutu boşken içinde soluk görünen örnek yazı. Ör: 05xx xxx xx xx'}
+        >
           <input id={`fe-p-${field.id}`} value={field.placeholder || ''} onChange={(e) => set({ placeholder: e.target.value })} />
         </Field>
       )}

@@ -10,6 +10,9 @@ import LineIcon, { splitEmoji } from './LineIcon.jsx';
 import ManageMine from './ManageMine.jsx';
 import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 
+// Başlık / kutu içi yazı seçimi yapılabilen alan türleri
+const TEXTLIKE = ['text', 'email', 'tel', 'tc', 'number', 'textarea'];
+
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
 export function useGoogleFont(font) {
@@ -582,9 +585,12 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               if (values[f.key] !== undefined && f.type !== 'dosya') setErrors((e) => ({ ...e, [f.key]: validateField(f, values[f.key], lang) || undefined }));
             }
           };
-          const isFloat = floating && ['text', 'email', 'tel', 'tc', 'number', 'textarea'].includes(f.type);
-          const ph = isFloat ? ' ' : labelInside ? `${f.label}${f.required ? ' *' : ''}` : f.placeholder;
-          const showLabel = !labelInside || ['radio', 'checkbox', 'randevu', 'select', 'date', 'dosya'].includes(f.type);
+          // Alan bazında görünüm: 'baslik' (sadece başlık) · 'kutu' (sadece kutu içi yazı) · 'ikisi'. Boş = tasarımın varsayılanı
+          const mode = TEXTLIKE.includes(f.type) && ['baslik', 'kutu', 'ikisi'].includes(f.display) ? f.display : '';
+          const isFloat = !mode && floating && ['text', 'email', 'tel', 'tc', 'number', 'textarea'].includes(f.type);
+          const req = f.required ? ' *' : '';
+          const ph = mode === 'baslik' ? '' : mode === 'kutu' ? `${f.placeholder || f.label}${req}` : mode === 'ikisi' ? f.placeholder : isFloat ? ' ' : labelInside ? `${f.label}${req}` : f.placeholder;
+          const showLabel = mode ? mode !== 'kutu' : !labelInside || ['radio', 'checkbox', 'randevu', 'select', 'date', 'dosya'].includes(f.type);
           let control;
           switch (f.type) {
             case 'textarea':
