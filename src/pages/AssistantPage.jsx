@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as api from '../lib/api.js';
 import { addDays, dayOfMonth, dayOfWeek, today, weekdayShort } from '../lib/util.js';
-import { whatsappUrl, telUrl } from '../lib/shared.js';
+import { whatsappUrl, telUrl, readableOn } from '../lib/shared.js';
 
 // Ücretsiz sohbet asistanı (yapay zekâ yok). İşletme sitesindeki balonun içinde (iframe) ya da tek başına açılır.
 // Bilgiler panelden gelir: hizmetler/fiyatlar, çalışma saatleri, adres, boş saatler, sık sorulanlar.
@@ -163,10 +163,10 @@ export default function AssistantPage({ slug }) {
   }
 
   return (
-    <div className="asx" style={{ '--asx': d.primary }}>
+    <div className="asx" style={{ '--asx': d.primary, '--asx-on': readableOn(d.primary) }}>
       <header className="asx-h">
         <span className="asx-av">{d.logo ? <img src={d.logo} alt="" /> : '💬'}</span>
-        <span className="asx-ht"><b>{d.isletme}</b><span>Size nasıl yardımcı olabiliriz?</span></span>
+        <span className="asx-ht"><b>{d.title || d.isletme}</b>{d.subtitle && <span>{d.subtitle}</span>}</span>
         {embedded && <button type="button" className="asx-x" aria-label="Kapat" onClick={closeParent}>✕</button>}
       </header>
       <main className="asx-body">

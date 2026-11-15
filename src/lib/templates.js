@@ -107,6 +107,10 @@ export const DEFAULT_SETTINGS = {
   // Ücretsiz sohbet asistanı (yapay zekâ yok): fiyat, saat, adres, boş saatler, sık sorulanlar
   assistant: {
     enabled: false,
+    color: '', // boşsa formun ana rengi
+    title: '', // boşsa işletme adı
+    subtitle: 'Size nasıl yardımcı olabiliriz?',
+    peek: 'Merhaba 👋 Randevu, fiyat ya da adres için buradayım.', // balonun yanındaki kısa yazı; boşsa çıkmaz
     greeting: '',
     whatsapp: '',
     items: { randevu: true, fiyat: true, saat: true, adres: true, sss: true, yonet: true, wa: true },

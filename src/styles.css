@@ -1772,19 +1772,19 @@ html.is-embedded .bf-legal { position: absolute; align-items: start; }
 html.as-doc, html.as-doc body { height: 100%; margin: 0; background: #f7f9fc; }
 .asx { --asx: #3f6688; height: 100vh; display: flex; flex-direction: column; background: #f7f9fc; color: #16222f; font-family: Inter, system-ui, sans-serif; }
 .asx-load { flex: 1; display: grid; place-items: center; color: #5b6878; }
-.asx-h { background: var(--asx); color: #fff; padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex: none; }
+.asx-h { background: var(--asx); color: var(--asx-on, #fff); padding: 14px 16px; display: flex; gap: 12px; align-items: center; flex: none; }
 .asx-av { width: 42px; height: 42px; border-radius: 50%; background: #fff; display: grid; place-items: center; overflow: hidden; font-size: 20px; flex: none; }
 .asx-av img { width: 100%; height: 100%; object-fit: contain; }
 .asx-ht { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .asx-ht b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .asx-ht span { font-size: 12.5px; opacity: 0.85; }
-.asx-x { border: 0; background: none; color: #fff; font-size: 20px; cursor: pointer; padding: 6px; }
+.asx-x { border: 0; background: none; color: inherit; font-size: 20px; cursor: pointer; padding: 6px; }
 .asx-body { flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; }
 .asx-grp { display: flex; flex-direction: column; gap: 10px; animation: asxIn 0.25s ease; }
 @keyframes asxIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .asx-bot { align-self: flex-start; background: #fff; border-radius: 4px 18px 18px 18px; padding: 11px 14px; font-size: 15px; max-width: 88%; box-shadow: 0 2px 6px -3px rgba(0, 0, 0, 0.15); line-height: 1.45; white-space: pre-wrap; }
 .asx-wide { width: 92%; }
-.asx-me { align-self: flex-end; background: var(--asx); color: #fff; border-radius: 18px 4px 18px 18px; padding: 10px 14px; font-size: 15px; max-width: 80%; animation: asxIn 0.2s ease; }
+.asx-me { align-self: flex-end; background: var(--asx); color: var(--asx-on, #fff); border-radius: 18px 4px 18px 18px; padding: 10px 14px; font-size: 15px; max-width: 80%; animation: asxIn 0.2s ease; }
 .asx-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .asx-mb { background: #fff; border: 1.5px solid #dbe3ec; border-radius: 14px; padding: 12px 10px; font: inherit; font-weight: 700; font-size: 14.5px; color: #16222f; cursor: pointer; text-align: left; text-decoration: none; }
 .asx-mb:hover { border-color: var(--asx); }
@@ -1792,7 +1792,7 @@ html.as-doc, html.as-doc body { height: 100%; margin: 0; background: #f7f9fc; }
 .asx-menu .asx-wa { grid-column: 1 / -1; text-align: center; }
 .asx-price { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid #eef1f5; font-size: 14.5px; }
 .asx-price:first-child { border-top: 0; }
-.asx-price b { color: var(--asx); }
+.asx-price b { color: color-mix(in srgb, var(--asx) 75%, #000); }
 .asx-price.is-today { font-weight: 700; }
 .asx-note { color: #6b7686; font-size: 13.5px; margin-top: 6px; }
 .asx-chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1804,14 +1804,38 @@ html.as-doc, html.as-doc body { height: 100%; margin: 0; background: #f7f9fc; }
 .asx-days { display: flex; gap: 6px; margin: 8px 0; }
 .asx-d { flex: 1; border: 1.5px solid #dbe3ec; background: #fff; border-radius: 12px; padding: 6px 0; font: inherit; font-size: 12.5px; cursor: pointer; display: flex; flex-direction: column; align-items: center; color: #16222f; }
 .asx-d b { font-size: 16px; }
-.asx-d.on { background: var(--asx); color: #fff; border-color: var(--asx); }
+.asx-d.on { background: var(--asx); color: var(--asx-on, #fff); border-color: var(--asx); }
 .asx-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .asx-s { text-align: center; border: 1.5px solid #dbe3ec; border-radius: 12px; padding: 10px 0; font-weight: 700; background: #fff; color: #16222f; text-decoration: none; }
-.asx-s:hover { background: var(--asx); color: #fff; border-color: var(--asx); }
-.asx-more { display: block; margin-top: 8px; font-weight: 600; color: var(--asx); text-decoration: none; font-size: 14px; }
+.asx-s:hover { background: var(--asx); color: var(--asx-on, #fff); border-color: var(--asx); }
+.asx-more { display: block; margin-top: 8px; font-weight: 600; color: color-mix(in srgb, var(--asx) 75%, #000); text-decoration: none; font-size: 14px; }
 .asx-f { flex: none; padding: 10px 12px 14px; background: #fff; border-top: 1px solid #e8edf3; display: flex; gap: 8px; }
 .asx-fb { flex: 1; border: 1.5px solid #dbe3ec; background: #fff; border-radius: 999px; padding: 10px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; color: #16222f; }
 .as-faq { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line, #e3e8ef); border-radius: 12px; }
 .as-faq .link-sm { justify-self: start; }
 .as-code { margin: 0; padding: 12px; border-radius: 12px; background: var(--surface-3, #f1f4f8); font-size: 12.5px; white-space: pre-wrap; word-break: break-all; }
 .bf-picked { margin: 0 0 14px; padding: 11px 14px; border-radius: 14px; background: color-mix(in srgb, var(--bf-primary) 10%, transparent); border: 1.5px solid color-mix(in srgb, var(--bf-primary) 35%, transparent); font-size: 14.5px; }
+.as-colors { display: flex; flex-wrap: wrap; gap: 10px; }
+.as-sw { width: 38px; height: 38px; border-radius: 50%; border: 3px solid var(--surface, #fff); box-shadow: 0 0 0 1.5px var(--line, #d5dce5); cursor: pointer; padding: 0; position: relative; display: grid; place-items: center; }
+.as-sw.is-on { box-shadow: 0 0 0 2.5px var(--text, #16222f); }
+.as-sw.is-on::after { content: '✓'; color: #fff; font-weight: 800; font-size: 15px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.as-sw-auto { width: auto; border-radius: 999px; padding: 0 12px; color: #fff; font-size: 12.5px; font-weight: 700; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+.as-sw-auto.is-on::after { content: ''; }
+.as-sw-auto.is-on span::before { content: '✓ '; }
+.as-sw-custom { background: conic-gradient(#ef4444, #f59e0b, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444); overflow: hidden; }
+.as-sw-custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.as-prev { display: flex; gap: 14px; align-items: flex-end; padding: 16px; border-radius: 16px; background: var(--surface-3, #eef2f6); flex-wrap: wrap; }
+.as-prev-box { flex: 1 1 240px; max-width: 320px; border-radius: 18px; overflow: hidden; background: #f7f9fc; box-shadow: 0 10px 30px -14px rgba(0, 0, 0, 0.35); color: #16222f; }
+.as-prev-h { display: flex; gap: 10px; align-items: center; padding: 12px 14px; }
+.as-prev-av { width: 34px; height: 34px; border-radius: 50%; background: #fff; display: grid; place-items: center; overflow: hidden; flex: none; }
+.as-prev-av img { width: 100%; height: 100%; object-fit: contain; }
+.as-prev-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.as-prev-t b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-prev-t span { font-size: 12px; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-prev-b { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.as-prev-bot { align-self: flex-start; background: #fff; border-radius: 4px 14px 14px 14px; padding: 8px 11px; font-size: 13px; max-width: 90%; box-shadow: 0 2px 6px -3px rgba(0, 0, 0, 0.15); }
+.as-prev-me { align-self: flex-end; border-radius: 14px 4px 14px 14px; padding: 7px 11px; font-size: 13px; }
+.as-prev-side { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; margin-left: auto; }
+.as-prev-peek { background: #fff; color: #16222f; border-radius: 14px 14px 4px 14px; padding: 8px 11px; font-size: 13px; max-width: 200px; box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.3); }
+.as-prev-btn { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.45); }
+.as-prev-btn svg { width: 24px; height: 24px; }

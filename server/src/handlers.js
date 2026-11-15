@@ -16,7 +16,7 @@ import { validateAll, fileExt } from '../../src/lib/validators.js';
 import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { checkSlot, getSlots, endTime, serviceById, firstBookableDate, ACTIVE_STATUSES } from '../../src/lib/availability.js';
-import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
+import { buildFormContent, normalizeContent, DEFAULT_CONTROL, DEFAULT_SETTINGS } from '../../src/lib/templates.js';
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
@@ -929,6 +929,10 @@ function cleanDraft(draft, prev, user) {
   const as = next.settings.assistant || {};
   next.settings.assistant = {
     enabled: !!as.enabled,
+    color: /^#[0-9a-f]{6}$/i.test(as.color || '') ? as.color : '',
+    title: str(as.title, 60),
+    subtitle: str(as.subtitle, 80),
+    peek: str(as.peek, 120),
     greeting: str(as.greeting, 300),
     whatsapp: String(as.whatsapp || '').replace(/[^\d+]/g, '').slice(0, 16),
     items: Object.fromEntries(['randevu', 'fiyat', 'saat', 'adres', 'sss', 'yonet', 'wa'].map((k) => [k, as.items?.[k] !== false])),
@@ -1113,17 +1117,24 @@ H.getAssistant = async (ctx, slug) => {
   const hasAppt = c.fields.some((f) => f.type === 'randevu');
   const a = c.appearance || {};
   return {
-    slug: form.slug, isletme: form.isletme || form.name, greeting: as.greeting, items: as.items, faq: as.faq,
+    slug: form.slug, isletme: form.isletme || form.name, title: as.title || form.isletme || form.name, subtitle: as.subtitle ?? DEFAULT_SETTINGS.assistant.subtitle, peek: as.peek ?? DEFAULT_SETTINGS.assistant.peek, greeting: as.greeting, items: as.items, faq: as.faq,
     whatsapp: as.whatsapp, open: !!state.open, lang: c.settings.language || 'tr',
     address: c.settings.address || '', directions: directionsUrl(c.settings) || '',
     phone: c.settings.kvkk?.contactPhone || '',
-    primary: a.primary || '#2F5BEA', logo: a.logo || '',
+    primary: as.color || a.primary || '#2F5BEA', logo: a.logo || '',
     hasAppt, selfManage: !!cfg?.selfManage,
     services: hasAppt ? (cfg.services || []).map((s) => ({ id: s.id, name: s.name, duration: s.duration, price: servicePrice(cfg, s) })) : [],
     hours: hasAppt ? cfg.hours : null, closedDates: hasAppt ? (cfg.closedDates || []).filter((d) => d >= today()) : [],
     firstDate: hasAppt ? firstBookableDate(cfg) : '', maxDaysAhead: hasAppt ? Number(cfg.maxDaysAhead || 30) : 0
   };
 };
+
+// Siteye gömülen balonun (asistan.js) ihtiyacı: renk ve balon yazısı. Kapalıysa null → balon hiç çıkmaz.
+export async function assistantBubble(db, slug) {
+  if (!/^[a-z0-9-]{1,80}$/.test(String(slug || ''))) return null;
+  const d = await H.getAssistant({ db }, slug);
+  return d ? { color: d.primary, peek: d.peek, title: d.title } : null;
+}
 
 H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize } = {}) => {
   if (!isDate(date)) return [];

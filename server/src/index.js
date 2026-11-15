@@ -10,7 +10,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config, isHttps } from './config.js';
 import { connect } from './db.js';
-import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, BIG_BODY } from './handlers.js';
+import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, assistantBubble, BIG_BODY } from './handlers.js';
 import { ensureDirs, filePath } from './files.js';
 import { startMailer } from './mailer.js';
 import { startScheduler } from './scheduler.js';
@@ -242,6 +242,13 @@ async function main() {
       if ((m = /^\/api\/rpc\/([A-Za-z]+)$/.exec(pathname))) return await handleRpc(db, req, res, m[1]);
       if ((m = /^\/api\/files\/([a-z0-9_]+)$/i.exec(pathname)) && req.method === 'GET') return await handleFile(db, req, res, m[1]);
       if ((m = /^\/api\/ics\/([a-f0-9]{32})$/.exec(pathname)) && req.method === 'GET') return await handleIcs(db, req, res, m[1]);
+      if ((m = /^\/api\/asistan\/([a-z0-9-]{1,80})$/.exec(pathname)) && req.method === 'GET') {
+        // Her siteden okunabilir (herkese açık bilgi: renk + balon yazısı)
+        const b = await assistantBubble(db, m[1]);
+        const body = JSON.stringify(b);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=60', 'Content-Length': Buffer.byteLength(body) });
+        return res.end(body);
+      }
       if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: { message: 'Bulunamadı.', code: 'yok' } });
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.writeHead(405);

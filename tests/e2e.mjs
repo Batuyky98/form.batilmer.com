@@ -327,6 +327,12 @@ ok(limited, 'aynı numaraya çok deneme engellendi');
 // ücretsiz sohbet asistanı
 ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi dönmüyor');
 {
+  const r0 = await fetch(`${B}/api/asistan/${f.slug}`);
+  ok(r0.status === 200 && (await r0.json()) === null, 'asistan kapalıyken site balonu çıkmıyor (null)');
+  ok((await (await fetch(`${B}/api/asistan/yok-boyle-form`)).json()) === null, 'olmayan form için balon yok');
+  ok((await fetch(`${B}/api/asistan/..%2Fetc`)).status === 404, 'geçersiz link reddedildi');
+}
+{
   const g = await rpc('a', 'getForm', fid);
   g.draft.settings.assistant = { ...g.draft.settings.assistant, enabled: true, greeting: 'Selam', whatsapp: '0555 700 80 90', faq: [{ q: 'Otopark?', a: 'Var' }, { q: '', a: 'boş' }] };
   await rpc('a', 'saveDraft', fid, g.draft);
@@ -334,6 +340,28 @@ ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi
   const as = await rpc('p', 'getAssistant', f.slug);
   ok(as && as.greeting === 'Selam' && as.whatsapp === '05557008090' && as.faq.length === 1 && as.services.length > 0, 'asistan açıkken menü bilgileri geliyor');
   ok(!JSON.stringify(as).includes('Fiyat Test') && !('rows' in as), 'asistan kişisel veri döndürmüyor');
+  ok(as.subtitle === 'Size nasıl yardımcı olabiliriz?' && as.peek.startsWith('Merhaba') && as.title, 'varsayılan başlık / alt yazı / balon yazısı geliyor');
+  const r1 = await fetch(`${B}/api/asistan/${f.slug}`);
+  const b1 = await r1.json();
+  ok(r1.headers.get('access-control-allow-origin') === '*' && /^#[0-9a-f]{6}$/i.test(b1.color) && b1.peek && !('faq' in b1) && !('services' in b1), 'site balonu: her siteden okunur, sadece renk + yazı döner');
+  ok(!(await fetch(`${B}/asistan/${f.slug}`)).headers.get('x-frame-options'), 'asistan sayfası başka sitelere gömülebilir');
+  ok((await fetch(`${B}/panel`)).headers.get('x-frame-options') === 'SAMEORIGIN', 'panel başka siteye gömülemez');
+  const g2 = await rpc('a', 'getForm', fid);
+  g2.draft.settings.assistant = { ...g2.draft.settings.assistant, color: '#c0127a', title: 'Vital Destek', subtitle: '', peek: '' };
+  await rpc('a', 'saveDraft', fid, g2.draft);
+  await rpc('a', 'publishForm', fid, {});
+  const as2 = await rpc('p', 'getAssistant', f.slug);
+  const b2 = await (await fetch(`${B}/api/asistan/${f.slug}`)).json();
+  ok(as2.primary === '#c0127a' && as2.title === 'Vital Destek' && as2.subtitle === '' && b2.color === '#c0127a' && b2.peek === '', 'panelden renk, başlık seçildi; alt yazı ve balon yazısı kapatılabildi');
+  const g3 = await rpc('a', 'getForm', fid);
+  g3.draft.settings.assistant = { ...g3.draft.settings.assistant, color: 'red;background:url(x)', title: '<b>x</b>'.repeat(30) };
+  await rpc('a', 'saveDraft', fid, g3.draft);
+  const g4 = (await rpc('a', 'getForm', fid)).draft.settings.assistant;
+  ok(g4.color === '' && g4.title.length <= 60, 'geçersiz renk ve uzun başlık temizlendi');
+  g3.draft.settings.assistant.enabled = false;
+  await rpc('a', 'saveDraft', fid, g3.draft);
+  await rpc('a', 'publishForm', fid, {});
+  ok((await (await fetch(`${B}/api/asistan/${f.slug}`)).json()) === null, 'asistan kapatılınca sitedeki balon da kalkıyor');
 }
 
 

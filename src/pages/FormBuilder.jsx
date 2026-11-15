@@ -10,7 +10,7 @@ import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
 import { addDays, clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
-import { directionsUrl } from '../lib/shared.js';
+import { directionsUrl, readableOn } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
 import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview } from '../lib/reminder.js';
@@ -645,7 +645,7 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         )}
       </section>
 
-      <AssistantSection form={form} s={s} set={set} />
+      <AssistantSection form={form} s={s} set={set} appearance={draft.appearance} />
 
       <section className="sub-card stack">
         <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
@@ -768,12 +768,21 @@ function PurgeData({ form }) {
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
 
+const AS_COLORS = [
+  ['#3F6688', 'Gece mavisi'], ['#2F5BEA', 'Mavi'], ['#0E7490', 'Petrol'], ['#0F9F6E', 'Yeşil'], ['#15803D', 'Koyu yeşil'],
+  ['#C0127A', 'Fuşya'], ['#DB2777', 'Pembe'], ['#8B5CF6', 'Mor'], ['#DC2626', 'Kırmızı'], ['#EA580C', 'Turuncu'],
+  ['#B45309', 'Kahve'], ['#111827', 'Siyah']
+];
 const AS_ITEMS = [['randevu', '🗓 Randevu al'], ['fiyat', '💰 Fiyatlar'], ['saat', '🕒 Çalışma saatleri'], ['adres', '📍 Adres'], ['sss', '❓ Sık sorulanlar'], ['yonet', '📅 Randevumu yönet'], ['wa', '💬 WhatsApp']];
 
 // Ücretsiz sohbet asistanı (yapay zekâ yok): işletme sitesine tek satırla eklenen balon
-function AssistantSection({ form, s, set }) {
+function AssistantSection({ form, s, set, appearance }) {
   const toast = useToast();
   const as = s.assistant;
+  const primary = /^#[0-9a-f]{6}$/i.test(appearance?.primary || '') ? appearance.primary : '#2F5BEA';
+  const color = /^#[0-9a-f]{6}$/i.test(as.color || '') ? as.color : primary;
+  const on = readableOn(color);
+  const logo = appearance?.logo;
   const put = (patch) => set({ assistant: { ...as, ...patch } });
   const faq = as.faq || [];
   const setFaq = (i, patch) => put({ faq: faq.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
@@ -787,6 +796,35 @@ function AssistantSection({ form, s, set }) {
       <div className="pf-hint">Sitenizin köşesinde sohbet balonu çıkar. Müşteri düğmelere dokunarak fiyatları, çalışma saatlerini, adresi ve boş randevu saatlerini görür; saate dokununca form o saat seçili açılır. Bilgiler paneldeki ayarlardan otomatik gelir.</div>
       {as.enabled && (
         <>
+          <div className="pf-label">Renk</div>
+          <div className="as-colors" role="radiogroup" aria-label="Asistan rengi">
+            <button type="button" role="radio" aria-checked={!as.color} className={`as-sw as-sw-auto ${!as.color ? 'is-on' : ''}`} style={{ background: primary }} title="Formun rengi" onClick={() => put({ color: '' })}><span>Form</span></button>
+            {AS_COLORS.map(([c, n]) => (
+              <button key={c} type="button" role="radio" aria-checked={as.color.toUpperCase() === c} aria-label={n} title={n} className={`as-sw ${as.color.toUpperCase() === c ? 'is-on' : ''}`} style={{ background: c }} onClick={() => put({ color: c })} />
+            ))}
+            <label className={`as-sw as-sw-custom ${as.color && !AS_COLORS.some(([c]) => c === as.color.toUpperCase()) ? 'is-on' : ''}`} title="Özel renk" style={as.color && !AS_COLORS.some(([c]) => c === as.color.toUpperCase()) ? { background: as.color } : undefined}>
+              <input type="color" aria-label="Özel renk seç" value={color} onChange={(e) => put({ color: e.target.value.toUpperCase() })} />
+            </label>
+          </div>
+          <div className="grid-2">
+            <Field label="Sohbet başlığı" htmlFor="as-ti" hint="Boşsa işletme adı yazar."><input id="as-ti" maxLength={60} placeholder={form.isletme || form.name} value={as.title || ''} onChange={(e) => put({ title: e.target.value })} /></Field>
+            <Field label="Başlığın altındaki yazı" htmlFor="as-su" hint="Boş bırakılırsa çıkmaz."><input id="as-su" maxLength={80} value={as.subtitle ?? ''} onChange={(e) => put({ subtitle: e.target.value })} /></Field>
+          </div>
+          <Field label="Balonun yanındaki kısa yazı" htmlFor="as-pk" hint="Sitede balonun üstünde bir kez çıkar; müşteri kapatırsa o ziyarette tekrar çıkmaz. Boş bırakılırsa çıkmaz."><input id="as-pk" maxLength={120} value={as.peek ?? ''} onChange={(e) => put({ peek: e.target.value })} /></Field>
+          <div className="as-prev" aria-label="Önizleme">
+            <div className="as-prev-box">
+              <div className="as-prev-h" style={{ background: color, color: on }}>
+                <span className="as-prev-av">{logo ? <img src={logo} alt="" /> : '💬'}</span>
+                <span className="as-prev-t"><b>{as.title || form.isletme || form.name}</b>{as.subtitle && <span>{as.subtitle}</span>}</span>
+                <span aria-hidden="true">✕</span>
+              </div>
+              <div className="as-prev-b"><span className="as-prev-bot">{as.greeting || `Merhaba 👋 ${form.isletme || form.name}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`}</span><span className="as-prev-me" style={{ background: color, color: on }}>💰 Fiyatlar</span></div>
+            </div>
+            <div className="as-prev-side">
+              {as.peek && <span className="as-prev-peek">{as.peek}</span>}
+              <span className="as-prev-btn" style={{ background: color, color: on }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg></span>
+            </div>
+          </div>
           <Field label="Karşılama mesajı" htmlFor="as-gr"><input id="as-gr" maxLength={300} placeholder={`Merhaba 👋 ${form.isletme || form.name}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`} value={as.greeting || ''} onChange={(e) => put({ greeting: e.target.value })} /></Field>
           <div className="pf-label">Menüde görünsün</div>
           <div className="row wrap" style={{ gap: 8 }}>
