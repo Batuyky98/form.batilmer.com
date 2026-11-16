@@ -794,6 +794,12 @@ function AssistantSection({ form, s, set, appearance }) {
         <h3>💬 Sohbet asistanı <Badge tone="green">Ücretsiz</Badge></h3>
         <Toggle id="as-on" checked={!!as.enabled} onChange={(v) => put({ enabled: v })} label={as.enabled ? 'Açık' : 'Kapalı'} />
       </div>
+      {as.enabled && !form.published?.settings?.assistant?.enabled && (
+        <div className="notice notice-warn"><b>Asistan henüz yayında değil.</b> Açık olması taslakta kaldı; sitenizde görünmesi için sağ üstten <b>Yayınla</b> deyin.</div>
+      )}
+      {!as.enabled && form.published?.settings?.assistant?.enabled && (
+        <div className="notice notice-warn">Asistan yayında hâlâ açık. Kapatmak için <b>Yayınla</b> deyin.</div>
+      )}
       <div className="pf-hint">Sitenizin köşesinde sohbet balonu çıkar. Müşteri düğmelere dokunarak fiyatları, çalışma saatlerini, adresi ve boş randevu saatlerini görür; saate dokununca form o saat seçili açılır. Bilgiler paneldeki ayarlardan otomatik gelir.</div>
       {as.enabled && (
         <>
