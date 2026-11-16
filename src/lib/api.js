@@ -128,3 +128,10 @@ export const getReviewPage = serverOnly('getReviewPage', () => null);
 export const submitReview = serverOnly('submitReview', () => { throw new Error('Demo modunda kullanılamaz.'); });
 export const reviewGoogleClick = serverOnly('reviewGoogleClick', () => null);
 export const getAssistant = serverOnly('getAssistant', () => null);
+// Tekrar çağırma, bekleme listesi, ay sonu raporu
+export const listRecalls = serverOnly('listRecalls', () => ({ items: [], done: [], forms: [], stats: { sent: 0, booked: 0 } }));
+export const markRecall = serverOnly('markRecall', () => ({}));
+export const listWaitlist = serverOnly('listWaitlist', () => ({ groups: [], forms: [], count: 0, open: 0 }));
+export const markWaitlist = serverOnly('markWaitlist', () => true);
+export const joinWaitlist = serverOnly('joinWaitlist', () => true);
+export const monthReport = serverOnly('monthReport', () => ({ forms: [], report: null }));

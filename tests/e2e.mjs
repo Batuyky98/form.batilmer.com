@@ -366,6 +366,126 @@ ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi
 
 
 
+// ---------------------------------------------------------------- tekrar çağırma
+{
+  const T = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+  const shift = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
+  ok((await rpc('v', 'listRecalls')).forms.length === 0, 'tekrar çağırma kapalıyken liste yok');
+  const g = await rpc('a', 'getForm', fid);
+  g.draft.randevu.recall = { enabled: true, text: '', days: { svc_asi: 365, svc_tiras: 999, yok_boyle: 30 } };
+  await rpc('a', 'saveDraft', fid, g.draft);
+  const saved = (await rpc('a', 'getForm', fid)).draft.randevu.recall.days;
+  ok(saved.svc_asi === 365 && !('svc_tiras' in saved) && !('yok_boyle' in saved), 'geçersiz süre ve olmayan hizmet temizlendi');
+  await rpc('a', 'publishForm', fid, {});
+  const slot = async (date, svc = 'svc_asi') => (await rpc('a', 'getAvailability', f.slug, { date, serviceId: svc })).map((x) => x.time);
+  const manual = async (name, phone, date, svc = 'svc_asi') => rpc('a', 'createManualAppointment', fid, { name, phone, date, time: (await slot(date, svc))[0], serviceId: svc });
+  // geçmişe taşı + geldi
+  const past = async (id, days) => sdb.query("UPDATE appointments SET date = ?, status = 'geldi' WHERE id = ?", [shift(T, -days), id]);
+  const r1 = await manual('Recall Kisi', '0555 123 45 67', tomorrow); await past(r1, 360);
+  const r2 = await manual('Recall Iki', '0555 222 33 44', tomorrow); await past(r2, 370);
+  const r3 = await manual('Recall Uc', '0555 333 44 55', tomorrow); await past(r3, 370);
+  await manual('Recall Uc', '0555 333 44 55', tomorrow); // sonra yeniden randevu aldı
+  const r4 = await manual('Recall Dort', '0555 444 55 66', tomorrow); await past(r4, 200);
+  const r5 = await manual('Recall Bes', '0555 555 66 77', tomorrow, 'svc_muayene'); await past(r5, 370); // muayeneye süre verilmedi
+  let rl = await rpc('v', 'listRecalls');
+  const names = rl.items.map((x) => x.name);
+  ok(names.includes('Recall Kisi') && names.includes('Recall Iki'), 'süresi yaklaşan ve geçen müşteriler listede');
+  ok(!names.includes('Recall Uc'), 'sonradan yeniden randevu alan listede yok');
+  ok(!names.includes('Recall Dort') && !names.includes('Recall Bes'), 'süresi gelmeyen ve süre verilmeyen hizmet listede yok');
+  const k = rl.items.find((x) => x.name === 'Recall Kisi');
+  ok(k.dueDate === shift(T, 5) && k.waUrl.startsWith('https://wa.me/905551234567?text=') && decodeURIComponent(k.waUrl).includes('?hizmet=svc_asi') && k.text.includes('Aşı'), 'çağırma: tarih, WhatsApp linki, hizmet seçili form linki');
+  ok(rl.items.find((x) => x.name === 'Recall Iki').dueDate < T, 'geciken çağrı');
+  e = await ex(rpc('v', 'markRecall', k.id, 'bozuk'));
+  ok(e, 'geçersiz işlem reddedildi');
+  await rpc('v', 'markRecall', k.id, 'sent');
+  rl = await rpc('v', 'listRecalls');
+  ok(!rl.items.some((x) => x.id === k.id) && rl.done.find((x) => x.id === k.id)?.status === 'cagrildi' && rl.done.find((x) => x.id === k.id).sentBy === 'Veteriner', 'çağrıldı olarak işaretlendi');
+  ok(rl.stats.sent === 1 && rl.stats.booked === 0, 'bu ay 1 çağrı');
+  await manual('Recall Kisi', '0555 123 45 67', tomorrow); // müşteri randevu aldı
+  rl = await rpc('v', 'listRecalls');
+  ok(rl.done.find((x) => x.id === k.id)?.status === 'geldi' && rl.stats.booked === 1, 'çağrılan müşteri randevu alınca "randevu aldı" sayıldı');
+  const iki = rl.items.find((x) => x.name === 'Recall Iki');
+  await rpc('v', 'markRecall', iki.id, 'snooze');
+  rl = await rpc('v', 'listRecalls');
+  ok(!rl.items.some((x) => x.id === iki.id), 'ertelenen 1 hafta görünmüyor');
+  await sdb.query('UPDATE recalls SET hidden_until = ? WHERE id = ?', [T, iki.id]);
+  rl = await rpc('v', 'listRecalls');
+  ok(rl.items.find((x) => x.id === iki.id)?.dueDate === iki.dueDate, 'erteleme bitince tarih değişmeden geri geliyor');
+  await rpc('v', 'markRecall', iki.id, 'dismiss');
+  const r6 = await manual('Recall Iki', '0555 222 33 44', tomorrow); await past(r6, 366);
+  rl = await rpc('v', 'listRecalls');
+  ok(!rl.items.some((x) => x.name === 'Recall Iki'), '"gerek yok" denilen müşteri bir daha düşmüyor');
+  izler.push('Recall Kisi', 'Recall Iki', 'Recall Uc', '5551234567', '5552223344');
+
+  // ---------------------------------------------------------------- bekleme listesi
+  let day = shift(T, 2);
+  for (let i = 0; i < 10 && !(await slot(day, 'svc_muayene')).length; i++) day = shift(day, 1);
+  e = await ex(rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', name: 'Bekleyen Bir', phone: '0544 100 20 30' }));
+  ok(e, 'bekleme listesi kapalıyken yazılamaz');
+  const g2 = await rpc('a', 'getForm', fid);
+  g2.draft.randevu.waitlist = { enabled: true, text: '' };
+  await rpc('a', 'saveDraft', fid, g2.draft);
+  await rpc('a', 'publishForm', fid, {});
+  ok((await rpc('p', 'getPublicForm', f.slug)).content.randevu.waitlist.enabled === true, 'formda bekleme listesi açık');
+  e = await ex(rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', name: 'Bekleyen Bir', phone: '0544 100 20 30' }));
+  ok(e?.code === 'bos', 'boş saat varken bekleme listesine yazılmıyor');
+  const clearBlocks = async () => { for (const b of (await rpc('a', 'listAppointments', fid, { from: day, to: day })).blocks) await rpc('a', 'removeBlock', b.id); };
+  await rpc('a', 'addBlock', fid, { date: day, start: '00:00', end: '23:59', note: 'test' });
+  ok((await slot(day, 'svc_muayene')).length === 0, 'gün dolu (kapalı saat)');
+  e = await ex(rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', name: 'Bekleyen Bir', phone: '0212 555 11 22' }));
+  ok(e, 'sabit hatla yazılamaz (WhatsApp gerekli)');
+  e = await ex(rpc('p', 'joinWaitlist', f.slug, { date: '2020-01-01', serviceId: 'svc_muayene', name: 'Bekleyen Bir', phone: '0544 100 20 30' }));
+  ok(e, 'geçmiş tarihe yazılamaz');
+  await rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', pref: 'hepsi', name: 'Bekleyen Bir', phone: '0544 100 20 30' });
+  await rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', pref: 'bozuk', name: 'Bekleyen Bir', phone: '+90 544 100 20 30' }); // aynı kişi tekrar
+  await rpc('p', 'joinWaitlist', f.slug, { date: day, serviceId: 'svc_muayene', pref: 'aksam', name: 'Bekleyen Iki', phone: '0544 200 30 40' });
+  let wl = await rpc('v', 'listWaitlist');
+  let grp = wl.groups.find((x) => x.date === day);
+  ok(grp && grp.entries.length === 2 && grp.entries[0].name === 'Bekleyen Bir' && grp.entries[0].pref === 'hepsi', 'aynı kişi iki kez yazılmadı; sıra korunuyor');
+  ok(!grp.open && grp.entries.every((x) => !x.waUrl) && wl.open === 0, 'yer yokken "haber ver" düğmesi yok');
+  await clearBlocks();
+  const freeAppt = await manual('Iptal Eden', '0544 999 88 77', day, 'svc_muayene');
+  await rpc('a', 'addBlock', fid, { date: day, start: '00:00', end: '23:59' });
+  await rpc('vbg', 'pollNotifications', 0);
+  await rpc('a', 'setAppointmentStatus', freeAppt, 'iptal');
+  const nb = (await rpc('vbg', 'pollNotifications', 0)).items.filter((x) => x.kind === 'bekleme');
+  ok(nb.length === 1 && nb[0].title.includes('Yer açıldı') && nb[0].body.includes('2 kişi') && !nb[0].body.includes('Bekleyen'), 'iptal olunca "yer açıldı" bildirimi (kişisel veri yok): ' + nb[0]?.title);
+  await clearBlocks();
+  wl = await rpc('v', 'listWaitlist');
+  grp = wl.groups.find((x) => x.date === day);
+  const b1 = grp.entries[0];
+  ok(grp.open && b1.waUrl.startsWith('https://wa.me/905441002030?text=') && decodeURIComponent(b1.waUrl).includes(`tarih=${day}&saat=${b1.time}`) && wl.open >= 1, 'yer açılınca "haber ver" linki saat seçili');
+  const b2 = grp.entries[1];
+  ok(!b2.time || b2.time >= '17:00', 'akşam isteyen kişiye akşam saati önerilir');
+  await rpc('v', 'markWaitlist', b1.id, 'notified');
+  ok((await rpc('v', 'listWaitlist')).groups.find((x) => x.date === day).entries[0].notifiedBy === 'Veteriner', 'haber verildi işareti');
+  await rpc('a', 'createManualAppointment', fid, { name: 'Bekleyen Bir', phone: '05441002030', date: day, time: b1.time, serviceId: 'svc_muayene' });
+  grp = (await rpc('v', 'listWaitlist')).groups.find((x) => x.date === day);
+  ok(grp.entries.length === 1 && grp.entries[0].name === 'Bekleyen Iki', 'randevu alan kişi bekleme listesinden düştü');
+  e = await ex(rpc('p', 'markWaitlist', grp.entries[0].id, 'remove'));
+  ok(e, 'giriş yapmayan bekleme kaydını silemez');
+  // gün geçince ad/telefon silinir
+  await sdb.query('UPDATE waitlist SET date = ? WHERE id = ?', [shift(T, -1), grp.entries[0].id]);
+  await sched.cleanup(sdb);
+  const wrow = (await sdb.query('SELECT * FROM waitlist WHERE id = ?', [grp.entries[0].id]))[0];
+  ok(wrow && wrow.name === '' && wrow.phone === '' && !wrow.phone_key, 'günü geçen bekleme kaydında ad ve telefon silindi');
+  izler.push('Bekleyen Bir', 'Bekleyen Iki', '5441002030', '5442003040');
+
+  // ---------------------------------------------------------------- ay sonu raporu
+  const rep = await rpc('v', 'monthReport', {});
+  const R = rep.report;
+  ok(R && R.month === T.slice(0, 7) && R.weekdays.length === 7 && rep.months.length === 6, 'rapor: bu ay, 7 gün, 6 ay seçeneği');
+  ok(R.total > 0 && R.services.length > 0 && R.isletme === 'Vital Veteriner', 'rapor: randevu sayısı ve hizmetler');
+  ok(R.recall.sent === 1 && R.recall.booked === 1, 'rapor: tekrar çağırma katkısı');
+  ok(R.waitlist.joined >= 2 && R.waitlist.booked === 1, 'rapor: bekleme listesi katkısı');
+  ok(!JSON.stringify(R).includes('Recall Kisi') && !JSON.stringify(R).includes('5551234567'), 'raporda kişisel veri yok');
+  ok((await rpc('v', 'monthReport', { month: 'bozuk' })).report.month === T.slice(0, 7), 'bozuk ay bu aya döner');
+  const old = await rpc('v', 'monthReport', { month: '2020-01' });
+  ok(old.report.total === 0, 'eski ay boş');
+  ok((await rpc('v', 'monthReport', { formId: other })).report === null, 'yetkisi olmayan formun raporu görünmez');
+  await sched.monthlyReportNotice(sdb);
+}
+
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak
 e = await ex(rpc('v', 'purgeFormData', fid, f.slug));
 ok(e, 'kullanıcı test kayıtlarını silemez');

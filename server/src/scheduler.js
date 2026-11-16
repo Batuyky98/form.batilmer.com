@@ -67,6 +67,30 @@ async function dailyReminderNotice(db) {
   }
 }
 
+// Ayın 1'inde (10:00'dan sonra) "geçen ayın raporu hazır" bildirimi; form başına ayda bir kez
+const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+async function monthlyReportNotice(db) {
+  const day = today();
+  if (!day.endsWith('-01') || nowMinutesTR() < 600) return;
+  const prev = addDays(day, -1).slice(0, 7);
+  const forms = (await db.query('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm);
+  for (const form of forms) {
+    if (!content(form).fields?.some((f) => f.type === 'randevu')) continue;
+    const key = `R${prev}`;
+    if ((await db.query('SELECT 1 AS x FROM reminder_runs WHERE form_id = ? AND day = ?', [form.id, key])).length) continue;
+    const n = Number((await db.query("SELECT COUNT(*) AS c FROM appointments WHERE form_id = ? AND date >= ? AND date < ? AND status <> 'iptal'", [form.id, `${prev}-01`, day]))[0].c);
+    try {
+      await db.query('INSERT INTO reminder_runs (form_id, day, created_at) VALUES (?, ?, ?)', [form.id, key, Date.now()]);
+    } catch {
+      continue;
+    }
+    if (!n) continue;
+    await db.query('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+      uid('n_'), form.id, 'rapor', `📊 ${MONTHS[Number(prev.slice(5, 7)) - 1]} raporunuz hazır`, `${form.isletme || form.name} · ${n} randevu. Dokunun, özeti görün.`.slice(0, 500), `/panel/rapor?ay=${prev}&form=${form.id}`, Date.now()
+    ]);
+  }
+}
+
 async function retention(db) {
   const forms = (await db.query('SELECT * FROM forms')).map(mapForm);
   for (const form of forms) {
@@ -94,7 +118,10 @@ async function cleanup(db) {
   // Panel bildirim akışı 30 gün tutulur
   await db.query('DELETE FROM notifications WHERE created_at < ?', [Date.now() - 30 * 864e5]);
   await db.query('DELETE FROM sessions WHERE created_at < ?', [Date.now() - 24 * 3600000]);
-  await db.query('DELETE FROM reminder_runs WHERE created_at < ?', [Date.now() - 14 * 864e5]);
+  await db.query("DELETE FROM reminder_runs WHERE created_at < ? AND day NOT LIKE 'R%'", [Date.now() - 14 * 864e5]);
+  await db.query("DELETE FROM reminder_runs WHERE created_at < ? AND day LIKE 'R%'", [Date.now() - 400 * 864e5]);
+  // Bekleme listesi: günü geçen kayıtlarda ad ve telefon silinir (sayılar rapor için kalır)
+  await db.query("UPDATE waitlist SET name = '', phone = '', phone_key = NULL WHERE date < ? AND name <> ''", [today()]);
 }
 
 export function startScheduler(db) {
@@ -108,6 +135,7 @@ export function startScheduler(db) {
   const timers = [
     setInterval(safe('hatirlatma', reminders), 60 * 1000),
     setInterval(safe('wa-bildirim', dailyReminderNotice), 60 * 1000),
+    setInterval(safe('aylik-rapor', monthlyReportNotice), 10 * 60 * 1000),
     setInterval(safe('saklama', retention), 60 * 60 * 1000),
     setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000)
   ];
@@ -118,4 +146,4 @@ export function startScheduler(db) {
   return () => timers.forEach(clearInterval);
 }
 
-export const _test = { reminders, retention, cleanup, dailyReminderNotice };
+export const _test = { reminders, retention, cleanup, dailyReminderNotice, monthlyReportNotice };

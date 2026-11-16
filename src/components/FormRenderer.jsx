@@ -141,7 +141,7 @@ function FileInput({ field, value, onChange, lang, common }) {
 }
 
 // ------------------------------------------------------------ randevu seçici
-function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inputId, refreshKey, lang }) {
+function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inputId, refreshKey, lang, joinWaitlist }) {
   const v = value || {};
   const services = cfg.services || [];
   const serviceId = v.serviceId || services[0]?.id;
@@ -259,7 +259,7 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
           {slots === null ? (
             <div className="bf-muted">{t(lang, 'loadingSlots')}</div>
           ) : slots.length === 0 ? (
-            <div className="bf-muted">{t(lang, 'noSlots')}</div>
+            cfg.waitlist?.enabled && joinWaitlist ? <WaitBox key={`${v.date}${serviceId}`} date={v.date} serviceId={serviceId} lang={lang} join={joinWaitlist} /> : <div className="bf-muted">{t(lang, 'noSlots')}</div>
           ) : (
             <div className="bf-slots" role="radiogroup" aria-label={t(lang, 'pickTime')}>
               {slots.map((s) => (
@@ -279,6 +279,60 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
       )}
       {error && <div className="bf-error" role="alert">{error}</div>}
       {field.help && <div className="bf-help">{field.help}</div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ Bekleme listesi (dolu gün)
+// Formun içinde olduğu için <form> değil; Enter tuşu ana formu göndermesin.
+const WAIT_TXT = {
+  tr: { full: 'Bu gün tamamen dolu.', q: 'Yer açılırsa haber verelim mi?', p: 'Bu gün bir randevu iptal olursa size WhatsApp\'tan yazarız; ilk dokunan alır.', when: 'Hangi saatler uyar?', prefs: { hepsi: 'Fark etmez', sabah: 'Sabah', ogle: 'Öğle', aksam: 'Akşam' }, name: 'Ad soyad', phone: 'Cep telefonu', btn: 'Bekleme listesine yaz', sending: 'Kaydediliyor…', ok: 'Tamam! Yer açılırsa size WhatsApp\'tan haber vereceğiz.', other: 'Ya da yukarıdan başka bir gün seçin.', kvkk: 'Adınız ve telefonunuz sadece yer açıldığında size haber vermek için kullanılır; gün geçince silinir.' },
+  en: { full: 'This day is fully booked.', q: 'Shall we let you know if a spot opens?', p: 'If someone cancels, we will message you on WhatsApp; first come, first served.', when: 'Which times suit you?', prefs: { hepsi: 'Any time', sabah: 'Morning', ogle: 'Midday', aksam: 'Evening' }, name: 'Full name', phone: 'Mobile phone', btn: 'Join the waiting list', sending: 'Saving…', ok: 'Done! We will message you on WhatsApp if a spot opens.', other: 'Or pick another day above.', kvkk: 'Your name and phone are only used to tell you about an opening and are deleted after the day passes.' }
+};
+function WaitBox({ date, serviceId, lang, join }) {
+  const L = WAIT_TXT[lang] || WAIT_TXT.tr;
+  const [pref, setPref] = useState('hepsi');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [state, setState] = useState('');
+  const [err, setErr] = useState('');
+  const noEnter = (e) => e.key === 'Enter' && e.preventDefault();
+  async function send() {
+    setErr('');
+    if (name.trim().length < 2) return setErr(L.name + '?');
+    if (String(phone).replace(/\D/g, '').length < 10) return setErr(L.phone + '?');
+    setState('sending');
+    try {
+      await join({ date, serviceId, pref, name: name.trim(), phone });
+      setState('ok');
+    } catch (e) {
+      setState('');
+      setErr(e.message);
+    }
+  }
+  return (
+    <div className="bf-wait-wrap">
+      <div className="bf-full">😕 {L.full}</div>
+      {state === 'ok' ? (
+        <div className="bf-wait bf-wait-ok" role="status">✅ {L.ok}</div>
+      ) : (
+        <div className="bf-wait">
+          <b className="bf-wait-q">🔔 {L.q}</b>
+          <p>{L.p}</p>
+          <div className="bf-wait-l">{L.when}</div>
+          <div className="bf-wait-prefs" role="radiogroup" aria-label={L.when}>
+            {Object.entries(L.prefs).map(([k, l]) => (
+              <button key={k} type="button" role="radio" aria-checked={pref === k} className={`bf-chip ${pref === k ? 'is-on' : ''}`} onClick={() => setPref(k)}>{l}</button>
+            ))}
+          </div>
+          <input aria-label={L.name} placeholder={L.name} autoComplete="name" value={name} onKeyDown={noEnter} onChange={(e) => setName(e.target.value)} maxLength={100} />
+          <input aria-label={L.phone} placeholder={L.phone} type="tel" inputMode="tel" autoComplete="tel" value={phone} onKeyDown={noEnter} onChange={(e) => setPhone(e.target.value)} maxLength={20} />
+          {err && <div className="bf-error" role="alert">{err}</div>}
+          <button type="button" className="bf-wait-btn" disabled={state === 'sending'} onClick={send}>{state === 'sending' ? L.sending : L.btn}</button>
+          <div className="bf-wait-note">{L.kvkk}</div>
+        </div>
+      )}
+      <div className="bf-help">{L.other}</div>
     </div>
   );
 }
@@ -365,7 +419,7 @@ function AppointmentCard({ a, lang }) {
 }
 
 // ------------------------------------------------------------ ana bileşen
-export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine, initial }) {
+export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine, initial, joinWaitlist }) {
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
   const lang = s.language || 'tr';
   useGoogleFont(a.font);
@@ -666,7 +720,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               break;
             case 'randevu':
               control = cfg ? (
-                <AppointmentPicker field={f} cfg={cfg} inputId={id} value={values[f.key]} onChange={(val) => set(f.key, val)} loadSlots={loadSlots} error={err} refreshKey={slotRefresh} lang={lang} />
+                <AppointmentPicker field={f} cfg={cfg} inputId={id} value={values[f.key]} onChange={(val) => set(f.key, val)} loadSlots={loadSlots} error={err} refreshKey={slotRefresh} lang={lang} joinWaitlist={preview ? null : joinWaitlist} />
               ) : null;
               break;
             default:

@@ -19,9 +19,12 @@ function initialFromUrl(content) {
   const rf = (content?.fields || []).find((f) => f.type === 'randevu');
   const date = q.get('tarih');
   const time = q.get('saat');
+  const svc = (content?.randevu?.services || []).find((s) => s.id === q.get('hizmet'));
   if (rf && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && /^\d{2}:\d{2}$/.test(time || '')) {
-    const svc = (content.randevu?.services || []).find((s) => s.id === q.get('hizmet'));
     out[rf.key] = { date, time, ...(svc ? { serviceId: svc.id } : {}) };
+  } else if (rf && svc) {
+    // Tekrar çağırma linki: sadece hizmet seçili gelir
+    out[rf.key] = { serviceId: svc.id };
   }
   return { values: out, manage: q.get('yonet') === '1' };
 }
@@ -106,6 +109,7 @@ export default function PublicForm({ slug }) {
         loadSlots={(p) => api.getAvailability(slug, p)}
         onSubmit={(values, meta) => api.submitForm(slug, values, meta)}
         findMine={(p) => api.findMyAppointments(slug, p)}
+        joinWaitlist={(p) => api.joinWaitlist(slug, p)}
         initial={initialFromUrl(content)}
         cancelMine={(tok) => api.cancelByToken(tok)}
         onDone={(res) => {

@@ -300,5 +300,45 @@ export const MIGRATIONS = [
       'CREATE INDEX idx_reviews_appt ON reviews (appointment_id)',
       'CREATE INDEX idx_reviews_phone ON reviews (phone_key)'
     ]
+  },
+  {
+    version: 8,
+    name: 'tekrar çağırma ve bekleme listesi',
+    up: [
+      `CREATE TABLE recalls (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        appointment_id VARCHAR(40) NOT NULL,
+        submission_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        service_id VARCHAR(60) NOT NULL,
+        due_date CHAR(10) NOT NULL,
+        hidden_until CHAR(10) NULL,
+        status VARCHAR(20) NOT NULL,
+        sent_at BIGINT NULL,
+        sent_by VARCHAR(150) NULL,
+        booked_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_recalls_form ON recalls (form_id, status, due_date)',
+      'CREATE INDEX idx_recalls_appt ON recalls (appointment_id)',
+      'CREATE INDEX idx_recalls_phone ON recalls (phone_key)',
+      `CREATE TABLE waitlist (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        date CHAR(10) NOT NULL,
+        service_id VARCHAR(60) NOT NULL,
+        pref VARCHAR(10) NOT NULL,
+        name VARCHAR(150) NOT NULL,
+        phone VARCHAR(30) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        notified_at BIGINT NULL,
+        notified_by VARCHAR(150) NULL,
+        booked_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_waitlist_form ON waitlist (form_id, date)',
+      'CREATE INDEX idx_waitlist_phone ON waitlist (phone_key)'
+    ]
   }
 ];

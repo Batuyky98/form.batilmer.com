@@ -22,6 +22,7 @@ import AssistantPage from './pages/AssistantPage.jsx';
 import Reviews from './pages/Reviews.jsx';
 import EmbedTest from './pages/EmbedTest.jsx';
 import Stats from './pages/Stats.jsx';
+import Report from './pages/Report.jsx';
 import AllCalendar from './pages/AllCalendar.jsx';
 import Security from './pages/Security.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
@@ -42,6 +43,7 @@ const PANEL_ROUTES = [
   ['/panel/takvim', AllCalendar],
   ['/panel/hatirlatmalar', Reminders],
   ['/panel/yorumlar', Reviews],
+  ['/panel/rapor', Report],
   ['/panel/musteriler', Customers],
   ['/panel/musteriler/:tel', CustomerCard],
   ['/panel/kullanicilar', Users, true],

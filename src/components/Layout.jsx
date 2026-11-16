@@ -19,6 +19,7 @@ const I = {
   out: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
   today: 'M3 12h4l3-8 4 16 3-8h4',
   star: 'm12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9Z',
+  report: 'M4 20V10M10 20V4M16 20v-7M21 20H3',
   remind: 'M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20l1.3-5A8.4 8.4 0 1 1 21 11.5ZM12 8v4l2.5 1.5',
   people: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1'
 };
@@ -30,6 +31,7 @@ const NAV = [
   { to: '/panel/formlar', label: 'Formlar', icon: I.forms },
   { to: '/panel/hatirlatmalar', label: 'Hatırlatmalar', icon: I.remind },
   { to: '/panel/yorumlar', label: 'Yorumlar', icon: I.star },
+  { to: '/panel/rapor', label: 'Rapor', icon: I.report },
   { to: '/panel/bildirimler', label: 'Bildirimler', icon: I.bell },
   { to: '/panel/kullanicilar', label: 'Kullanıcılar', icon: I.users, admin: true },
   { to: '/panel/giden-mailler', label: 'Giden mailler', icon: I.mail, admin: true },

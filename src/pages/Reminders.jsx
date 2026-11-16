@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
 import { Link, useLocation } from '../router.jsx';
-import { Badge, Empty, Segmented, Spinner, useAsync, useIsMobile, useToast } from '../components/ui.jsx';
+import { Badge, Empty, Spinner, useAsync, useIsMobile, useToast } from '../components/ui.jsx';
 import { WaIcon } from '../components/ContactButtons.jsx';
 import { longDate } from '../lib/reminder.js';
 import { formatDateTime } from '../lib/util.js';
+import { RecallTab, WaitTab } from '../components/RecallWait.jsx';
 import { markStepNow } from '../lib/onboarding.js';
 
 // Yarının (ve bugünün) randevularına WhatsApp'tan tek tıkla hatırlatma.
 // Düğme WhatsApp'ı müşterinin sohbetiyle ve hazır mesajla açar; personel gönder'e basar.
-export default function Reminders() {
-  const { search } = useLocation();
-  const [day, setDay] = useState(search.get('gun') === 'bugun' ? 'bugun' : 'yarin');
-  const { data, loading, error, reload } = useAsync(() => api.listReminders({ day }), [day]);
+function ApptReminders({ day, data, loading, error, reload }) {
   const [items, setItems] = useState([]);
-  const mobile = useIsMobile();
   const toast = useToast();
   useEffect(() => setItems(data?.items || []), [data]);
 
@@ -35,22 +32,7 @@ export default function Reminders() {
   }
 
   return (
-    <div className="page stack">
-      <div className="page-head">
-        <div>
-          <h1>Hatırlatmalar</h1>
-          {!mobile && <p className="muted small">Düğmeye basınca WhatsApp mesajı hazır açılır, siz sadece gönder'e basarsınız.</p>}
-        </div>
-      </div>
-      <Segmented
-        label="Gün"
-        value={day}
-        onChange={setDay}
-        options={[
-          { value: 'yarin', label: `Yarın · ${data?.counts?.yarin ?? '…'}` },
-          { value: 'bugun', label: `Bugün · ${data?.counts?.bugun ?? '…'}` }
-        ]}
-      />
+    <>
       {loading && !data && <Spinner />}
       {error && <div className="notice notice-err">{error.message}</div>}
       {data && !data.forms.length && (
@@ -112,6 +94,49 @@ export default function Reminders() {
           )}
         </>
       )}
+    </>
+  );
+}
+
+const TABS = ['yarin', 'bugun', 'cagir', 'bekleyen'];
+
+// Hatırlatmalar: yarın/bugün randevu hatırlatması + tekrar çağırma + bekleme listesi
+export default function Reminders() {
+  const { search } = useLocation();
+  const initial = search.get('sekme') || (search.get('gun') === 'bugun' ? 'bugun' : 'yarin');
+  const [tab, setTab] = useState(TABS.includes(initial) ? initial : 'yarin');
+  const day = tab === 'bugun' ? 'bugun' : 'yarin';
+  const rem = useAsync(() => api.listReminders({ day }), [day]);
+  const rec = useAsync(() => api.listRecalls(), []);
+  const wait = useAsync(() => api.listWaitlist(), []);
+  const mobile = useIsMobile();
+  const recallOn = (rec.data?.forms || []).length > 0;
+  const waitOn = (wait.data?.forms || []).length > 0;
+  const opts = [
+    { value: 'yarin', label: 'Yarın', n: rem.data?.counts?.yarin },
+    { value: 'bugun', label: 'Bugün', n: rem.data?.counts?.bugun },
+    recallOn && { value: 'cagir', label: mobile ? 'Çağır' : 'Tekrar çağır', n: rec.data?.items.length },
+    waitOn && { value: 'bekleyen', label: mobile ? 'Bekleyen' : 'Bekleme listesi', n: wait.data?.count, hot: wait.data?.open > 0 }
+  ].filter(Boolean);
+  const cur = opts.some((o) => o.value === tab) ? tab : (rec.loading || wait.loading) && (tab === 'cagir' || tab === 'bekleyen') ? tab : 'yarin';
+  return (
+    <div className="page stack">
+      <div className="page-head">
+        <div>
+          <h1>Hatırlatmalar</h1>
+          {!mobile && <p className="muted small">Düğmeye basınca WhatsApp mesajı hazır açılır, siz sadece gönder'e basarsınız.</p>}
+        </div>
+      </div>
+      <div className="rm-tabs" role="tablist" aria-label="Hatırlatma türü">
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="tab" aria-selected={cur === o.value} className={`${cur === o.value ? 'is-on' : ''} ${o.hot ? 'is-hot' : ''}`} onClick={() => setTab(o.value)}>
+            {o.label}{o.n !== undefined && o.n !== null && <i>{o.n}</i>}
+          </button>
+        ))}
+      </div>
+      {(cur === 'yarin' || cur === 'bugun') && <ApptReminders day={day} {...rem} />}
+      {cur === 'cagir' && <RecallTab {...rec} />}
+      {cur === 'bekleyen' && <WaitTab {...wait} />}
     </div>
   );
 }

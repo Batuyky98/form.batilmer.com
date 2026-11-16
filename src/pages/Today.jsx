@@ -10,7 +10,11 @@ import { TelIcon, WaIcon } from '../components/ContactButtons.jsx';
 import { telUrl, whatsappUrl } from '../lib/shared.js';
 import { deviceState } from '../lib/push.js';
 import { getSteps, markStep, setOnboardingUser } from '../lib/onboarding.js';
-import { formatDate, formBaseUrl, nowMinutesTR, timeToMin, today, weekdayName } from '../lib/util.js';
+import { addDays, formatDate, formBaseUrl, nowMinutesTR, timeToMin, today, weekdayName } from '../lib/util.js';
+
+const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+const prevMonth = () => addDays(`${today().slice(0, 7)}-01`, -1).slice(0, 7);
+const monthName = (m) => MONTHS[Number(m.slice(5, 7)) - 1];
 
 function greeting() {
   const h = Math.floor(nowMinutesTR() / 60);
@@ -83,6 +87,15 @@ export default function Today() {
   const [appts, setAppts] = useState(null);
   const [rem, setRem] = useState(null);
   const [rq, setRq] = useState(null);
+  const [wl, setWl] = useState(null);
+  const [rc, setRc] = useState(null);
+  const [repHidden, setRepHidden] = useState(() => {
+    try {
+      return localStorage.getItem('bf_rapor_gizle') === today().slice(0, 7);
+    } catch {
+      return false;
+    }
+  });
   const [sheet, setSheet] = useState(null);
   const [sharing, setSharing] = useState(null);
   const [picking, setPicking] = useState(false);
@@ -93,6 +106,8 @@ export default function Today() {
     api.listAllAppointments({ from: today(), to: today() }).then(setAppts).catch(() => setAppts({ forms: [], items: [] }));
     api.listReminders({ day: 'yarin' }).then(setRem).catch(() => setRem(null));
     api.listReviewQueue().then(setRq).catch(() => setRq(null));
+    api.listWaitlist().then(setWl).catch(() => setWl(null));
+    api.listRecalls().then(setRc).catch(() => setRc(null));
   };
   useEffect(() => {
     load();
@@ -146,12 +161,50 @@ export default function Today() {
         </section>
       )}
 
+      {wl?.groups?.filter((g) => g.open && g.entries.some((e) => !e.notifiedAt && e.waUrl)).slice(0, 2).map((g) => (
+        <Link key={`${g.formId}${g.date}${g.serviceId}`} to="/panel/hatirlatmalar?sekme=bekleyen" className="td-nudge td-nudge-wait">
+          <span className="td-nudge-ic" aria-hidden="true">🔔</span>
+          <span className="td-nudge-text">
+            <b>Yer açıldı: {g.date === today() ? 'Bugün' : g.date === addDays(today(), 1) ? 'Yarın' : `${weekdayName(g.date)} ${formatDate(g.date).replace(/ \d{4}$/, '')}`} {g.slots[0]}</b>
+            <span>{[g.service, multi ? g.isletme : '', `Bekleme listesinde ${g.entries.filter((e) => !e.notifiedAt).length} kişi · haber verin`].filter(Boolean).join(' · ')}</span>
+          </span>
+          <span className="td-chev" aria-hidden="true">›</span>
+        </Link>
+      ))}
+
+      {!repHidden && Number(today().slice(8, 10)) <= 7 && randevuForms.length > 0 && (
+        <div className="td-nudge td-nudge-report">
+          <Link to={`/panel/rapor?ay=${prevMonth()}`} className="td-nudge-link">
+            <span className="td-nudge-ic" aria-hidden="true">📊</span>
+            <span className="td-nudge-text">
+              <b>{monthName(prevMonth())} raporunuz hazır</b>
+              <span>Randevular, gelmeyenler, en yoğun gün ve öneriler</span>
+            </span>
+          </Link>
+          <button type="button" className="td-x" aria-label="Gizle" onClick={() => {
+            setRepHidden(true);
+            try { localStorage.setItem('bf_rapor_gizle', today().slice(0, 7)); } catch { /* yok */ }
+          }}>✕</button>
+        </div>
+      )}
+
       {rem && rem.items.length > 0 && (
         <Link to="/panel/hatirlatmalar" className={`td-nudge ${remLeft ? '' : 'is-done'}`}>
           <span className="td-nudge-ic" aria-hidden="true">{remLeft ? '📲' : '✓'}</span>
           <span className="td-nudge-text">
             <b>Yarın {rem.items.length} randevu var</b>
             <span>{remLeft ? `${remLeft} kişiye hatırlatma gönderilmedi · 1 dakikalık iş` : 'Hepsine hatırlatma gönderildi'}</span>
+          </span>
+          <span className="td-chev" aria-hidden="true">›</span>
+        </Link>
+      )}
+
+      {rc?.items?.length > 0 && (
+        <Link to="/panel/hatirlatmalar?sekme=cagir" className="td-nudge">
+          <span className="td-nudge-ic" aria-hidden="true">🔁</span>
+          <span className="td-nudge-text">
+            <b>{rc.items.length} müşteriyi tekrar çağırın</b>
+            <span>Zamanı gelenler · tek dokunuşla WhatsApp</span>
           </span>
           <span className="td-chev" aria-hidden="true">›</span>
         </Link>

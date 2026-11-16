@@ -13,7 +13,7 @@ import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl, readableOn } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
-import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview } from '../lib/reminder.js';
+import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview, RECALL_OPTIONS, DEFAULT_RECALL_TEXT, RECALL_VARS, fillRecall, DEFAULT_WAIT_TEXT, WAIT_VARS, fillWait } from '../lib/reminder.js';
 import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
@@ -1049,6 +1049,8 @@ function RandevuTab({ form, draft, setDraft, isAdmin }) {
       </section>
 
       <WaReminderSection form={form} draft={draft} cfg={cfg} set={set} />
+      <RecallSection form={form} draft={draft} cfg={cfg} set={set} />
+      <WaitlistSection form={form} draft={draft} cfg={cfg} set={set} />
 
       <section className="sub-card stack">
         <h3>Müşteriye SMS <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
@@ -1112,6 +1114,108 @@ function WaReminderSection({ form, draft, cfg, set }) {
           <div className="wa-bubble">{preview}</div>
         </>
       )}
+    </section>
+  );
+}
+
+
+// Mesaj metni + yer tutucu kutucukları + önizleme (tekrar çağırma / bekleme listesi)
+function MsgEditor({ id, text, fallback, vars, extra, onChange, preview }) {
+  const ref = useRef(null);
+  const cur = text || fallback;
+  function insert(v) {
+    const el = ref.current;
+    const at = el ? el.selectionStart : cur.length;
+    onChange(cur.slice(0, at) + v + cur.slice(el ? el.selectionEnd : at));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = at + v.length;
+    });
+  }
+  return (
+    <>
+      <Field label="WhatsApp mesajı" htmlFor={id}>
+        <textarea id={id} ref={ref} rows="4" value={cur} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+      <div className="wa-vars">
+        {[...vars, ...extra.map((f) => [`{${f.key}}`, f.label])].map(([v, label]) => (
+          <button type="button" key={v} className="wa-var" title={label} onClick={() => insert(v)}>{label}</button>
+        ))}
+        {text && <button type="button" className="nf-link" onClick={() => onChange('')}>Varsayılana dön</button>}
+      </div>
+      <div className="pf-label">Müşteriye böyle gider</div>
+      <div className="wa-bubble">{preview(cur)}</div>
+    </>
+  );
+}
+const sampleExtra = (draft) => draft.fields.filter((f) => ['text', 'radio', 'select'].includes(f.type) && !/ad.?soyad|isim|name/i.test(f.key)).slice(0, 6);
+const sampleValsOf = (extra) => Object.fromEntries(extra.map((f) => [f.key, f.options?.[0] || (f.key.includes('hayvan') ? 'Pamuk' : f.label)]));
+
+function RecallSection({ form, draft, cfg, set }) {
+  const rc = { enabled: false, text: '', days: {}, ...(cfg.recall || {}) };
+  const put = (patch) => set({ recall: { ...rc, ...patch } });
+  const extra = sampleExtra(draft);
+  const svc = cfg.services.find((x) => rc.days?.[x.id]) || cfg.services[0];
+  const base = formBaseUrl().replace(/^https?:\/\//, '');
+  const any = cfg.services.some((x) => rc.days?.[x.id]);
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>🔁 Tekrar çağırma <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="rc-on" checked={!!rc.enabled} onChange={(v) => put({ enabled: v })} label={rc.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Randevusu "Geldi" olan müşteri, seçtiğiniz süre dolmadan 7 gün önce <b>Hatırlatmalar → Çağır</b> listesine düşer. Personel tek dokunuşla WhatsApp'tan yazar; müşteri linke dokununca form o hizmet seçili açılır.</div>
+      {rc.enabled && (
+        <>
+          <div className="table-wrap">
+            <table className="tbl tbl-compact">
+              <thead><tr><th>Hizmet</th><th>Ne zaman tekrar çağrılsın?</th></tr></thead>
+              <tbody>
+                {cfg.services.map((x) => (
+                  <tr key={x.id}>
+                    <td><b>{x.name}</b></td>
+                    <td>
+                      <select aria-label={`${x.name} tekrar çağırma süresi`} value={rc.days?.[x.id] || 0} onChange={(e) => {
+                        const days = { ...(rc.days || {}) };
+                        if (Number(e.target.value)) days[x.id] = Number(e.target.value);
+                        else delete days[x.id];
+                        put({ days });
+                      }}>
+                        {RECALL_OPTIONS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!any && <div className="notice notice-warn">En az bir hizmete süre seçin; yoksa kimse listeye düşmez.</div>}
+          <MsgEditor id="rc-text" text={rc.text} fallback={DEFAULT_RECALL_TEXT} vars={RECALL_VARS} extra={extra} onChange={(v) => put({ text: v })}
+            preview={(t) => fillRecall(t, { name: 'Ali Veli', isletme: form?.isletme || form?.name || 'İşletmeniz', service: svc?.name || 'Muayene', lastDate: addDays(today(), -365), url: `${base}/f/${form?.slug || 'form'}?hizmet=${svc?.id || ''}` }, sampleValsOf(extra))} />
+        </>
+      )}
+    </section>
+  );
+}
+
+function WaitlistSection({ form, draft, cfg, set }) {
+  const wl = { enabled: false, text: '', ...(cfg.waitlist || {}) };
+  const put = (patch) => set({ waitlist: { ...wl, ...patch } });
+  const base = formBaseUrl().replace(/^https?:\/\//, '');
+  const svc = cfg.services[0];
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>🔔 Bekleme listesi <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="wl-on" checked={!!wl.enabled} onChange={(v) => put({ enabled: v })} label={wl.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Müşteri dolu bir gün seçince "Yer açılırsa haber verelim mi?" kutusu çıkar; adını ve telefonunu bırakır. O gün bir randevu iptal olunca size bildirim gelir; <b>Hatırlatmalar → Bekleyen</b> listesinden tek dokunuşla WhatsApp'tan haber verirsiniz. Gün geçince bilgileri silinir.</div>
+      {wl.enabled && (
+        <MsgEditor id="wl-text" text={wl.text} fallback={DEFAULT_WAIT_TEXT} vars={WAIT_VARS} extra={[]} onChange={(v) => put({ text: v })}
+          preview={(t) => fillWait(t, { name: 'Can Öztürk', isletme: form?.isletme || form?.name || 'İşletmeniz', date: today(), time: '14:00', service: svc?.name, url: `${base}/f/${form?.slug || 'form'}?tarih=${today()}&saat=14:00` })} />
+      )}
+      {wl.enabled && !draft.fields.some((f) => f.type === 'randevu') && <div className="notice notice-warn">Formda randevu alanı yok.</div>}
     </section>
   );
 }
