@@ -666,7 +666,8 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
               toast('Aydınlatma metni forma göre hazırlandı. Kontrol edip Yayınla deyin.');
             }}>✨ Forma göre hazır metni oluştur</button>
           )}
-          <div className="pf-hint">Metin; formdaki alanlara, randevu, WhatsApp hatırlatma ve saklama süresi ayarlarına göre otomatik yazılır. Alan eklerseniz ya da ayar değiştirirseniz düğmeye tekrar basın. Hukuki tavsiye değildir; ilk kurulumda bir avukata kontrol ettirin.</div>
+          {kvkkMissing(draft).length > 0 && <div className="notice notice-warn">Aydınlatma metninde {kvkkMissing(draft).join(' ve ')} geçmiyor. Yukarıdaki düğmeyle metni yeniden oluşturun.</div>}
+          <div className="pf-hint">Metin; formdaki alanlara, randevu, WhatsApp hatırlatma, bekleme listesi, tekrar çağırma ve saklama süresi ayarlarına göre otomatik yazılır. Alan eklerseniz ya da ayar değiştirirseniz düğmeye tekrar basın. Hukuki tavsiye değildir; ilk kurulumda bir avukata kontrol ettirin.</div>
         </div>
         <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster (işaretlenmeden gönderilemez)" />
         {s.kvkk.enabled && (
@@ -1149,6 +1150,17 @@ function MsgEditor({ id, text, fallback, vars, extra, onChange, preview }) {
     </>
   );
 }
+// KVKK metni açık ama yeni açılan özelliklerden bahsetmiyorsa uyarı
+function kvkkMissing(draft) {
+  const k = draft.settings?.kvkk;
+  const txt = String(k?.text || '').toLocaleLowerCase('tr');
+  if (!k?.enabled || !txt.trim() || !draft.fields.some((f) => f.type === 'randevu')) return [];
+  const r = draft.randevu || {};
+  const out = [];
+  if (r.waitlist?.enabled && !txt.includes('bekleme listesi')) out.push('bekleme listesi');
+  if (r.recall?.enabled && Object.keys(r.recall.days || {}).length && !txt.includes('tekrar zamanı')) out.push('tekrar çağırma');
+  return out;
+}
 const sampleExtra = (draft) => draft.fields.filter((f) => ['text', 'radio', 'select'].includes(f.type) && !/ad.?soyad|isim|name/i.test(f.key)).slice(0, 6);
 const sampleValsOf = (extra) => Object.fromEntries(extra.map((f) => [f.key, f.options?.[0] || (f.key.includes('hayvan') ? 'Pamuk' : f.label)]));
 
@@ -1191,6 +1203,7 @@ function RecallSection({ form, draft, cfg, set }) {
             </table>
           </div>
           {!any && <div className="notice notice-warn">En az bir hizmete süre seçin; yoksa kimse listeye düşmez.</div>}
+          {kvkkMissing(draft).includes('tekrar çağırma') && <div className="notice notice-warn">KVKK aydınlatma metninizde tekrar çağırma geçmiyor. <b>Ayarlar → KVKK aydınlatma metni</b> bölümünde "Forma göre hazır metni oluştur"a basın.</div>}
           <MsgEditor id="rc-text" text={rc.text} fallback={DEFAULT_RECALL_TEXT} vars={RECALL_VARS} extra={extra} onChange={(v) => put({ text: v })}
             preview={(t) => fillRecall(t, { name: 'Ali Veli', isletme: form?.isletme || form?.name || 'İşletmeniz', service: svc?.name || 'Muayene', lastDate: addDays(today(), -365), url: `${base}/f/${form?.slug || 'form'}?hizmet=${svc?.id || ''}` }, sampleValsOf(extra))} />
         </>
@@ -1216,6 +1229,7 @@ function WaitlistSection({ form, draft, cfg, set }) {
           preview={(t) => fillWait(t, { name: 'Can Öztürk', isletme: form?.isletme || form?.name || 'İşletmeniz', date: today(), time: '14:00', service: svc?.name, url: `${base}/f/${form?.slug || 'form'}?tarih=${today()}&saat=14:00` })} />
       )}
       {wl.enabled && !draft.fields.some((f) => f.type === 'randevu') && <div className="notice notice-warn">Formda randevu alanı yok.</div>}
+      {kvkkMissing(draft).includes('bekleme listesi') && <div className="notice notice-warn">KVKK aydınlatma metninizde bekleme listesi geçmiyor. <b>Ayarlar → KVKK aydınlatma metni</b> bölümünde "Forma göre hazır metni oluştur"a basın.</div>}
     </section>
   );
 }

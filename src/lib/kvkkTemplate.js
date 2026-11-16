@@ -29,15 +29,21 @@ export function buildKvkkText({ isletme = '', settings = {}, fields = [], randev
   const tel = clean(k.contactPhone);
   const hasAppt = fields.some((f) => f.type === 'randevu');
   const wa = hasAppt && randevu?.wa?.enabled !== false;
+  const waitlist = hasAppt && !!randevu?.waitlist?.enabled;
+  const recall = hasAppt && !!randevu?.recall?.enabled && Object.keys(randevu?.recall?.days || {}).length > 0;
+  const waAny = wa || waitlist || recall;
   const mails = !!settings.customerMails;
   const months = Number(settings.retentionMonths || 0);
   const data = dataList(fields);
+  if (waitlist) data.push('dolu bir gün için bekleme listesine yazılırsanız bıraktığınız ad, soyad, cep telefonu ve uygun saat tercihiniz');
   const iletisim = [eposta && `e-posta: ${eposta}`, tel && `telefon: ${tel}`].filter(Boolean).join(', ');
 
   const amaclar = [
     hasAppt ? 'randevunuzun oluşturulması, onaylanması, değiştirilmesi ve iptali' : 'başvurunuzun / talebinizin alınması ve değerlendirilmesi',
     'sizinle iletişime geçilmesi ve talebinize dönüş yapılması',
     wa || mails ? `randevu hatırlatma ve bilgilendirme mesajlarının ${[wa && 'WhatsApp', mails && 'e-posta'].filter(Boolean).join(' ve ')} ile gönderilmesi` : '',
+    waitlist ? 'dolu günler için bekleme listesine yazılmanız ve o gün yer açıldığında size WhatsApp ile haber verilmesi' : '',
+    recall ? 'aldığınız hizmetin tekrar zamanı geldiğinde (ör. aşı, bakım, kontrol) size WhatsApp ile hatırlatma yapılması' : '',
     hasAppt ? 'hizmet geçmişinizin ve hizmetle ilgili notların tutulması' : '',
     'hukuki yükümlülüklerimizin yerine getirilmesi ve olası uyuşmazlıklarda delil olarak kullanılması'
   ].filter(Boolean);
@@ -61,12 +67,14 @@ export function buildKvkkText({ isletme = '', settings = {}, fields = [], randev
     `Kişisel verileriniz bu çevrim içi form aracılığıyla elektronik ortamda toplanmakta; KVKK m.5/2-(c) "bir sözleşmenin kurulması veya ifasıyla doğrudan ilgili olması", m.5/2-(ç) "veri sorumlusunun hukuki yükümlülüğünü yerine getirmesi" ve m.5/2-(f) "ilgili kişinin temel hak ve özgürlüklerine zarar vermemek kaydıyla veri sorumlusunun meşru menfaati" hukuki sebeplerine dayanılarak işlenmektedir.`,
     ``,
     `5. Aktarım`,
-    `Kişisel verileriniz; form ve randevu altyapısını sağlayan ve verileri İşletme adına barındıran hizmet sağlayıcımız Batilmer'e (veri işleyen sıfatıyla), yasal zorunluluk hâlinde yetkili kamu kurum ve kuruluşlarına KVKK'nın 8. maddesine uygun olarak aktarılabilir.${wa ? ` Randevu hatırlatması WhatsApp ile yapıldığında, mesaj İşletme'nin WhatsApp hesabından gönderilir ve WhatsApp hizmetini sağlayan yurt dışında yerleşik şirketin altyapısı üzerinden iletilir; bu aktarım KVKK'nın 9. maddesine uygun şekilde gerçekleştirilir.` : ''} Verileriniz bunların dışında üçüncü kişilerle paylaşılmaz, satılmaz.`,
+    `Kişisel verileriniz; form ve randevu altyapısını sağlayan ve verileri İşletme adına barındıran hizmet sağlayıcımız Batilmer'e (veri işleyen sıfatıyla), yasal zorunluluk hâlinde yetkili kamu kurum ve kuruluşlarına KVKK'nın 8. maddesine uygun olarak aktarılabilir.${waAny ? ` ${[wa && 'Randevu hatırlatması', waitlist && 'bekleme listesi bildirimi', recall && 'tekrar zamanı hatırlatması'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' ve $1').replace(/^./, (c) => c.toLocaleUpperCase('tr'))} WhatsApp ile yapıldığında, mesaj İşletme'nin WhatsApp hesabından gönderilir ve WhatsApp hizmetini sağlayan yurt dışında yerleşik şirketin altyapısı üzerinden iletilir; bu aktarım KVKK'nın 9. maddesine uygun şekilde gerçekleştirilir.` : ''} Verileriniz bunların dışında üçüncü kişilerle paylaşılmaz, satılmaz.`,
     ``,
     `6. Saklama süresi`,
     months > 0
       ? `Kişisel verileriniz, toplandığı tarihten itibaren ${months} ay saklanır ve bu sürenin sonunda otomatik olarak silinir. Silinen veriler güvenlik yedeklerinden en geç 14 gün içinde kaldırılır.`
       : `Kişisel verileriniz, işleme amacının gerektirdiği ve ilgili mevzuatta öngörülen süre boyunca saklanır; sürenin sonunda silinir, yok edilir veya anonim hâle getirilir.`,
+    ...(waitlist ? [`Bekleme listesi için bıraktığınız ad ve telefon bilgisi, beklediğiniz gün geçtiğinde otomatik olarak silinir.`] : []),
+    ...(recall ? [`Tekrar zamanı hatırlatması almak istemiyorsanız İşletme'ye bildirmeniz yeterlidir; size bu konuda bir daha mesaj gönderilmez. Bu hatırlatmalar kampanya veya reklam içermez.`] : []),
     ``,
     `7. Haklarınız`,
     `KVKK'nın 11. maddesi uyarınca; kişisel verilerinizin işlenip işlenmediğini öğrenme, işlenmişse bilgi talep etme, işlenme amacını ve amacına uygun kullanılıp kullanılmadığını öğrenme, yurt içinde veya yurt dışında aktarıldığı üçüncü kişileri bilme, eksik veya yanlış işlenmişse düzeltilmesini, KVKK m.7 kapsamında silinmesini veya yok edilmesini isteme, bu işlemlerin aktarıldığı üçüncü kişilere bildirilmesini isteme, münhasıran otomatik sistemlerle analiz edilmesi sonucu aleyhinize bir sonuç çıkmasına itiraz etme ve kanuna aykırı işleme sebebiyle zarara uğramanız hâlinde zararın giderilmesini talep etme haklarına sahipsiniz.`,

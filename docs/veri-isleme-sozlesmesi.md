@@ -20,10 +20,10 @@ Batilmer, İşletme'ye çevrim içi form ve randevu paneli hizmeti sunar. Bu hiz
 | | |
 |---|---|
 | **İlgili kişiler** | İşletme'nin formu dolduran müşterileri / potansiyel müşterileri |
-| **Veri kategorileri** | Kimlik (ad soyad), iletişim (telefon, e-posta), randevu ve hizmet bilgileri, formda istenen diğer bilgiler, işlem güvenliği (IP, tarih/saat), onay kayıtları (KVKK, kampanya izni) |
+| **Veri kategorileri** | Kimlik (ad soyad), iletişim (telefon, e-posta), randevu ve hizmet bilgileri, formda istenen diğer bilgiler, işlem güvenliği (IP, tarih/saat), onay kayıtları (KVKK, kampanya izni), bekleme listesi kayıtları (ad soyad, cep telefonu, beklenen gün ve saat tercihi), tekrar çağırma kayıtları (hangi müşterinin hangi hizmet için ne zaman çağrılacağı, çağrıldı / gerek yok bilgisi) |
 | **Özel nitelikli veri** | Hizmet kapsamında **istenmez**. İşletme formda özel nitelikli veri (ör. sağlık) toplamak isterse bunu önceden yazılı bildirir; gerekli açık rıza ve tedbirlerden İşletme sorumludur. |
 | **İşleme faaliyetleri** | Toplama, kaydetme, saklama, panelde gösterme, İşletme'nin talebiyle silme, yedekleme |
-| **Süre** | Ana Sözleşme süresince; formdaki saklama süresi ayarına bağlı olarak |
+| **Süre** | Ana Sözleşme süresince; formdaki saklama süresi ayarına bağlı olarak. Bekleme listesindeki ad ve telefon, beklenen gün geçince otomatik silinir (yalnızca anonim sayı kalır). |
 
 ## 3. Batilmer'in yükümlülükleri
 
@@ -33,7 +33,8 @@ Batilmer, İşletme'ye çevrim içi form ve randevu paneli hizmeti sunar. Bu hiz
    - Panelde yetki sistemi (form bazında görme / düzenleme / silme yetkisi), yöneticiler için iki adımlı doğrulama,
    - Oturum süresi sınırı, işlem kayıtları (log), deneme sınırları,
    - Günlük yedekleme ve en fazla 14 gün yedek saklama,
-   - Kalıcı silmede kayıtla ilişkili tüm verilerin (randevu, dosya, giden mesaj, not) silinmesi.
+   - Kalıcı silmede kayıtla ilişkili tüm verilerin (randevu, dosya, giden mesaj, not, yorum isteği, tekrar çağırma ve bekleme listesi kaydı) silinmesi.
+   - Aylık raporlarda yalnızca sayıların (toplam randevu, oran vb.) gösterilmesi; raporda kişi adı veya telefonu yer almaz.
 3. Verilere yalnızca hizmeti yürütmesi gereken personelinin erişmesini sağlar; bu kişileri gizlilikle yükümlü kılar.
 4. Bir veri ihlalini öğrendiğinde İşletme'yi **gecikmeksizin, en geç 24 saat içinde** bilgilendirir ve ihlalin etkilerini azaltmak için iş birliği yapar.
 5. İlgili kişi başvurularında (KVKK m.11) ve Kurul denetimlerinde İşletme'ye makul ölçüde destek olur.
@@ -45,7 +46,7 @@ Batilmer, İşletme'ye çevrim içi form ve randevu paneli hizmeti sunar. Bu hiz
 1. Veri sorumlusu olarak aydınlatma yükümlülüğünü yerine getirir (panelde hazırlanan aydınlatma metnini kontrol eder, formda yayınlar) ve gerektiğinde açık rıza alır.
 2. Kampanya / ticari ileti gönderecekse ilgili kişinin onayını alır ve İleti Yönetim Sistemi'ne (İYS) kayıt olur.
 3. Panel kullanıcılarını (personel) belirler, yetkilerini Batilmer'e bildirir ve personelinin verileri hukuka uygun kullanmasından sorumludur.
-4. WhatsApp ile hatırlatma gibi kendi cihaz ve hesaplarından yaptığı iletişimden kendisi sorumludur.
+4. WhatsApp ile hatırlatma, bekleme listesi bildirimi ve tekrar zamanı hatırlatması gibi kendi cihaz ve hesaplarından yaptığı iletişimden kendisi sorumludur. Tekrar zamanı hatırlatmalarına kampanya / indirim içeriği eklemez (eklerse ticari ileti onayı ve İYS kaydı gerekir); hatırlatma istemeyen müşteriyi panelde "Gerek yok" ile işaretler.
 5. VERBİS kaydı yükümlülüğü varsa yerine getirir.
 
 ## 5. Sözleşmenin sona ermesi
