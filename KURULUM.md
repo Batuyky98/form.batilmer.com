@@ -162,6 +162,8 @@ Son yedeği **geçici, internete kapalı ayrı bir MySQL kutusuna** açar, için
 
 ### Sunucu dışı yedek (Google Drive, ücretsiz, şifreli)
 
+**Kısa yol (önerilen):** sunucuda `sudo bash /opt/batilmer-form-paneli/deploy/yedek-kur.sh` çalıştırın. Betik rclone'u kurar, Google Drive bağlantısını adım adım sorar, şifreli hedefi ve şifreleri kendisi oluşturur, `sunucu.env`'i doldurur, healthchecks.io adresini sorar ve bir deneme yedeği gönderir. Aşağıdaki adımlar aynı işin elle yapılışıdır.
+
 Yedekler şu an aynı sunucuda; sunucuya bir şey olursa onlar da gider. Her gece bir kopyasını Google Drive'a **şifreleyerek** göndermek için (müşteri verisi olduğu için şifresiz göndermeyin):
 
 1. Sunucuda rclone'u kurun: `apt-get install -y rclone`
