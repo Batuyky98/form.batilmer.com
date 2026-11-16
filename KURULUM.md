@@ -148,7 +148,7 @@ bash deploy/geri-al.sh                             # önceki sürüme dön
 | --- | --- | --- |
 | Çöp kutusu | Panel (Ana Admin geri alır) | Kalıcı silinene kadar |
 | Gece yedeği (03:30) | Sunucuda `yedekler/` | Son 14 gün |
-| Sunucu dışı kopya | Google Drive (şifreli, aşağıda) | Son 30 gün |
+| Sunucu dışı kopya | Google Drive (şifreli, aşağıda) | Son 14 gün |
 | Hostinger yedeği | Hostinger paneli | Haftalık |
 
 ### Yedek gerçekten çalışıyor mu? (ayda bir)
@@ -169,6 +169,13 @@ Yedekler şu an aynı sunucuda; sunucuya bir şey olursa onlar da gider. Her gec
 3. Yine `rclone config` → `n` → ad: `gdrive-sifreli` → tür: `crypt` → remote: `gdrive:batilmer-yedek` → dosya adları şifrelensin: `1` → **iki şifre belirleyin ve bunları sunucu dışında (şifre yöneticisinde) saklayın**. Bu şifreler olmadan yedek açılamaz.
 4. `nano /opt/batilmer-form-paneli/sunucu.env` → en alta `RCLONE_HEDEF=gdrive-sifreli:` yazın, kaydedin.
 5. Deneyin: `bash deploy/yedek.sh` → "sunucu dışına kopyalandı" yazmalı. Kontrol: `rclone ls gdrive-sifreli:`
+
+### Yedek alınmazsa haber al (healthchecks.io, ücretsiz)
+
+1. healthchecks.io'da ücretsiz hesap açın → "Add Check" → Period: **1 day**, Grace: **2 hours** → e-posta adresinizi bildirime ekleyin.
+2. Çıkan adresi (`https://hc-ping.com/...`) kopyalayın.
+3. `nano /opt/batilmer-form-paneli/sunucu.env` → en alta `HEALTHCHECK_URL=https://hc-ping.com/...` yazın, kaydedin.
+4. Deneyin: `bash deploy/yedek.sh` → healthchecks.io'da kontrol yeşile döner. Bir gece yedek alınmazsa (ya da sunucu dışına gönderilemezse) size e-posta gelir.
 
 ## Yedekten geri yükleme
 

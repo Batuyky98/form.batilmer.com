@@ -109,6 +109,24 @@ async function retention(db) {
   }
 }
 
+// Çöp kutusundaki kayıtlar 30 gün sonra iz bırakmadan silinir (KVKK); IP ve tarayıcı bilgisi 90 gün sonra boşaltılır
+export const TRASH_DAYS = 30;
+async function trashPurge(db) {
+  const limit = Date.now() - TRASH_DAYS * 864e5;
+  const rows = await db.query('SELECT id, form_id FROM submissions WHERE deleted_at IS NOT NULL AND deleted_at < ?', [limit]);
+  const byForm = {};
+  for (const r of rows) (byForm[r.form_id] ||= []).push(r.id);
+  for (const [formId, ids] of Object.entries(byForm)) {
+    const files = await db.tx(async (q) => {
+      const f = await forgetSubmissions(q, formId, ids);
+      await log(q, null, `Çöp kutusunda ${TRASH_DAYS} günü geçen ${ids.length} kayıt kalıcı silindi`, formId);
+      return f;
+    });
+    await removeUploads(files);
+  }
+  await db.query("UPDATE submissions SET ip = '', user_agent = '' WHERE created_at < ? AND (ip <> '' OR user_agent <> '')", [Date.now() - 90 * 864e5]);
+}
+
 async function cleanup(db) {
   await db.query('DELETE FROM sessions WHERE expires_at < ?', [Date.now()]);
   await db.query('DELETE FROM reset_tokens WHERE created_at < ?', [Date.now() - 2 * 3600000]);
@@ -137,13 +155,15 @@ export function startScheduler(db) {
     setInterval(safe('wa-bildirim', dailyReminderNotice), 60 * 1000),
     setInterval(safe('aylik-rapor', monthlyReportNotice), 10 * 60 * 1000),
     setInterval(safe('saklama', retention), 60 * 60 * 1000),
-    setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000)
+    setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000),
+    setInterval(safe('cop-kutusu', trashPurge), 6 * 60 * 60 * 1000)
   ];
   timers.forEach((t) => t.unref());
   setTimeout(safe('hatirlatma', reminders), 5000).unref();
   setTimeout(safe('saklama', retention), 30000).unref();
   setTimeout(safe('temizlik', cleanup), 60000).unref();
+  setTimeout(safe('cop-kutusu', trashPurge), 90000).unref();
   return () => timers.forEach(clearInterval);
 }
 
-export const _test = { reminders, retention, cleanup, dailyReminderNotice, monthlyReportNotice };
+export const _test = { reminders, retention, cleanup, dailyReminderNotice, monthlyReportNotice, trashPurge };

@@ -157,9 +157,12 @@ function DetailModal({ appt, cfg, formId, onClose, onDone }) {
   async function move() {
     if (!mv.time) return toast('Yeni bir saat seçin.', 'err');
     try {
-      await api.moveAppointment(appt.id, mv);
-      toast('Randevu taşındı.');
+      const r = await api.moveAppointment(appt.id, mv);
       onDone();
+      if (r?.waUrl && (await confirm({ title: 'Randevu taşındı ✓', message: 'Müşteriye yeni saati WhatsApp\'tan haber verelim mi? Mesaj hazır yazılı açılır, siz gönder\'e basarsınız.', confirmText: 'WhatsApp\'tan haber ver' }))) {
+        window.open(r.waUrl, '_blank', 'noopener');
+      } else if (r && r.waUrl === '') toast('Randevu taşındı. Cep telefonu olmadığı için WhatsApp ile haber verilemiyor; müşteriyi arayın.');
+      else if (!r?.waUrl) toast('Randevu taşındı.');
     } catch (e) {
       toast(e.message, 'err');
     }

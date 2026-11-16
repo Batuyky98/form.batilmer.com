@@ -99,7 +99,7 @@ export default function Report() {
         <Kpi label="Randevu" value={r.total} sub={r.prev.total ? `${ch >= 0 ? '▲' : '▼'} %${Math.abs(ch)} (${r.prev.label.split(' ')[0]}: ${r.prev.total})` : `${r.cancelled} iptal`} tone={ch === null ? '' : ch >= 0 ? 'up' : 'down'} />
         <Kpi label="Gelmeyen" value={r.noShow} sub={`%${String(r.noShowRate).replace('.', ',')}${r.prev.total ? ` · ${r.prev.label.split(' ')[0]} %${String(r.prev.noShowRate).replace('.', ',')}` : ''}`} tone={r.noShowRate <= r.prev.noShowRate ? 'up' : 'down'} />
         <Kpi label="Yeni müşteri" value={r.newCustomers} sub={`${r.returning} eski müşteri geri geldi`} />
-        <Kpi label="Tahmini ciro" value={r.revenue === null ? '—' : tl(r.revenue)} sub={r.revenue === null ? 'Hizmetlere fiyat girilirse hesaplanır' : 'Hizmet fiyatlarından (gelmeyenler hariç)'} />
+        <Kpi label="Tahmini ciro" value={r.revenue === null ? '—' : tl(r.revenue)} sub={r.revenue === null ? 'Hizmetlere fiyat girilirse hesaplanır' : r.unmarked ? `"Geldi" işaretlenmemiş ${r.unmarked} randevu hariç` : 'Hizmet fiyatlarından (gelmeyenler hariç)'} tone={r.unmarked ? 'down' : ''} />
       </div>
 
       <div className="rp-grid">
@@ -139,7 +139,7 @@ export default function Report() {
           ))}
         </section>
       )}
-      <p className="muted small">İptal edilen randevular sayılara dahil değildir. "Gelmeyen" oranı, tarihi geçmiş randevulara göre hesaplanır. Ciro, hizmetlere girilen fiyatlardan tahmindir.</p>
+      <p className="muted small">İptal edilen randevular sayılara dahil değildir. "Gelmeyen" oranı, tarihi geçmiş randevulara göre hesaplanır. Ciro; "Geldi" işaretlenen ve günü henüz gelmemiş randevuların hizmet fiyatlarından tahmindir.</p>
     </div>
   );
 }

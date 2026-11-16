@@ -489,6 +489,44 @@ ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi
   ok(old.report.total === 0, 'eski ay boş');
   ok((await rpc('v', 'monthReport', { formId: other })).report === null, 'yetkisi olmayan formun raporu görünmez');
   await sched.monthlyReportNotice(sdb);
+
+  // ---------------------------------------------------------------- acil düzeltmeler
+  // taşıma sonrası müşteriye WhatsApp ile haber
+  const tA = await manual('Tasima Test', '0555 909 08 07', tomorrow, 'svc_muayene');
+  const free = (await slot(tomorrow, 'svc_muayene')).slice(-1)[0];
+  const mv = await rpc('a', 'moveAppointment', tA, { date: tomorrow, time: free });
+  ok(mv.waUrl.startsWith('https://wa.me/905559090807?text=') && decodeURIComponent(mv.waUrl).includes('güncellendi') && decodeURIComponent(mv.waUrl).includes(free) && decodeURIComponent(mv.waUrl).includes('/iptal/'), 'taşıyınca "saatiniz değişti" WhatsApp mesajı hazır');
+  // rapor: silinmiş hizmet başka hizmete yazılmıyor, işaretlenmemiş geçmiş randevu ciroya girmiyor
+  const tB = await manual('Rapor Test', '0555 909 08 06', tomorrow, 'svc_muayene');
+  await sdb.query("UPDATE appointments SET service_id = 'svc_silinmis', status = 'geldi', date = ? WHERE id = ?", [T, tB]);
+  if (T.slice(8) !== '01') {
+    const tC = await manual('Rapor Test', '0555 909 08 06', tomorrow, 'svc_muayene');
+    await sdb.query("UPDATE appointments SET status = 'onaylandi', date = ? WHERE id = ?", [shift(T, -1), tC]);
+  }
+  const R2 = (await rpc('v', 'monthReport', {})).report;
+  ok(R2.services.some((x) => x.label === 'Silinmiş hizmet'), 'silinmiş hizmetin randevusu "Silinmiş hizmet" olarak sayılıyor');
+  ok(T.slice(8) === '01' || R2.unmarked >= 1, '"Geldi" işaretlenmemiş geçmiş randevu ciroya katılmıyor, ayrıca sayılıyor');
+  // çöp kutusu 30 gün sonra kendiliğinden kalıcı silinir; aynı telefonun başka kaydı varsa bekleme kaydı korunur
+  const tD = await manual('Cop Test', '0555 909 08 05', tomorrow, 'svc_muayene');
+  await manual('Cop Test', '0555 909 08 05', tomorrow, 'svc_asi');
+  const subD = (await sdb.query('SELECT submission_id FROM appointments WHERE id = ?', [tD]))[0].submission_id;
+  await sdb.query("INSERT INTO waitlist (id, form_id, date, service_id, pref, name, phone, phone_key, created_at) VALUES ('w_test1', ?, ?, 'svc_muayene', 'hepsi', 'Cop Test', '0555 909 08 05', '5559090805', ?)", [fid, shift(T, 5), Date.now()]);
+  await rpc('a', 'deleteSubmission', subD);
+  await sched.trashPurge(sdb);
+  ok((await sdb.query('SELECT id FROM submissions WHERE id = ?', [subD])).length === 1, 'çöp kutusundaki yeni kayıt hemen silinmiyor');
+  await sdb.query('UPDATE submissions SET deleted_at = ? WHERE id = ?', [Date.now() - 31 * 864e5, subD]);
+  await sched.trashPurge(sdb);
+  ok((await sdb.query('SELECT id FROM submissions WHERE id = ?', [subD])).length === 0 && (await sdb.query('SELECT id FROM appointments WHERE id = ?', [tD])).length === 0, 'çöpte 30 günü geçen kayıt ve randevusu kalıcı silindi');
+  ok((await sdb.query("SELECT id FROM waitlist WHERE id = 'w_test1'")).length === 1, 'aynı telefonun başka kaydı varken bekleme listesi kaydı korunuyor');
+  // 90 günden eski kayıtta IP ve tarayıcı bilgisi boşaltılır
+  const oldSub = (await sdb.query("SELECT id FROM submissions WHERE ip <> '' LIMIT 1"))[0];
+  if (oldSub) {
+    await sdb.query('UPDATE submissions SET created_at = ? WHERE id = ?', [Date.now() - 91 * 864e5, oldSub.id]);
+    await sched.trashPurge(sdb);
+    const os = (await sdb.query('SELECT ip, user_agent FROM submissions WHERE id = ?', [oldSub.id]))[0];
+    ok(os.ip === '' && os.user_agent === '', '90 günden eski kayıtta IP ve tarayıcı bilgisi silindi');
+  }
+  izler.push('Tasima Test', 'Rapor Test', 'Cop Test', '5559090807', '5559090806', '5559090805');
 }
 
 // test kayıtlarını temizleme: sadece Ana Admin, link yazılarak

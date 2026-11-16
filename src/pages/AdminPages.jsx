@@ -31,7 +31,7 @@ export function Trash() {
 
   return (
     <div className="page">
-      <div className="page-head"><div><h1>Çöp kutusu</h1><p className="muted">Silinen formlar, kayıtlar ve kullanıcılar burada bekler; geri alınabilir.</p></div></div>
+      <div className="page-head"><div><h1>Çöp kutusu</h1><p className="muted">Silinen formlar, kayıtlar ve kullanıcılar burada bekler; geri alınabilir. Silinen kayıtlar (müşteri bilgileri) 30 gün sonra kendiliğinden, iz bırakmadan kalıcı olarak silinir.</p></div></div>
       {empty && <Empty title="Çöp kutusu boş" />}
       {data.forms.length > 0 && (
         <section className="card stack">

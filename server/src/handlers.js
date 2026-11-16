@@ -20,7 +20,7 @@ import { buildFormContent, normalizeContent, DEFAULT_CONTROL, DEFAULT_SETTINGS }
 import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
 import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
-import { phoneKey, phonePretty, fillReminder, fillReview, waLink, waPhoneOk, DEFAULT_WA, RECALL_DAYS, fillRecall, fillWait } from '../../src/lib/reminder.js';
+import { phoneKey, phonePretty, fillReminder, fillReview, waLink, waPhoneOk, DEFAULT_WA, RECALL_DAYS, fillRecall, fillWait, longDate, dayWord } from '../../src/lib/reminder.js';
 import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../../src/lib/kvkkTemplate.js';
 
 // ---------------------------------------------------------------- hata
@@ -148,6 +148,7 @@ async function sms(q, phone, text, ref = {}) {
 async function forgetSubmissions(q, formId, ids) {
   if (!ids.length) return [];
   const files = [];
+  const pks = [];
   for (let i = 0; i < ids.length; i += 500) {
     const part = ids.slice(i, i + 500);
     const m = ph(part);
@@ -156,10 +157,15 @@ async function forgetSubmissions(q, formId, ids) {
     await q(`DELETE FROM outbox WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM reviews WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM recalls WHERE submission_id IN (${m})`, part);
-    const pks = (await q(`SELECT phone_key FROM submissions WHERE id IN (${m}) AND phone_key IS NOT NULL`, part)).map((r) => r.phone_key);
-    if (pks.length) await q(`DELETE FROM waitlist WHERE form_id = ? AND phone_key IN (${ph(pks)})`, [formId, ...pks]);
+    pks.push(...(await q(`SELECT phone_key FROM submissions WHERE id IN (${m}) AND phone_key IS NOT NULL`, part)).map((r) => r.phone_key));
     await q(`DELETE FROM appointments WHERE submission_id IN (${m})`, part);
     await q(`DELETE FROM submissions WHERE id IN (${m})`, part);
+  }
+  // Bekleme listesi: o telefonun bu formda başka kaydı kalmadıysa silinir (aktif müşterinin bekleme kaydı korunur)
+  const gone = [...new Set(pks)];
+  for (let i = 0; i < gone.length; i += 500) {
+    const part = gone.slice(i, i + 500);
+    await q(`DELETE FROM waitlist WHERE form_id = ? AND phone_key IN (${ph(part)}) AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)`, [formId, ...part, formId]);
   }
   await q('DELETE FROM customer_notes WHERE form_id = ? AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)', [formId, formId]);
   return files;
@@ -1873,11 +1879,16 @@ async function monthNumbers(q, forms, month) {
   const past = active.filter((a) => a.date < today() || (a.date === today() && a.status !== 'bekliyor' && a.status !== 'onaylandi'));
   const noShow = active.filter((a) => a.status === 'gelmedi');
   const cfgOf = (id) => content(forms.find((f) => f.id === id)).randevu;
+  // Ciro: "Geldi" işaretlenenler + henüz günü gelmemiş onaylı/bekleyen randevular.
+  // Günü geçmiş ama "Geldi" işaretlenmemiş randevular ciroya katılmaz (ayrıca sayılır).
+  const exact = (cfg, id) => (cfg.services || []).find((s) => s.id === id) || null;
   let revenue = 0;
   let priced = false;
+  let unmarked = 0;
   for (const a of active) {
     if (a.status === 'gelmedi') continue;
-    const sv = serviceById(cfgOf(a.formId), a.serviceId);
+    if (a.status !== 'geldi' && a.date < today()) { unmarked++; continue; }
+    const sv = exact(cfgOf(a.formId), a.serviceId);
     const p = Number(sv?.price);
     if (sv && sv.price !== '' && sv.price !== undefined && sv.price !== null && Number.isFinite(p)) {
       revenue += p * (cfgOf(a.formId).capacityMode === 'kisi' ? Math.max(1, a.partySize) : 1);
@@ -1903,7 +1914,7 @@ async function monthNumbers(q, forms, month) {
   const svcCount = new Map();
   for (const a of active) {
     const f = forms.find((x) => x.id === a.formId);
-    const name = serviceById(cfgOf(a.formId), a.serviceId)?.name || 'Diğer';
+    const name = exact(cfgOf(a.formId), a.serviceId)?.name || 'Silinmiş hizmet';
     const label = forms.length > 1 ? `${name} · ${f.isletme || f.name}` : name;
     svcCount.set(label, (svcCount.get(label) || 0) + 1);
   }
@@ -1921,7 +1932,7 @@ async function monthNumbers(q, forms, month) {
     month, label: monthLabel(month), from, to, partial: to >= today(),
     total: active.length, cancelled: appts.length - active.length, noShow: noShow.length, noShowRate: pct(noShow.length, past.length), noShowNoReminder: noShowNoRem,
     customers: keys.length, newCustomers: newCount, returning: keys.length - newCount,
-    revenue: priced ? Math.round(revenue) : null,
+    revenue: priced ? Math.round(revenue) : null, unmarked,
     weekdays, peakHour: peak && peak.n ? `${String(peak.h).padStart(2, '0')}:00–${String(peak.h + 2).padStart(2, '0')}:00` : '',
     services: [...svcCount.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     recall: { sent: recSent, booked: recBooked },
@@ -2282,7 +2293,10 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
     if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }), { formId: a.formId, subId: a.submissionId });
     if (freed.date !== date || freed.start !== time) await waitNotice(q, form, freed);
     await log(q, user.id, 'Randevu taşıdı', `${form.name} ${old} → ${date} ${time}`);
-    return true;
+    // Müşteriye WhatsApp'tan "saatiniz değişti" mesajı (personel tek dokunuşla gönderir)
+    const svc = serviceById(cfg, a.serviceId)?.name || '';
+    const text = `Merhaba ${a.contact?.name || ''}, ${biz} randevunuz ${dayWord(date)} ${longDate(date)} saat ${time}${svc ? ` (${svc})` : ''} olarak güncellendi. Size uymuyorsa bu linkten iptal edebilirsiniz: ${cancelUrl(a)}`.replace(/\s{2,}/g, ' ');
+    return { waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '' };
   });
 };
 

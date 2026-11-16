@@ -340,5 +340,18 @@ export const MIGRATIONS = [
       'CREATE INDEX idx_waitlist_form ON waitlist (form_id, date)',
       'CREATE INDEX idx_waitlist_phone ON waitlist (phone_key)'
     ]
+  },
+  {
+    version: 9,
+    name: 'eksik indeksler (kalıcı silme ve birleştirmeler hızlansın)',
+    up: [
+      'CREATE INDEX idx_subs_appt ON submissions (appointment_id)',
+      'CREATE INDEX idx_subs_form_phone ON submissions (form_id, phone_key)',
+      'CREATE INDEX idx_subs_deleted ON submissions (deleted_at)',
+      'CREATE INDEX idx_appts_sub ON appointments (submission_id)',
+      'CREATE INDEX idx_reviews_sub ON reviews (submission_id)',
+      'CREATE INDEX idx_recalls_sub ON recalls (submission_id)',
+      'CREATE INDEX idx_files_form ON files (form_id)'
+    ]
   }
 ];
