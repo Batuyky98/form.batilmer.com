@@ -327,6 +327,11 @@ ok(limited, 'aynı numaraya çok deneme engellendi');
 // ücretsiz sohbet asistanı
 ok((await rpc('p', 'getAssistant', f.slug)) === null, 'asistan kapalıyken bilgi dönmüyor');
 {
+  const pv = await rpc('a', 'getAssistant', f.slug, { preview: true });
+  ok(pv && pv.preview && pv.enabledDraft === false && pv.live === false && pv.services.length > 0, 'panelden önizleme: kapalı asistan da görünüyor (uyarıyla)');
+  ok((await rpc('p', 'getAssistant', f.slug, { preview: true })) === null, 'giriş yapmayan önizleme ile taslağı göremez');
+}
+{
   const r0 = await fetch(`${B}/api/asistan/${f.slug}`);
   ok(r0.status === 200 && (await r0.json()) === null, 'asistan kapalıyken site balonu çıkmıyor (null)');
   ok((await (await fetch(`${B}/api/asistan/yok-boyle-form`)).json()) === null, 'olmayan form için balon yok');

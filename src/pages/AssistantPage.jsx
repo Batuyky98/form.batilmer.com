@@ -66,7 +66,8 @@ export default function AssistantPage({ slug }) {
   useEffect(() => {
     document.title = 'Asistan';
     document.documentElement.classList.add('as-doc');
-    api.getAssistant(slug).then(setD).catch(() => setD(null));
+    const preview = new URLSearchParams(window.location.search).get('onizleme') === '1';
+    api.getAssistant(slug, { preview }).then(setD).catch(() => setD(null));
   }, [slug]);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -76,7 +77,7 @@ export default function AssistantPage({ slug }) {
   if (!d) {
     return (
       <div className="asx">
-        <div className="asx-load"><p>Asistan şu anda kullanılamıyor.</p></div>
+        <div className="asx-load"><p>Bu işletmenin sohbet asistanı şu anda kapalı.</p></div>
       </div>
     );
   }
@@ -169,6 +170,11 @@ export default function AssistantPage({ slug }) {
         <span className="asx-ht"><b>{d.title || d.isletme}</b>{d.subtitle && <span>{d.subtitle}</span>}</span>
         {embedded && <button type="button" className="asx-x" aria-label="Kapat" onClick={closeParent}>✕</button>}
       </header>
+      {d.preview && (
+        <div className={`asx-pv ${!d.enabledDraft || !d.live ? 'is-warn' : ''}`}>
+          {!d.enabledDraft ? 'Önizleme · Asistan kapalı. Panelde "Sohbet asistanı"nı açın ve formu yayınlayın.' : !d.live ? 'Önizleme · Henüz yayında değil. Formu yayınlayınca sitenizde görünür.' : 'Önizleme · Yayınlanmamış değişiklikler de gösteriliyor.'}
+        </div>
+      )}
       <main className="asx-body">
         <div className="asx-bot">{d.greeting || `Merhaba 👋 ${d.isletme}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`}</div>
         {menu()}

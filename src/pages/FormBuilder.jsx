@@ -847,9 +847,9 @@ function AssistantSection({ form, s, set, appearance }) {
           <pre className="as-code">{code}</pre>
           <div className="row wrap" style={{ gap: 8 }}>
             <button type="button" className="btn btn-sm" onClick={async () => toast((await copyText(code)) ? 'Kopyalandı.' : 'Kopyalanamadı.', 'ok')}>Kodu kopyala</button>
-            <a className="btn btn-sm" href={`/asistan/${form.slug}`} target="_blank" rel="noopener noreferrer">Asistanı aç ↗</a>
+            <a className="btn btn-sm" href={`/asistan/${form.slug}?onizleme=1`} target="_blank" rel="noopener noreferrer">Önizle ↗</a>
           </div>
-          <div className="pf-hint">Değişiklikler formu yayınlayınca asistana yansır.</div>
+          <div className="pf-hint">Önizleme kaydedilmiş taslağı gösterir. Sitenizdeki balon, formu <b>Yayınla</b> dedikten sonra çıkar.</div>
         </>
       )}
     </section>

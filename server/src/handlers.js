@@ -1118,12 +1118,24 @@ async function dayData(q, formId, date) {
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 
 // Ücretsiz sohbet asistanı: herkese açık bilgiler (kişisel veri yok)
-H.getAssistant = async (ctx, slug) => {
+H.getAssistant = async (ctx, slug, { preview = false } = {}) => {
   const form = await formBySlug(ctx.db.query, slug);
-  if (!form?.published) return null;
-  const c = content(form);
+  if (!form) return null;
+  // Önizleme: panelden giriş yapmış ve formu görme yetkisi olan kişi, yayınlanmamış taslağı da görür
+  let isPreview = false;
+  if (preview && ctx.req) {
+    try {
+      const user = await requireUser(ctx);
+      isPreview = !!(await permsFor(ctx.db.query, user, form.id)).view;
+    } catch {
+      isPreview = false;
+    }
+  }
+  if (!isPreview && !form.published) return null;
+  const c = isPreview ? normalizeContent(form.draft) : content(form);
   const as = c.settings.assistant || {};
-  if (!as.enabled) return null;
+  const live = !!(form.published && form.published.settings?.assistant?.enabled);
+  if (!as.enabled && !isPreview) return null;
   const state = await formIsOpen(ctx.db.query, form);
   const cfg = c.randevu;
   const hasAppt = c.fields.some((f) => f.type === 'randevu');
@@ -1137,7 +1149,8 @@ H.getAssistant = async (ctx, slug) => {
     hasAppt, selfManage: !!cfg?.selfManage,
     services: hasAppt ? (cfg.services || []).map((s) => ({ id: s.id, name: s.name, duration: s.duration, price: servicePrice(cfg, s) })) : [],
     hours: hasAppt ? cfg.hours : null, closedDates: hasAppt ? (cfg.closedDates || []).filter((d) => d >= today()) : [],
-    firstDate: hasAppt ? firstBookableDate(cfg) : '', maxDaysAhead: hasAppt ? Number(cfg.maxDaysAhead || 30) : 0
+    firstDate: hasAppt ? firstBookableDate(cfg) : '', maxDaysAhead: hasAppt ? Number(cfg.maxDaysAhead || 30) : 0,
+    ...(isPreview ? { preview: true, live, enabledDraft: !!as.enabled } : {})
   };
 };
 
