@@ -15,6 +15,14 @@ const embedded = (() => {
 })();
 const closeParent = () => embedded && window.parent.postMessage({ type: 'batilmer:asistan-kapat' }, '*');
 
+// Forma giden linkler: sitenin içinde kalınır. Asistan bir sitedeyse, sayfadaki form (varsa) o saatle doldurulur;
+// sayfada form yoksa form sohbet penceresinin içinde açılır. Tek başına açılan asistan sayfasında normal link.
+function goForm(e, slug, qs) {
+  if (!embedded) return;
+  e.preventDefault();
+  window.parent.postMessage({ type: 'batilmer:asistan-form', slug, qs }, '*');
+}
+
 function Slots({ d, svc }) {
   const [day, setDay] = useState('');
   const [slots, setSlots] = useState(null);
@@ -49,11 +57,11 @@ function Slots({ d, svc }) {
       {slots === null ? <div className="asx-note">Saatler yükleniyor…</div> : !slots.length ? <div className="asx-note">Bu gün dolu. Başka bir gün seçin.</div> : (
         <div className="asx-slots">
           {slots.slice(0, 9).map((s) => (
-            <a key={s.time} className="asx-s" target="_top" href={`/f/${d.slug}?tarih=${day}&saat=${s.time}&hizmet=${svc.id}`}>{s.time}</a>
+            <a key={s.time} className="asx-s" href={`/f/${d.slug}?tarih=${day}&saat=${s.time}&hizmet=${svc.id}`} onClick={(e) => goForm(e, d.slug, `?tarih=${day}&saat=${s.time}&hizmet=${svc.id}`)}>{s.time}</a>
           ))}
         </div>
       )}
-      {slots?.length > 9 && <a className="asx-more" target="_top" href={`/f/${d.slug}?tarih=${day}&hizmet=${svc.id}`}>Tüm saatleri gör ›</a>}
+      {slots?.length > 9 && <a className="asx-more" href={`/f/${d.slug}?tarih=${day}&hizmet=${svc.id}`} onClick={(e) => goForm(e, d.slug, `?tarih=${day}&hizmet=${svc.id}`)}>Tüm saatleri gör ›</a>}
     </div>
   );
 }
@@ -157,7 +165,7 @@ export default function AssistantPage({ slug }) {
         {it.saat && d.hours && <button type="button" className="asx-mb" onClick={showHours}>🕒 Çalışma saatleri</button>}
         {it.adres && d.address && <button type="button" className="asx-mb" onClick={showAddress}>📍 Adres / yol tarifi</button>}
         {it.sss && d.faq.length > 0 && <button type="button" className="asx-mb" onClick={showFaq}>❓ Sık sorulanlar</button>}
-        {it.yonet && d.selfManage && <a className="asx-mb" target="_top" href={formUrl('?yonet=1')}>📅 Randevumu yönet</a>}
+        {it.yonet && d.selfManage && <a className="asx-mb" href={formUrl('?yonet=1')} onClick={(e) => goForm(e, d.slug, '?yonet=1')}>📅 Randevumu yönet</a>}
         {it.wa && wa && <button type="button" className="asx-mb asx-wa" onClick={openWa}>💬 WhatsApp'tan yazın</button>}
       </div>
     );

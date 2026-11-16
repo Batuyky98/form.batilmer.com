@@ -60,9 +60,34 @@
   }
   btn.addEventListener('click', function () { open(!box.classList.contains('on')); });
   if (peek) peek.addEventListener('click', function () { open(true); });
+  // Sayfada bu formun gömülü hâli var mı? (embed.js ile eklenen iframe)
+  function pageForm() {
+    var list = document.querySelectorAll('iframe');
+    for (var i = 0; i < list.length; i++) {
+      var src = list[i].getAttribute('src') || '';
+      try {
+        var u = new URL(src, location.href);
+        if (u.origin === ORIGIN && u.pathname.replace(/\/$/, '') === '/f/' + slug) return list[i];
+      } catch (x) { /* yoksay */ }
+    }
+    return null;
+  }
   window.addEventListener('message', function (e) {
-    if (e.origin !== ORIGIN || !e.data || e.data.type !== 'batilmer:asistan-kapat') return;
-    open(false);
+    if (e.origin !== ORIGIN || !e.data) return;
+    if (e.data.type === 'batilmer:asistan-kapat') return open(false);
+    // Asistandan saat seçildi: siteden çıkmadan form doldurulur
+    if (e.data.type === 'batilmer:asistan-form' && e.data.slug === slug && /^\?[a-z0-9=&:_%-]{0,200}$/i.test(e.data.qs || '')) {
+      var f = pageForm();
+      if (f) {
+        f.src = ORIGIN + '/f/' + slug + e.data.qs;
+        open(false);
+        var top = f.getBoundingClientRect().top + window.pageYOffset - 16;
+        window.scrollTo({ top: top, behavior: 'smooth' });
+      } else {
+        // Sayfada form yoksa form sohbet penceresinin içinde açılır ("← Sohbete dön" ile geri)
+        box.src = ORIGIN + '/f/' + slug + e.data.qs + '&asistan=1';
+      }
+    }
   });
   function mount() {
     document.body.appendChild(box);

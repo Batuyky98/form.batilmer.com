@@ -4,7 +4,10 @@ import FormRenderer, { appearanceStyle } from '../components/FormRenderer.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { t } from '../lib/i18n.js';
 
+// Sohbet asistanının penceresinde açılan form (?asistan=1): kendi içinde kaydırılır, yükseklik bildirmez
+const inAssistant = new URLSearchParams(window.location.search).get('asistan') === '1';
 const isEmbedded = (() => {
+  if (inAssistant) return false;
   try {
     return window.self !== window.top;
   } catch {
@@ -103,6 +106,9 @@ export default function PublicForm({ slug }) {
 
   return (
     <div className={`public-wrap ${isEmbedded ? 'embedded' : ''}`}>
+      {inAssistant && (
+        <button type="button" className="pf-back-chat" onClick={() => window.location.assign(`/asistan/${slug}`)}>← Sohbete dön</button>
+      )}
       <FormRenderer
         content={content}
         turnstileKey={data.turnstileKey || ''}
