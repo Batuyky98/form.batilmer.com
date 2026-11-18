@@ -52,6 +52,10 @@ Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, V
 - Randevu formu kurulumu: panelde işletmeye özel form (`/f/<slug>`) + sadece o forma yetkili kullanıcı, 2FA, bildirim, bio linki/QR. İlk müşteriden önce: işletmeler arası ayrım testi, KVKK metni + hizmet sözleşmesi.
 - Kapanış slaytında [telefon] boş; kullanıcı numarayı verecek. Reels videoları kullanıcıda.
 
+## Örnek reels (müşteri adayı videosundan)
+- `pazarlama/araclar/ornek-reels-video.py <kaynak.mp4> <logo.png> <klasör>` + `ornek-reels-muzik.py <olaylar.json> <çıktı.wav>`; ffmpeg ile birleştir (loudnorm -13 LUFS). Sahneler dosya başındaki `SAHNE` listesinde.
+- Ern Car Care çizik rötuş videosundan 26 sn örnek yapıldı (kanca → 6 adım → önce/sonra → soru → randevu bitiş kartı). Ham yazılar buzlu bantla kapatılıyor. Logo afişten kesildi; orijinal logo istenecek.
+
 ## Claude aboneliği
 - 2 kişi için öneri: yıllık Pro (~400 $). Team Standard yıllık 480 $, toplu indirim yok.
 - Claude for Startups başvuruları kapalı (Kas 2026). Her pazartesi 10:13'te (İstanbul) otomatik kontrol eden zamanlanmış görev var, açılınca telefona bildirim gelir.
