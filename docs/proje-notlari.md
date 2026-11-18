@@ -43,6 +43,15 @@ Yayındaki özellikler: çok adımlı form, randevu + müsaitlik, bildirim (canl
 
 Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, Vital içeren ilk post arşivlenmeli.
 
+## Sosyal medya yönetimi hizmeti (Kas 2026 kararı)
+- Sunum: https://claude.ai/artifact/TXBcpR9uZTwyjybY3uMM1q (genel, firmaya özel değil; logo girişte). İlk aday: Ern Car Care (görüşme aşaması).
+- Paketler (aylık, KDV hariç): Gümüş 4 gönderi + 2 reels 4.999 ₺ · Altın 6 + 3 6.999 ₺ (önerilen) · Platin 8 + 4 8.999 ₺.
+- Çekimi işletme yapar (WhatsApp grubu), biz kurgu/müzik/yazı/paylaşım. Yerinde çekim, reklam yönetimi, rapor **yok**.
+- Ekler: online randevu formu +990 ₺/ay (panel tek başına 690/1.190/1.790 önerisinden ucuz kalsın), DM/yorum yanıtlama +1.500 ₺/ay.
+- Şartlar: en az 3 ay, aylık peşin, 3 ay peşine %10, ilk ay profil kurulumu hediye. Paylaşım için Instagram hesabına erişim (Meta Business Suite > Kişiler; olmazsa içerik hazırlanır, işletme paylaşır).
+- Randevu formu kurulumu: panelde işletmeye özel form (`/f/<slug>`) + sadece o forma yetkili kullanıcı, 2FA, bildirim, bio linki/QR. İlk müşteriden önce: işletmeler arası ayrım testi, KVKK metni + hizmet sözleşmesi.
+- Kapanış slaytında [telefon] boş; kullanıcı numarayı verecek. Reels videoları kullanıcıda.
+
 ## Reels yapımı (`pazarlama/araclar/`)
 1. Yerel demo sunucusu (sqlite, kurgusal veriler) + `reels-*-kareler.mjs` → Playwright ile iPhone 14 ekran kareleri + `seq.json` (dokunma koordinatları). Giriş bilgisi `DEMO_EPOSTA` / `DEMO_SIFRE` ortam değişkeninden. Bot kuralı: sayfa açılışından 2 sn önce gönderilen form sahte başarı döner, bekle.
 2. `reels-video.py`: kanca açılış, hareketli arka plan, kelime kelime yazı, süzülen telefon, punch-zoom, büyüteç kartı, whip-pan, ilerleme çubuğu, animasyonlu bitiş. 1080x1920, 30 fps. Sahneler/yazılar dosya başındaki `REELS` sözlüğünde.
