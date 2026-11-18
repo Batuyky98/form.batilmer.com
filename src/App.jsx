@@ -7,6 +7,9 @@ import { runScheduler } from './lib/api.js';
 
 import Login, { ResetPassword, ChangePassword } from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Today from './pages/Today.jsx';
+import FormHub from './pages/FormHub.jsx';
+import Schedule from './pages/Schedule.jsx';
 import FormBuilder from './pages/FormBuilder.jsx';
 import Submissions from './pages/Submissions.jsx';
 import Appointments from './pages/Appointments.jsx';
@@ -14,21 +17,35 @@ import Users from './pages/Users.jsx';
 import { Trash, Logs, Outbox } from './pages/AdminPages.jsx';
 import PublicForm from './pages/PublicForm.jsx';
 import CancelPage from './pages/CancelPage.jsx';
+import ReviewPage from './pages/ReviewPage.jsx';
+import AssistantPage from './pages/AssistantPage.jsx';
+import Reviews from './pages/Reviews.jsx';
 import EmbedTest from './pages/EmbedTest.jsx';
 import Stats from './pages/Stats.jsx';
+import Report from './pages/Report.jsx';
 import AllCalendar from './pages/AllCalendar.jsx';
 import Security from './pages/Security.jsx';
 import NotificationSettings from './pages/NotificationSettings.jsx';
+import Reminders from './pages/Reminders.jsx';
+import Customers, { CustomerCard } from './pages/Customers.jsx';
 import { registerWorker } from './lib/push.js';
-import { applyTheme } from './lib/theme.js';
+import { applyTheme, isPublicPath } from './lib/theme.js';
 
 const PANEL_ROUTES = [
-  ['/panel', Dashboard],
+  ['/panel', Today],
+  ['/panel/formlar', Dashboard],
+  ['/panel/formlar/:id', FormHub],
   ['/panel/formlar/:id/duzenle', FormBuilder],
   ['/panel/formlar/:id/kayitlar', Submissions],
   ['/panel/formlar/:id/randevular', Appointments],
   ['/panel/formlar/:id/istatistik', Stats],
+  ['/panel/formlar/:id/saatler', Schedule],
   ['/panel/takvim', AllCalendar],
+  ['/panel/hatirlatmalar', Reminders],
+  ['/panel/yorumlar', Reviews],
+  ['/panel/rapor', Report],
+  ['/panel/musteriler', Customers],
+  ['/panel/musteriler/:tel', CustomerCard],
   ['/panel/kullanicilar', Users, true],
   ['/panel/cop-kutusu', Trash, true],
   ['/panel/islem-kayitlari', Logs, true],
@@ -65,6 +82,8 @@ function Routes() {
   let m;
   if ((m = matchPath('/f/:slug', path))) return <PublicForm slug={m.slug} />;
   if ((m = matchPath('/iptal/:token', path))) return <CancelPage token={m.token} />;
+  if ((m = matchPath('/yorum/:token', path))) return <ReviewPage token={m.token} />;
+  if ((m = matchPath('/asistan/:slug', path))) return <AssistantPage slug={m.slug} />;
   if (path === '/test-sitesi') return <EmbedTest />;
   if ((m = matchPath('/sifre-sifirla/:token', path))) return <ResetPassword token={m.token} />;
 
@@ -104,7 +123,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     // Bildirim servis çalışanı sadece panelde (herkese açık formlarda gerekmez)
-    if (!window.location.pathname.startsWith('/f/') && !window.location.pathname.startsWith('/iptal/')) registerWorker();
+    if (!isPublicPath()) registerWorker();
   }, []);
   useEffect(() => {
     try {

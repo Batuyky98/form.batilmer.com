@@ -4,13 +4,33 @@ import FormRenderer, { appearanceStyle } from '../components/FormRenderer.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { t } from '../lib/i18n.js';
 
+// Sohbet asistanının penceresinde açılan form (?asistan=1): kendi içinde kaydırılır, yükseklik bildirmez
+const inAssistant = new URLSearchParams(window.location.search).get('asistan') === '1';
 const isEmbedded = (() => {
+  if (inAssistant) return false;
   try {
     return window.self !== window.top;
   } catch {
     return true;
   }
 })();
+
+// Sohbet asistanından gelindiyse: ?tarih=2026-11-17&saat=14:00&hizmet=svc_asi → randevu hazır seçili; ?yonet=1 → Randevumu yönet açık
+function initialFromUrl(content) {
+  const q = new URLSearchParams(window.location.search);
+  const out = {};
+  const rf = (content?.fields || []).find((f) => f.type === 'randevu');
+  const date = q.get('tarih');
+  const time = q.get('saat');
+  const svc = (content?.randevu?.services || []).find((s) => s.id === q.get('hizmet'));
+  if (rf && /^\d{4}-\d{2}-\d{2}$/.test(date || '') && /^\d{2}:\d{2}$/.test(time || '')) {
+    out[rf.key] = { date, time, ...(svc ? { serviceId: svc.id } : {}) };
+  } else if (rf && svc) {
+    // Tekrar çağırma linki: sadece hizmet seçili gelir
+    out[rf.key] = { serviceId: svc.id };
+  }
+  return { values: out, manage: q.get('yonet') === '1' };
+}
 
 function post(msg) {
   if (!isEmbedded) return;
@@ -86,11 +106,18 @@ export default function PublicForm({ slug }) {
 
   return (
     <div className={`public-wrap ${isEmbedded ? 'embedded' : ''}`}>
+      {inAssistant && (
+        <button type="button" className="pf-back-chat" onClick={() => window.location.assign(`/asistan/${slug}`)}>← Sohbete dön</button>
+      )}
       <FormRenderer
         content={content}
         turnstileKey={data.turnstileKey || ''}
         loadSlots={(p) => api.getAvailability(slug, p)}
         onSubmit={(values, meta) => api.submitForm(slug, values, meta)}
+        findMine={(p) => api.findMyAppointments(slug, p)}
+        joinWaitlist={(p) => api.joinWaitlist(slug, p)}
+        initial={initialFromUrl(content)}
+        cancelMine={(tok) => api.cancelByToken(tok)}
         onDone={(res) => {
           if (res?.afterSubmit === 'yonlendir' && res.redirectUrl && /^https?:\/\//.test(res.redirectUrl)) {
             if (isEmbedded) post({ type: 'batilmer:redirect', url: res.redirectUrl });

@@ -3,6 +3,8 @@ import * as api from '../lib/api.js';
 import { useToast } from './ui.jsx';
 import { dateTimeToMs } from '../lib/util.js';
 import ContactButtons from './ContactButtons.jsx';
+import { navigate } from '../router.jsx';
+import { phoneKey } from '../lib/reminder.js';
 
 // Randevu kartındaki tek dokunuşluk işlemler: Ara · Onayla · Geldi / Gelmedi
 export function quickStatuses(a) {
@@ -23,6 +25,11 @@ export default function ApptActions({ appt, phone, onDone, compact = false }) {
   return (
     <div className={`qa ${compact ? 'qa-compact' : ''}`} onClick={stop} onKeyDown={stop}>
       {phone && <ContactButtons phone={phone} compact={compact} />}
+      {phone && !compact && phoneKey(phone) && (
+        <a className="qa-btn" href={`/panel/musteriler/${phoneKey(phone)}`} title="Müşteri kartı" aria-label="Müşteri kartı" onClick={(e) => { e.preventDefault(); navigate(`/panel/musteriler/${phoneKey(phone)}`); }}>
+          👤 <span>Kart</span>
+        </a>
+      )}
       {list.map(([st, label, tone]) => (
         <button
           key={st}

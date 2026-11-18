@@ -1,7 +1,8 @@
 // Zamanlanmış işler: randevu hatırlatmaları, saklama süresi dolan kayıtların silinmesi, eski oturumların temizliği
 import { removeUploads } from './files.js';
-import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails } from './handlers.js';
-import { today, addDays, dateTimeToMs } from '../../src/lib/util.js';
+import { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, forgetSubmissions } from './handlers.js';
+import { today, addDays, dateTimeToMs, nowMinutesTR, timeToMin, uid } from '../../src/lib/util.js';
+import { reminderTargets } from '../../src/lib/reminder.js';
 import { t as tt } from '../../src/lib/i18n.js';
 import { STATUS_LABELS } from '../../src/lib/shared.js';
 
@@ -24,9 +25,69 @@ async function reminders(db) {
       // Aynı hatırlatma iki kez gitmesin
       const r = await q("UPDATE appointments SET reminder_sent = 1 WHERE id = ? AND reminder_sent = 0 AND status = 'onaylandi'", [a.id]);
       if (!r.affectedRows) return;
-      if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma');
-      if (cfg.sms?.reminder && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsReminder', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }));
+      if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailReminderSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status] || STATUS_LABELS[a.status], lang), 'hatirlatma', { formId: a.formId, subId: a.submissionId });
+      if (cfg.sms?.reminder && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsReminder', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }), { formId: a.formId, subId: a.submissionId });
     });
+  }
+}
+
+// Her gün ayarlanan saatte (varsayılan 10:00) personele "hatırlatmaları gönderin" bildirimi.
+// Bildirimde kişisel veri yok: sadece işletme adı ve randevu sayısı.
+async function dailyReminderNotice(db) {
+  const nowMin = nowMinutesTR();
+  const day = today();
+  const forms = (await db.query('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm);
+  for (const form of forms) {
+    const c = content(form);
+    if (!c.fields?.some((f) => f.type === 'randevu')) continue;
+    const wa = c.randevu.wa || {};
+    if (wa.enabled === false) continue;
+    const at = timeToMin(wa.notifyAt || '10:00');
+    // Sunucu o saatte kapalıysa en geç 3 saat sonrasına kadar telafi eder; gece geç saatte göndermez
+    if (nowMin < at || nowMin > at + 180) continue;
+    if ((await db.query('SELECT 1 AS x FROM reminder_runs WHERE form_id = ? AND day = ?', [form.id, day])).length) continue;
+    try {
+      await db.query('INSERT INTO reminder_runs (form_id, day, created_at) VALUES (?, ?, ?)', [form.id, day, Date.now()]);
+    } catch {
+      continue; // başka bir döngü aynı anda yazdı
+    }
+    const parts = [];
+    let total = 0;
+    for (const d of reminderTargets(wa.when, day)) {
+      const n = Number((await db.query("SELECT COUNT(*) AS c FROM appointments WHERE form_id = ? AND date = ? AND status IN ('bekliyor','onaylandi') AND wa_at IS NULL", [form.id, d]))[0].c);
+      total += n;
+      if (n) parts.push(`${d === day ? 'Bugün' : 'Yarın'} ${n} randevu`);
+    }
+    if (!total) continue;
+    const biz = form.isletme || form.name;
+    const url = `/panel/hatirlatmalar${reminderTargets(wa.when, day)[0] === day ? '?gun=bugun' : ''}`;
+    await db.query('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+      uid('n_'), form.id, 'hatirlatma', 'Hatırlatma zamanı 📲', `${biz} · ${parts.join(' · ')}. Dokunun, liste hazır.`.slice(0, 500), url, Date.now()
+    ]);
+  }
+}
+
+// Ayın 1'inde (10:00'dan sonra) "geçen ayın raporu hazır" bildirimi; form başına ayda bir kez
+const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+async function monthlyReportNotice(db) {
+  const day = today();
+  if (!day.endsWith('-01') || nowMinutesTR() < 600) return;
+  const prev = addDays(day, -1).slice(0, 7);
+  const forms = (await db.query('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm);
+  for (const form of forms) {
+    if (!content(form).fields?.some((f) => f.type === 'randevu')) continue;
+    const key = `R${prev}`;
+    if ((await db.query('SELECT 1 AS x FROM reminder_runs WHERE form_id = ? AND day = ?', [form.id, key])).length) continue;
+    const n = Number((await db.query("SELECT COUNT(*) AS c FROM appointments WHERE form_id = ? AND date >= ? AND date < ? AND status <> 'iptal'", [form.id, `${prev}-01`, day]))[0].c);
+    try {
+      await db.query('INSERT INTO reminder_runs (form_id, day, created_at) VALUES (?, ?, ?)', [form.id, key, Date.now()]);
+    } catch {
+      continue;
+    }
+    if (!n) continue;
+    await db.query('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+      uid('n_'), form.id, 'rapor', `📊 ${MONTHS[Number(prev.slice(5, 7)) - 1]} raporunuz hazır`, `${form.isletme || form.name} · ${n} randevu. Dokunun, özeti görün.`.slice(0, 500), `/panel/rapor?ay=${prev}&form=${form.id}`, Date.now()
+    ]);
   }
 }
 
@@ -40,16 +101,30 @@ async function retention(db) {
     if (!expired.length) continue;
     const ids = expired.map((r) => r.id);
     const files = await db.tx(async (q) => {
-      const marks = ids.map(() => '?').join(',');
-      const f = (await q(`SELECT id FROM files WHERE submission_id IN (${marks})`, ids)).map((r) => r.id);
-      await q(`DELETE FROM files WHERE submission_id IN (${marks})`, ids);
-      await q(`DELETE FROM appointments WHERE submission_id IN (${marks})`, ids);
-      await q(`DELETE FROM submissions WHERE id IN (${marks})`, ids);
+      const f = await forgetSubmissions(q, form.id, ids);
       await log(q, null, `Saklama süresi dolan ${ids.length} kayıt silindi`, form.name);
       return f;
     });
     await removeUploads(files);
   }
+}
+
+// Çöp kutusundaki kayıtlar 30 gün sonra iz bırakmadan silinir (KVKK); IP ve tarayıcı bilgisi 90 gün sonra boşaltılır
+export const TRASH_DAYS = 30;
+async function trashPurge(db) {
+  const limit = Date.now() - TRASH_DAYS * 864e5;
+  const rows = await db.query('SELECT id, form_id FROM submissions WHERE deleted_at IS NOT NULL AND deleted_at < ?', [limit]);
+  const byForm = {};
+  for (const r of rows) (byForm[r.form_id] ||= []).push(r.id);
+  for (const [formId, ids] of Object.entries(byForm)) {
+    const files = await db.tx(async (q) => {
+      const f = await forgetSubmissions(q, formId, ids);
+      await log(q, null, `Çöp kutusunda ${TRASH_DAYS} günü geçen ${ids.length} kayıt kalıcı silindi`, formId);
+      return f;
+    });
+    await removeUploads(files);
+  }
+  await db.query("UPDATE submissions SET ip = '', user_agent = '' WHERE created_at < ? AND (ip <> '' OR user_agent <> '')", [Date.now() - 90 * 864e5]);
 }
 
 async function cleanup(db) {
@@ -61,6 +136,10 @@ async function cleanup(db) {
   // Panel bildirim akışı 30 gün tutulur
   await db.query('DELETE FROM notifications WHERE created_at < ?', [Date.now() - 30 * 864e5]);
   await db.query('DELETE FROM sessions WHERE created_at < ?', [Date.now() - 24 * 3600000]);
+  await db.query("DELETE FROM reminder_runs WHERE created_at < ? AND day NOT LIKE 'R%'", [Date.now() - 14 * 864e5]);
+  await db.query("DELETE FROM reminder_runs WHERE created_at < ? AND day LIKE 'R%'", [Date.now() - 400 * 864e5]);
+  // Bekleme listesi: günü geçen kayıtlarda ad ve telefon silinir (sayılar rapor için kalır)
+  await db.query("UPDATE waitlist SET name = '', phone = '', phone_key = NULL WHERE date < ? AND name <> ''", [today()]);
 }
 
 export function startScheduler(db) {
@@ -73,14 +152,18 @@ export function startScheduler(db) {
   };
   const timers = [
     setInterval(safe('hatirlatma', reminders), 60 * 1000),
+    setInterval(safe('wa-bildirim', dailyReminderNotice), 60 * 1000),
+    setInterval(safe('aylik-rapor', monthlyReportNotice), 10 * 60 * 1000),
     setInterval(safe('saklama', retention), 60 * 60 * 1000),
-    setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000)
+    setInterval(safe('temizlik', cleanup), 6 * 60 * 60 * 1000),
+    setInterval(safe('cop-kutusu', trashPurge), 6 * 60 * 60 * 1000)
   ];
   timers.forEach((t) => t.unref());
   setTimeout(safe('hatirlatma', reminders), 5000).unref();
   setTimeout(safe('saklama', retention), 30000).unref();
   setTimeout(safe('temizlik', cleanup), 60000).unref();
+  setTimeout(safe('cop-kutusu', trashPurge), 90000).unref();
   return () => timers.forEach(clearInterval);
 }
 
-export const _test = { reminders, retention, cleanup };
+export const _test = { reminders, retention, cleanup, dailyReminderNotice, monthlyReportNotice, trashPurge };

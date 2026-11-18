@@ -72,3 +72,24 @@ Sağ üstteki ay simgesiyle paneli **karanlık temaya** alabilirsiniz; tekrar ba
 - **Şifremi unuttum:** panel yöneticinize (Batilmer) yazın; size yeni geçici şifre verilir.
 - **Bildirim gelmiyor:** Bildirimler sayfasında "Bu cihaz" bölümüne bakın; "engellenmiş" yazıyorsa oradaki adımlarla telefon ayarından izin verin, sonra "Deneme bildirimi gönder".
 - **Telefonumu değiştirdim:** yeni telefonda 2. adımı tekrarlayın, eski telefonu "Cihazlarınız" listesinden kaldırın.
+
+## WhatsApp hatırlatma (ücretsiz)
+
+- Menüde **Hatırlatmalar**: yarının (ve bugünün) randevuları listelenir. **WhatsApp ile hatırlat**'a basınca
+  WhatsApp müşterinin sohbetiyle ve hazır mesajla açılır; personel sadece **gönder**'e basar.
+- Basılan randevu "✓ Hatırlatıldı · saat · kişi" olarak işaretlenir, herkes görür; aynı kişiye iki kez mesaj atılmaz. Yanlışlıkla basıldıysa **Geri al**.
+- Her gün ayarlanan saatte (varsayılan 10:00) bildirim tiki olan kişilere "Hatırlatma zamanı" bildirimi gelir.
+- Ayarlar: form → **Randevu** sekmesi → "WhatsApp hatırlatma": açık/kapalı, 1 gün önce / aynı gün / ikisi, bildirim saati, mesaj metni
+  (kutucuklara tıklayınca {ad}, {saat}, {hayvan_adi} gibi bilgiler metne eklenir).
+- Mesaj, o cihazda açık olan WhatsApp'tan gider. İşletme telefonundan basılırsa işletme numarasından gider.
+
+## Müşteri kartı
+
+- Menüde **Müşteriler**: aynı telefonla gelen bütün kayıtlar tek müşteri sayılır. İsim veya telefonla arayın.
+- Kartta: kaç kez geldi / gelmedi / iptal, yaklaşan randevular, bütün geçmiş (hayvan adı, şikâyet gibi bilgilerle) ve **notlar**.
+- Randevu kartındaki **👤 Kart** düğmesi ve kayıt detayındaki "Müşteri kartı" bağlantısı doğrudan karta götürür.
+- Kişi sadece görme yetkisi olduğu formların kayıtlarını ve notlarını görür. Not yazanı ve Ana Admin notu silebilir.
+
+## Logo
+
+- Form → **Görünüm** → Logo: PNG/JPG/SVG yükleyin (otomatik küçültülür), boyut ve hizayı seçin, **Yayınla**.

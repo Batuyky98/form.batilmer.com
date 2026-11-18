@@ -4,10 +4,18 @@ import { addDays, dayOfMonth, formatBytes, formatDate, formatDateShort, monthSho
 import { firstBookableDate, isDateOpen, resourcesForService } from '../lib/availability.js';
 import { visibilityMap } from '../lib/conditions.js';
 import { t } from '../lib/i18n.js';
+import { displayValue, servicePrice } from '../lib/shared.js';
+import { DEFAULT_STYLE } from '../lib/formStyles.js';
+import LineIcon, { splitEmoji } from './LineIcon.jsx';
+import ManageMine from './ManageMine.jsx';
+import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
+
+// Başlık / kutu içi yazı seçimi yapılabilen alan türleri
+const TEXTLIKE = ['text', 'email', 'tel', 'tc', 'number', 'textarea'];
 
 const RADIUS = { keskin: '2px', hafif: '10px', tam: '22px' };
 
-function useGoogleFont(font) {
+export function useGoogleFont(font) {
   useEffect(() => {
     if (!font || font === 'site') return;
     const id = `gf-${font.replace(/\s/g, '-')}`;
@@ -45,6 +53,17 @@ export function appearanceStyle(a) {
 }
 
 // ------------------------------------------------------------ Cloudflare Turnstile (anahtar tanımlıysa)
+// Sekmeli tasarımda seçenek kutucuğu: emoji varsa üstte çizgi simge, altta metin
+function ChoiceTile({ o }) {
+  const { emoji, text } = splitEmoji(o);
+  return (
+    <span className="bf-tile">
+      {emoji && <span className="bf-tile-ic"><LineIcon emoji={emoji} /></span>}
+      <span className="bf-tile-t">{text}</span>
+    </span>
+  );
+}
+
 function Turnstile({ siteKey, onToken }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -122,7 +141,7 @@ function FileInput({ field, value, onChange, lang, common }) {
 }
 
 // ------------------------------------------------------------ randevu seçici
-function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inputId, refreshKey, lang }) {
+function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inputId, refreshKey, lang, joinWaitlist }) {
   const v = value || {};
   const services = cfg.services || [];
   const serviceId = v.serviceId || services[0]?.id;
@@ -169,17 +188,21 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
 
   return (
     <div className="bf-appt" id={inputId}>
+      {services.length > 1 && (
+        <div className="bf-svc" role="radiogroup" aria-label={t(lang, 'service')}>
+          {services.map((s) => (
+            <button key={s.id} type="button" role="radio" aria-checked={serviceId === s.id} className={`bf-svc-card ${serviceId === s.id ? 'is-on' : ''}`} onClick={() => set({ serviceId: s.id, resourceId: '', time: '' })}>
+              <span className="bf-svc-tick" aria-hidden="true">✓</span>
+              <b>{s.name}</b>
+              <span>{s.duration} {lang === 'en' ? 'min' : 'dk'}{servicePrice(cfg, s) && <> · <strong className="bf-svc-price">{servicePrice(cfg, s)}</strong></>}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {services.length === 1 && servicePrice(cfg, services[0]) && (
+        <div className="bf-price-one">{lang === 'en' ? 'Price' : 'Ücret'}: <strong>{servicePrice(cfg, services[0])}</strong></div>
+      )}
       <div className="bf-appt-row">
-        {services.length > 1 && (
-          <label className="bf-mini">
-            <span>{t(lang, 'service')}</span>
-            <select value={serviceId} onChange={(e) => set({ serviceId: e.target.value, resourceId: '', time: '' })}>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>{s.name} ({s.duration} {lang === 'en' ? 'min' : 'dk'})</option>
-              ))}
-            </select>
-          </label>
-        )}
         {hasResources && (
           <label className="bf-mini">
             <span>{cfg.resourceLabel || 'Personel'}</span>
@@ -236,7 +259,7 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
           {slots === null ? (
             <div className="bf-muted">{t(lang, 'loadingSlots')}</div>
           ) : slots.length === 0 ? (
-            <div className="bf-muted">{t(lang, 'noSlots')}</div>
+            cfg.waitlist?.enabled && joinWaitlist ? <WaitBox key={`${v.date}${serviceId}`} date={v.date} serviceId={serviceId} lang={lang} join={joinWaitlist} /> : <div className="bf-muted">{t(lang, 'noSlots')}</div>
           ) : (
             <div className="bf-slots" role="radiogroup" aria-label={t(lang, 'pickTime')}>
               {slots.map((s) => (
@@ -248,8 +271,68 @@ function AppointmentPicker({ field, cfg, value, onChange, loadSlots, error, inpu
           )}
         </div>
       )}
+      {v.date && v.time && (
+        <div className="bf-pick-sum" role="status">
+          <span aria-hidden="true">📅</span>
+          <span>{weekdayName(v.date, lang)}, {formatDate(v.date, lang)} · <b>{v.time}</b>{services.length > 1 ? ` · ${services.find((x) => x.id === serviceId)?.name || ''}` : ''}</span>
+        </div>
+      )}
       {error && <div className="bf-error" role="alert">{error}</div>}
       {field.help && <div className="bf-help">{field.help}</div>}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ Bekleme listesi (dolu gün)
+// Formun içinde olduğu için <form> değil; Enter tuşu ana formu göndermesin.
+const WAIT_TXT = {
+  tr: { full: 'Bu gün tamamen dolu.', q: 'Yer açılırsa haber verelim mi?', p: 'Bu gün bir randevu iptal olursa size WhatsApp\'tan yazarız; ilk dokunan alır.', when: 'Hangi saatler uyar?', prefs: { hepsi: 'Fark etmez', sabah: 'Sabah', ogle: 'Öğle', aksam: 'Akşam' }, name: 'Ad soyad', phone: 'Cep telefonu', btn: 'Bekleme listesine yaz', sending: 'Kaydediliyor…', ok: 'Tamam! Yer açılırsa size WhatsApp\'tan haber vereceğiz.', other: 'Ya da yukarıdan başka bir gün seçin.', kvkk: 'Adınız ve telefonunuz sadece yer açıldığında size haber vermek için kullanılır; gün geçince silinir.' },
+  en: { full: 'This day is fully booked.', q: 'Shall we let you know if a spot opens?', p: 'If someone cancels, we will message you on WhatsApp; first come, first served.', when: 'Which times suit you?', prefs: { hepsi: 'Any time', sabah: 'Morning', ogle: 'Midday', aksam: 'Evening' }, name: 'Full name', phone: 'Mobile phone', btn: 'Join the waiting list', sending: 'Saving…', ok: 'Done! We will message you on WhatsApp if a spot opens.', other: 'Or pick another day above.', kvkk: 'Your name and phone are only used to tell you about an opening and are deleted after the day passes.' }
+};
+function WaitBox({ date, serviceId, lang, join }) {
+  const L = WAIT_TXT[lang] || WAIT_TXT.tr;
+  const [pref, setPref] = useState('hepsi');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [state, setState] = useState('');
+  const [err, setErr] = useState('');
+  const noEnter = (e) => e.key === 'Enter' && e.preventDefault();
+  async function send() {
+    setErr('');
+    if (name.trim().length < 2) return setErr(L.name + '?');
+    if (String(phone).replace(/\D/g, '').length < 10) return setErr(L.phone + '?');
+    setState('sending');
+    try {
+      await join({ date, serviceId, pref, name: name.trim(), phone });
+      setState('ok');
+    } catch (e) {
+      setState('');
+      setErr(e.message);
+    }
+  }
+  return (
+    <div className="bf-wait-wrap">
+      <div className="bf-full">😕 {L.full}</div>
+      {state === 'ok' ? (
+        <div className="bf-wait bf-wait-ok" role="status">✅ {L.ok}</div>
+      ) : (
+        <div className="bf-wait">
+          <b className="bf-wait-q">🔔 {L.q}</b>
+          <p>{L.p}</p>
+          <div className="bf-wait-l">{L.when}</div>
+          <div className="bf-wait-prefs" role="radiogroup" aria-label={L.when}>
+            {Object.entries(L.prefs).map(([k, l]) => (
+              <button key={k} type="button" role="radio" aria-checked={pref === k} className={`bf-chip ${pref === k ? 'is-on' : ''}`} onClick={() => setPref(k)}>{l}</button>
+            ))}
+          </div>
+          <input aria-label={L.name} placeholder={L.name} autoComplete="name" value={name} onKeyDown={noEnter} onChange={(e) => setName(e.target.value)} maxLength={100} />
+          <input aria-label={L.phone} placeholder={L.phone} type="tel" inputMode="tel" autoComplete="tel" value={phone} onKeyDown={noEnter} onChange={(e) => setPhone(e.target.value)} maxLength={20} />
+          {err && <div className="bf-error" role="alert">{err}</div>}
+          <button type="button" className="bf-wait-btn" disabled={state === 'sending'} onClick={send}>{state === 'sending' ? L.sending : L.btn}</button>
+          <div className="bf-wait-note">{L.kvkk}</div>
+        </div>
+      )}
+      <div className="bf-help">{L.other}</div>
     </div>
   );
 }
@@ -299,6 +382,7 @@ function AppointmentCard({ a, lang }) {
     [t(lang, 'date'), `${weekdayName(a.date, lang)}, ${formatDate(a.date, lang)} · ${a.start}${a.end ? `–${a.end}` : ''}`],
     a.service && a.service !== a.term ? [t(lang, 'service'), a.service] : null,
     a.resource ? [a.resourceLabel || t(lang, 'service'), a.resource] : null,
+    a.price ? [lang === 'en' ? 'Price' : 'Ücret', a.price] : null,
     a.partySize ? [t(lang, 'partySize'), t(lang, 'persons', { n: a.partySize })] : null,
     a.address ? [t(lang, 'address'), a.address] : null,
     [t(lang, 'status'), t(lang, 'statusLabels')[a.status] || a.status]
@@ -335,16 +419,23 @@ function AppointmentCard({ a, lang }) {
 }
 
 // ------------------------------------------------------------ ana bileşen
-export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '' }) {
+export default function FormRenderer({ content, onSubmit, loadSlots, preview = false, onDone, turnstileKey = '', findMine, cancelMine, initial, joinWaitlist }) {
   const { fields = [], appearance: a = {}, settings: s = {}, randevu: cfg } = content;
   const lang = s.language || 'tr';
   useGoogleFont(a.font);
-  const [values, setValues] = useState({});
+  const style = a.style || DEFAULT_STYLE;
+  const [values, setValues] = useState(() => initial?.values || {});
+  const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [kvkk, setKvkk] = useState(false);
   const [kvkkError, setKvkkError] = useState('');
   const [consent, setConsent] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const [consentError, setConsentError] = useState('');
+  const [mineOpen, setMineOpen] = useState(() => !!initial?.manage);
+  const pickedKey = useMemo(() => Object.keys(initial?.values || {})[0] || '', []);
+  const pv = pickedKey ? values[pickedKey] : null;
+  const picked = pv?.date && pv?.time ? { date: pv.date, time: pv.time, svc: (content.randevu?.services || []).find((x) => x.id === pv.serviceId)?.name || '' } : null;
   const [legal, setLegal] = useState(null); // { title, text } – form içinde açılan metin penceresi
   const [globalError, setGlobalError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -355,7 +446,52 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   const startedAt = useRef(Date.now());
 
   const vis = useMemo(() => visibilityMap(fields, values), [fields, values]);
-  const labelInside = a.labelPosition === 'ic';
+  const labelInside = a.labelPosition === 'ic' && style !== 'yuzen';
+  const floating = style === 'yuzen';
+
+  // "Adım adım" tasarımı: randevu alanı varsa 1) hizmet ve zaman 2) bilgiler 3) onay; yoksa 4'erli gruplar
+  const steps = useMemo(() => {
+    if (style === 'sekme') {
+      // Sekmeli adımlar: 1) detaylar (ör. Dostunuz) 2) hizmet ve saat 3) iletişim; son adımda gönderilir
+      const shown = fields.filter((f) => vis[f.key]);
+      const isContact = (f) => ['tel', 'email', 'tc', 'textarea', 'dosya'].includes(f.type) || (f.type === 'text' && /^(ad\b|adı|adınız|ad soyad|ad-soyad|isim|full name|name)/i.test(String(f.label || '').trim()));
+      const groups = [
+        { keys: shown.filter((f) => f.type !== 'randevu' && !isContact(f)).map((f) => f.key), title: '' },
+        { keys: shown.filter((f) => f.type === 'randevu').map((f) => f.key), title: lang === 'en' ? 'Service & Time' : 'Hizmet & Zaman' },
+        { keys: shown.filter((f) => f.type !== 'randevu' && isContact(f)).map((f) => f.key), title: lang === 'en' ? 'Contact' : 'İletişim' }
+      ].filter((g) => g.keys.length);
+      if (groups[0] && !groups[0].title) {
+        const g0 = shown.filter((f) => groups[0].keys.includes(f.key));
+        const first = g0.find((f) => ['radio', 'select', 'checkbox'].includes(f.type)) || g0[0];
+        groups[0].title = splitEmoji(first?.label || '').text.slice(0, 22) || t(lang, 'stepInfo');
+      }
+      if (groups.length < 2) return null;
+      groups[groups.length - 1].final = true;
+      return groups;
+    }
+    if (style !== 'adim') return null;
+    const shown = fields.filter((f) => vis[f.key]);
+    const appt = shown.filter((f) => f.type === 'randevu');
+    const rest = shown.filter((f) => f.type !== 'randevu');
+    const out = [];
+    if (appt.length) out.push({ title: cfg?.term || t(lang, 'stepTime'), keys: appt.map((f) => f.key) });
+    for (let i = 0; i < rest.length; i += appt.length ? 99 : 4) out.push({ title: t(lang, 'stepInfo'), keys: rest.slice(i, i + (appt.length ? 99 : 4)).map((f) => f.key) });
+    out.push({ title: t(lang, 'stepConfirm'), keys: [], final: true });
+    return out;
+  }, [style, fields, vis, cfg, lang]);
+  const stepNo = steps ? Math.min(step, steps.length - 1) : 0;
+  const inStep = (f) => !steps || steps[stepNo].keys.includes(f.key);
+  const lastStep = !steps || steps[stepNo].final;
+  function nextStep() {
+    const errs = {};
+    for (const f of fields) if (vis[f.key] && inStep(f)) {
+      const e = validateField(f, values[f.key], lang);
+      if (e) errs[f.key] = e;
+    }
+    setErrors(errs);
+    if (Object.keys(errs).length) return;
+    setStep(stepNo + 1);
+  }
   const set = (key, val) => {
     setValues((x) => {
       const next = { ...x };
@@ -397,7 +533,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     const payload = Object.fromEntries(Object.entries(values).filter(([k]) => vis[k]));
     setBusy(true);
     try {
-      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, turnstileToken });
+      const res = await onSubmit(payload, { honeypot: honeypot.current?.value || '', startedAt: startedAt.current, kvkkAccepted: kvkk, consentAccepted: consent, marketingAccepted: !!(MARKETING_FEATURE && s.marketing?.enabled && marketing), turnstileToken });
       setDone(res);
       onDone?.(res);
     } catch (err) {
@@ -421,12 +557,17 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
     a.width === 'dar' ? 'bf-narrow' : '',
     a.width === 'iki' ? 'bf-two' : '',
     labelInside ? 'bf-inside' : '',
-    a.dark ? 'bf-dark' : ''
+    a.dark ? 'bf-dark' : '',
+    `bf-style-${style}`
   ].join(' ');
+  const decor = style === 'cam' ? (
+    <span className="bf-glass-bg" aria-hidden="true"><i /><i /><i /></span>
+  ) : null;
 
   if (done) {
     return (
       <div className={className} style={appearanceStyle(a)} lang={lang}>
+        {decor}
         <div className="bf-success" role="status">
           <div className="bf-success-icon" aria-hidden="true">✓</div>
           <p>{done.successMessage || t(lang, 'thanks')}</p>
@@ -441,7 +582,41 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
   }
 
   return (
-    <form className={className} style={appearanceStyle(a)} onSubmit={submit} noValidate lang={lang}>
+    <form className={className} style={appearanceStyle(a)} onSubmit={lastStep ? submit : (e) => { e.preventDefault(); nextStep(); }} noValidate lang={lang}>
+      {decor}
+      {cfg?.selfManage && fields.some((f) => f.type === 'randevu') && (
+        <div className="bf-mine-link-row">
+          <button type="button" className="bf-mine-link" onClick={() => !preview && setMineOpen(true)}>🗓 {lang === 'en' ? 'Manage my booking' : 'Randevumu yönet'}</button>
+        </div>
+      )}
+      {picked && !done && (
+        <div className="bf-picked">🗓 {lang === 'en' ? 'Selected' : 'Seçtiğiniz saat'}: <b>{formatDate(picked.date, lang)} · {picked.time}{picked.svc ? ` · ${picked.svc}` : ''}</b></div>
+      )}
+      {steps && style === 'sekme' && (
+        <div className="bf-tabs" aria-label={`${stepNo + 1} / ${steps.length}`}>
+          {steps.map((st, i) => (i < stepNo ? (
+            <button key={i} type="button" className="bf-tab is-done" aria-label={`${i + 1}. ${st.title}`} onClick={() => { setErrors({}); setStep(i); }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+            </button>
+          ) : (
+            <div key={i} className={`bf-tab ${i === stepNo ? 'is-cur' : ''}`} aria-current={i === stepNo ? 'step' : undefined}>
+              <span className="bf-tab-n">{i + 1}</span>
+              {i === stepNo && <b>{st.title}</b>}
+            </div>
+          )))}
+        </div>
+      )}
+      {steps && style !== 'sekme' && (
+        <div className="bf-steps">
+          <div className="bf-steps-bar">{steps.map((st, i) => <i key={i} className={i < stepNo ? 'done' : i === stepNo ? 'cur' : ''} />)}</div>
+          <div className="bf-steps-meta"><span><b>{stepNo + 1}</b> / {steps.length} · {steps[stepNo].title}</span></div>
+        </div>
+      )}
+      {a.logo && (
+        <div className={`bf-logo bf-logo-${a.logoSize || 'orta'} bf-logo-${a.logoAlign === 'sol' ? 'sol' : 'orta'}`}>
+          <img src={a.logo} alt={s.title || 'Logo'} />
+        </div>
+      )}
       {a.titleOn === true && (s.title || s.description) && (
         <div className="bf-header">
           {s.title && <h2 className="bf-title">{s.title}</h2>}
@@ -449,8 +624,16 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      <div className="bf-fields">
-        {fields.filter((f) => vis[f.key]).map((f) => {
+      {steps && steps[stepNo].final && style !== 'sekme' && (
+        <div className="bf-recap" key="recap">
+          {fields.filter((f) => vis[f.key] && values[f.key] !== undefined && f.type !== 'dosya').map((f) => (
+            <div key={f.key}><span>{f.label}</span><b>{f.type === 'randevu' ? displayValue('randevu', values[f.key], cfg) : Array.isArray(values[f.key]) ? values[f.key].join(', ') : String(values[f.key])}</b></div>
+          ))}
+          <button type="button" className="bf-link" onClick={() => setStep(0)}>{t(lang, 'edit')}</button>
+        </div>
+      )}
+      <div className="bf-fields" key={steps ? `adim-${stepNo}` : 'tum'}>
+        {fields.filter((f) => vis[f.key] && inStep(f)).map((f) => {
           const id = `bf-${f.key}`;
           const err = errors[f.key];
           const wide = ['textarea', 'radio', 'checkbox', 'randevu', 'dosya'].includes(f.type);
@@ -462,8 +645,12 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               if (values[f.key] !== undefined && f.type !== 'dosya') setErrors((e) => ({ ...e, [f.key]: validateField(f, values[f.key], lang) || undefined }));
             }
           };
-          const ph = labelInside ? `${f.label}${f.required ? ' *' : ''}` : f.placeholder;
-          const showLabel = !labelInside || ['radio', 'checkbox', 'randevu', 'select', 'date', 'dosya'].includes(f.type);
+          // Alan bazında görünüm: 'baslik' (sadece başlık) · 'kutu' (sadece kutu içi yazı) · 'ikisi'. Boş = tasarımın varsayılanı
+          const mode = TEXTLIKE.includes(f.type) && ['baslik', 'kutu', 'ikisi'].includes(f.display) ? f.display : '';
+          const isFloat = !mode && floating && ['text', 'email', 'tel', 'tc', 'number', 'textarea'].includes(f.type);
+          const req = f.required ? ' *' : '';
+          const ph = mode === 'baslik' ? '' : mode === 'kutu' ? `${f.placeholder || f.label}${req}` : mode === 'ikisi' ? f.placeholder : isFloat ? ' ' : labelInside ? `${f.label}${req}` : f.placeholder;
+          const showLabel = mode ? mode !== 'kutu' : !labelInside || ['radio', 'checkbox', 'randevu', 'select', 'date', 'dosya'].includes(f.type);
           let control;
           switch (f.type) {
             case 'textarea':
@@ -490,7 +677,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
                   {(f.options || []).map((o) => (
                     <label key={o} className="bf-choice">
                       <input type="radio" name={id} checked={values[f.key] === o} onChange={() => set(f.key, o)} />
-                      <span>{o}</span>
+                      {style === 'sekme' ? <ChoiceTile o={o} /> : <span>{o}</span>}
                     </label>
                   ))}
                 </div>
@@ -506,7 +693,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
                         const next = e.target.checked ? [...arr, o] : arr.filter((x) => x !== o);
                         set(f.key, next.length ? next : undefined);
                       }} />
-                      <span>{o}</span>
+                      {style === 'sekme' ? <ChoiceTile o={o} /> : <span>{o}</span>}
                     </label>
                   ))}
                 </div>
@@ -533,7 +720,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               break;
             case 'randevu':
               control = cfg ? (
-                <AppointmentPicker field={f} cfg={cfg} inputId={id} value={values[f.key]} onChange={(val) => set(f.key, val)} loadSlots={loadSlots} error={err} refreshKey={slotRefresh} lang={lang} />
+                <AppointmentPicker field={f} cfg={cfg} inputId={id} value={values[f.key]} onChange={(val) => set(f.key, val)} loadSlots={loadSlots} error={err} refreshKey={slotRefresh} lang={lang} joinWaitlist={preview ? null : joinWaitlist} />
               ) : null;
               break;
             default:
@@ -542,7 +729,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
               );
           }
           return (
-            <div key={f.id} className={`bf-field ${wide ? 'bf-wide' : ''} ${err ? 'has-error' : ''}`}>
+            <div key={f.id} className={`bf-field ${wide ? 'bf-wide' : ''} ${err ? 'has-error' : ''} ${isFloat ? 'is-float' : ''}`}>
               <label htmlFor={id} id={`${id}-l`} className={showLabel ? 'bf-label' : 'sr-only'}>
                 {f.label}
                 {f.required && <span className="bf-req" aria-hidden="true"> *</span>}
@@ -561,7 +748,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         <input id="bf-website" name="website" type="text" tabIndex={-1} autoComplete="off" ref={honeypot} />
       </div>
 
-      {s.kvkk?.enabled && (
+      {lastStep && s.kvkk?.enabled && (
         <div className={`bf-kvkk ${kvkkError ? 'has-error' : ''}`}>
           <label className="bf-choice">
             <input id="bf-kvkk" type="checkbox" checked={kvkk} onChange={(e) => { setKvkk(e.target.checked); setKvkkError(''); }} aria-invalid={!!kvkkError} />
@@ -574,7 +761,7 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {s.consent?.enabled && (
+      {lastStep && s.consent?.enabled && (
         <div className={`bf-kvkk ${consentError ? 'has-error' : ''}`}>
           <label className="bf-choice">
             <input id="bf-consent" type="checkbox" checked={consent} onChange={(e) => { setConsent(e.target.checked); setConsentError(''); }} aria-invalid={!!consentError} />
@@ -588,6 +775,19 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
+      {MARKETING_FEATURE && lastStep && s.marketing?.enabled && (
+        <div className="bf-kvkk bf-marketing">
+          <label className="bf-choice">
+            <input id="bf-marketing" type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} />
+            <span>
+              {s.marketing.label || DEFAULT_MARKETING_LABEL}
+              {(s.marketing.text || s.marketing.url) && <LegalLink lang={lang} doc={s.marketing} title={lang === 'en' ? 'Details' : 'Ayrıntılar'} onOpen={setLegal} />}
+            </span>
+          </label>
+        </div>
+      )}
+
+      {mineOpen && findMine && <ManageMine lang={lang} find={findMine} cancel={cancelMine} className={className} vars={appearanceStyle(a)} onClose={() => setMineOpen(false)} />}
       {legal && (
         <div className="bf-legal" role="dialog" aria-modal="true" aria-label={legal.title} onMouseDown={(e) => e.target === e.currentTarget && setLegal(null)}>
           <div className="bf-legal-box">
@@ -601,11 +801,18 @@ export default function FormRenderer({ content, onSubmit, loadSlots, preview = f
         </div>
       )}
 
-      {!preview && <Turnstile siteKey={turnstileKey} onToken={setTurnstileToken} />}
+      {!preview && lastStep && <Turnstile siteKey={turnstileKey} onToken={setTurnstileToken} />}
 
       {globalError && <div className="bf-global-error" role="alert">{globalError}</div>}
 
-      <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : a.buttonText || t(lang, 'submit')}</button>
+      {steps ? (
+        <div className="bf-nav">
+          {stepNo > 0 && <button type="button" className="bf-back" aria-label={t(lang, 'back')} onClick={() => { setErrors({}); setStep(stepNo - 1); }}>{style === 'sekme' ? <>← {t(lang, 'back')}</> : '←'}</button>}
+          <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : lastStep ? a.buttonText || t(lang, 'submit') : style === 'sekme' ? `${lang === 'en' ? 'Continue' : 'Devam'} →` : `${t(lang, 'next')} →`}</button>
+        </div>
+      ) : (
+        <button type="submit" className="bf-btn" disabled={busy}>{busy ? t(lang, 'sending') : a.buttonText || t(lang, 'submit')}</button>
+      )}
     </form>
   );
 }

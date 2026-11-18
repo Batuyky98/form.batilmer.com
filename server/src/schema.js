@@ -214,5 +214,144 @@ export const MIGRATIONS = [
     version: 3,
     name: 'açık rıza onayı',
     up: ['ALTER TABLE submissions ADD COLUMN consent_at BIGINT NULL']
+  },
+  {
+    version: 4,
+    name: 'whatsapp hatırlatma ve müşteri kartı',
+    up: [
+      'ALTER TABLE appointments ADD COLUMN wa_at BIGINT NULL',
+      'ALTER TABLE appointments ADD COLUMN wa_by VARCHAR(150) NULL',
+      // Müşteriyi telefonla tanımak için (5321112233 biçiminde)
+      'ALTER TABLE submissions ADD COLUMN phone_key VARCHAR(20) NULL',
+      'CREATE INDEX idx_subs_phone ON submissions (phone_key)',
+      `CREATE TABLE customer_notes (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NOT NULL,
+        user_id VARCHAR(40) NOT NULL,
+        user_name VARCHAR(150) NOT NULL,
+        text TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_cnotes_phone ON customer_notes (phone_key)',
+      // Günlük "hatırlatmaları gönderin" bildirimi aynı gün iki kez gitmesin
+      `CREATE TABLE reminder_runs (
+        form_id VARCHAR(40) NOT NULL,
+        day CHAR(10) NOT NULL,
+        created_at BIGINT NOT NULL,
+        PRIMARY KEY (form_id, day)
+      )`
+    ],
+    // Eski kayıtların telefon anahtarını doldur
+    after: async (db) => {
+      const { phoneKey } = await import('../../src/lib/reminder.js');
+      const rows = await db.query('SELECT id, vals, types FROM submissions WHERE phone_key IS NULL');
+      for (const r of rows) {
+        let vals = {};
+        let types = {};
+        try {
+          vals = JSON.parse(r.vals || '{}');
+          types = JSON.parse(r.types || '{}');
+        } catch {
+          continue;
+        }
+        const key = Object.keys(types).find((k) => types[k] === 'tel' && vals[k]);
+        const pk = key ? phoneKey(vals[key]) : '';
+        if (pk) await db.query('UPDATE submissions SET phone_key = ? WHERE id = ?', [pk, r.id]);
+      }
+    }
+  },
+  {
+    version: 5,
+    name: 'giden mesajları kayda bağla (kalıcı silmede iz kalmasın)',
+    up: [
+      'ALTER TABLE outbox ADD COLUMN form_id VARCHAR(40) NULL',
+      'ALTER TABLE outbox ADD COLUMN submission_id VARCHAR(40) NULL',
+      'CREATE INDEX idx_outbox_sub ON outbox (submission_id)',
+      'CREATE INDEX idx_outbox_form ON outbox (form_id)'
+    ]
+  },
+  {
+    version: 6,
+    name: 'kampanya (ticari ileti) izni',
+    up: ['ALTER TABLE submissions ADD COLUMN marketing_at BIGINT NULL']
+  },
+  {
+    version: 7,
+    name: 'google yorum isteği ve puanlar',
+    up: [
+      `CREATE TABLE reviews (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        appointment_id VARCHAR(40) NOT NULL,
+        submission_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        token CHAR(32) NOT NULL,
+        sent_at BIGINT NULL,
+        sent_by VARCHAR(150) NULL,
+        rating INT NULL,
+        comment TEXT NULL,
+        rated_at BIGINT NULL,
+        google_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_reviews_form ON reviews (form_id, created_at)',
+      'CREATE INDEX idx_reviews_token ON reviews (token)',
+      'CREATE INDEX idx_reviews_appt ON reviews (appointment_id)',
+      'CREATE INDEX idx_reviews_phone ON reviews (phone_key)'
+    ]
+  },
+  {
+    version: 8,
+    name: 'tekrar çağırma ve bekleme listesi',
+    up: [
+      `CREATE TABLE recalls (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        appointment_id VARCHAR(40) NOT NULL,
+        submission_id VARCHAR(40) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        service_id VARCHAR(60) NOT NULL,
+        due_date CHAR(10) NOT NULL,
+        hidden_until CHAR(10) NULL,
+        status VARCHAR(20) NOT NULL,
+        sent_at BIGINT NULL,
+        sent_by VARCHAR(150) NULL,
+        booked_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_recalls_form ON recalls (form_id, status, due_date)',
+      'CREATE INDEX idx_recalls_appt ON recalls (appointment_id)',
+      'CREATE INDEX idx_recalls_phone ON recalls (phone_key)',
+      `CREATE TABLE waitlist (
+        id VARCHAR(40) PRIMARY KEY,
+        form_id VARCHAR(40) NOT NULL,
+        date CHAR(10) NOT NULL,
+        service_id VARCHAR(60) NOT NULL,
+        pref VARCHAR(10) NOT NULL,
+        name VARCHAR(150) NOT NULL,
+        phone VARCHAR(30) NOT NULL,
+        phone_key VARCHAR(20) NULL,
+        notified_at BIGINT NULL,
+        notified_by VARCHAR(150) NULL,
+        booked_at BIGINT NULL,
+        created_at BIGINT NOT NULL
+      )`,
+      'CREATE INDEX idx_waitlist_form ON waitlist (form_id, date)',
+      'CREATE INDEX idx_waitlist_phone ON waitlist (phone_key)'
+    ]
+  },
+  {
+    version: 9,
+    name: 'eksik indeksler (kalıcı silme ve birleştirmeler hızlansın)',
+    up: [
+      'CREATE INDEX idx_subs_appt ON submissions (appointment_id)',
+      'CREATE INDEX idx_subs_form_phone ON submissions (form_id, phone_key)',
+      'CREATE INDEX idx_subs_deleted ON submissions (deleted_at)',
+      'CREATE INDEX idx_appts_sub ON appointments (submission_id)',
+      'CREATE INDEX idx_reviews_sub ON reviews (submission_id)',
+      'CREATE INDEX idx_recalls_sub ON recalls (submission_id)',
+      'CREATE INDEX idx_files_form ON files (form_id)'
+    ]
   }
 ];

@@ -174,3 +174,8 @@ export function formBaseUrl() {
   const fromEnv = import.meta.env?.VITE_FORM_BASE_URL;
   return (fromEnv && fromEnv.trim()) || window.location.origin;
 }
+
+// İki tarih arasındaki gün farkı (b - a), "YYYY-MM-DD"
+export function diffDays(a, b) {
+  return Math.round((parseDate(b).getTime() - parseDate(a).getTime()) / 864e5);
+}

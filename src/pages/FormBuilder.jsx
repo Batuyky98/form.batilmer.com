@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 import { Link } from '../router.jsx';
-import { Badge, Field, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
+import { Badge, Field, Modal, Segmented, Spinner, Toggle, copyText, useConfirm, useToast } from '../components/ui.jsx';
 import FormRenderer from '../components/FormRenderer.jsx';
 import { COLOR_FIELDS, FIELD_TYPES, GOOGLE_FONTS, hasOptions, newField, typeLabel } from '../lib/templates.js';
 import { DEFAULT_RANDEVU, getSlots } from '../lib/availability.js';
 import { OPERATORS, needsValue, describeCondition } from '../lib/conditions.js';
 import { LANGS, DEFAULT_TEXTS } from '../lib/i18n.js';
-import { clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
+import { addDays, clone, formatDate, formatDateTime, slugify, formBaseUrl, uid, today } from '../lib/util.js';
 import { APPOINTMENT_TERMS } from '../lib/calendar.js';
-import { directionsUrl } from '../lib/shared.js';
+import { directionsUrl, readableOn } from '../lib/shared.js';
+import StylePicker from '../components/StylePicker.jsx';
+import EmojiPick from '../components/EmojiPick.jsx';
+import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview, RECALL_OPTIONS, DEFAULT_RECALL_TEXT, RECALL_VARS, fillRecall, DEFAULT_WAIT_TEXT, WAIT_VARS, fillWait } from '../lib/reminder.js';
+import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
+import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
 
 const TABS = [
   ['alanlar', 'Alanlar'],
@@ -47,6 +52,7 @@ function OptionsEditor({ options, onChange }) {
     <div className="stack-sm">
       {options.map((o, i) => (
         <div className="opt-row" key={i}>
+          <EmojiPick value={o} onChange={(v) => onChange(options.map((x, k) => (k === i ? v : x)))} />
           <input value={o} aria-label={`Seçenek ${i + 1}`} onChange={(e) => onChange(options.map((x, k) => (k === i ? e.target.value : x)))} />
           <button type="button" className="icon-btn" aria-label="Yukarı taşı" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
           <button type="button" className="icon-btn" aria-label="Aşağı taşı" onClick={() => move(i, 1)} disabled={i === options.length - 1}>↓</button>
@@ -99,6 +105,7 @@ function ConditionEditor({ field, prevFields, onChange }) {
   );
 }
 
+const TEXTLIKE_FIELDS = ['text', 'email', 'tel', 'tc', 'number', 'textarea'];
 const ACCEPT_OPTIONS = [['pdf', 'PDF'], ['jpg', 'JPG'], ['png', 'PNG'], ['doc', 'Word'], ['xls', 'Excel']];
 
 function FieldEditor({ field, onChange, allKeys, prevFields }) {
@@ -107,15 +114,34 @@ function FieldEditor({ field, onChange, allKeys, prevFields }) {
   return (
     <div className="field-editor stack">
       <div className="grid-2">
-        <Field label="Etiket" htmlFor={`fe-l-${field.id}`}>
+        <Field label="Başlık (etiket)" htmlFor={`fe-l-${field.id}`} hint={field.display === 'kutu' ? 'Formda görünmez; Excel ve kayıtlarda bu ad kullanılır.' : ''}>
           <input id={`fe-l-${field.id}`} value={field.label} onChange={(e) => set({ label: e.target.value })} />
         </Field>
         <Field label="Teknik anahtar" htmlFor={`fe-k-${field.id}`} hint={keyTaken ? 'Bu anahtar başka alanda da var!' : 'Excel ve veritabanında kullanılır. Kayıt geldikten sonra değiştirmeyin.'}>
           <input id={`fe-k-${field.id}`} value={field.key} onChange={(e) => set({ key: slugify(e.target.value).replace(/-/g, '_') })} />
         </Field>
       </div>
-      {field.type !== 'randevu' && !['radio', 'checkbox'].includes(field.type) && (
-        <Field label={field.type === 'select' ? 'Boş seçenek metni' : 'Placeholder (kutu içi örnek metin)'} htmlFor={`fe-p-${field.id}`}>
+      {TEXTLIKE_FIELDS.includes(field.type) && (
+        <div className="fe-disp">
+          <div className="pf-label">Formda nasıl görünsün?</div>
+          <Segmented
+            label="Görünüm"
+            value={field.display || ''}
+            onChange={(v) => set({ display: v })}
+            options={[{ value: '', label: 'Tasarıma göre' }, { value: 'baslik', label: 'Başlık' }, { value: 'kutu', label: 'Kutu içi yazı' }, { value: 'ikisi', label: 'İkisi de' }]}
+          />
+          <div className="fe-disp-demo" aria-hidden="true">
+            {(field.display === 'baslik' || field.display === 'ikisi') && <span className="fe-demo-l">{field.label || 'Başlık'}{field.required ? ' *' : ''}</span>}
+            <span className="fe-demo-box">{field.display === 'kutu' ? `${field.placeholder || field.label}${field.required ? ' *' : ''}` : field.display === 'ikisi' ? field.placeholder || <i>kutu içi yazı boş</i> : field.display === 'baslik' ? '' : <i>Görünüm sekmesindeki tasarıma göre</i>}</span>
+          </div>
+        </div>
+      )}
+      {field.type !== 'randevu' && !['radio', 'checkbox'].includes(field.type) && field.display !== 'baslik' && (
+        <Field
+          label={field.type === 'select' ? 'Boş seçenek metni' : 'Kutu içi yazı (placeholder)'}
+          htmlFor={`fe-p-${field.id}`}
+          hint={field.display === 'kutu' ? 'Boş bırakırsanız başlık yazısı kutunun içinde görünür.' : 'Kutu boşken içinde soluk görünen örnek yazı. Ör: 05xx xxx xx xx'}
+        >
           <input id={`fe-p-${field.id}`} value={field.placeholder || ''} onChange={(e) => set({ placeholder: e.target.value })} />
         </Field>
       )}
@@ -309,6 +335,73 @@ const PALETTES = [
   { name: 'Siyah zarif', primary: '#111827', text: '#111827', colors: { fieldBorder: '#D1D5DB', selectedBg: '#111827' } }
 ];
 
+// Logo: seçilen resim tarayıcıda en fazla 400px'e küçültülür, forma gömülür (ayrı dosya sunucusu gerekmez)
+function shrinkImage(file, max = 400) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) return reject(new Error('PNG, JPG, WEBP veya SVG resim seçin.'));
+    if (file.size > 8 * 1024 * 1024) return reject(new Error('Resim en fazla 8 MB olabilir.'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth || max, img.naturalHeight || max));
+      const w = Math.max(1, Math.round((img.naturalWidth || max) * k));
+      const h = Math.max(1, Math.round((img.naturalHeight || max) * k));
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      let out = c.toDataURL('image/png');
+      if (out.length > 380_000) out = c.toDataURL('image/webp', 0.85);
+      if (out.length > 380_000) out = c.toDataURL('image/jpeg', 0.8);
+      if (out.length > 380_000) return reject(new Error('Resim çok büyük; daha sade bir logo deneyin.'));
+      resolve(out);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Resim açılamadı.'));
+    };
+    img.src = url;
+  });
+}
+
+function LogoSection({ a, set }) {
+  const toast = useToast();
+  const ref = useRef(null);
+  async function pick(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      set({ logo: await shrinkImage(file) });
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  }
+  return (
+    <section className="sub-card stack">
+      <h3>Logo</h3>
+      <div className="logo-row">
+        <div className={`logo-box ${a.logo ? 'has' : ''}`}>{a.logo ? <img src={a.logo} alt="Logo" /> : <span className="muted small">Logo yok</span>}</div>
+        <div className="stack-sm">
+          <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={pick} />
+          <div className="row wrap">
+            <button type="button" className="btn" onClick={() => ref.current?.click()}>{a.logo ? 'Değiştir' : 'Logo yükle'}</button>
+            {a.logo && <button type="button" className="btn btn-ghost" onClick={() => set({ logo: '' })}>Kaldır</button>}
+          </div>
+          <div className="pf-hint">Formun en üstünde görünür. PNG (şeffaf zeminli) en iyisidir; resim otomatik küçültülür.</div>
+        </div>
+      </div>
+      {a.logo && (
+        <div className="row wrap" style={{ gap: 16 }}>
+          <Field label="Boyut"><Segmented label="Logo boyutu" value={a.logoSize || 'orta'} onChange={(v) => set({ logoSize: v })} options={[{ value: 'kucuk', label: 'Küçük' }, { value: 'orta', label: 'Orta' }, { value: 'buyuk', label: 'Büyük' }]} /></Field>
+          <Field label="Hizalama"><Segmented label="Logo hizası" value={a.logoAlign || 'orta'} onChange={(v) => set({ logoAlign: v })} options={[{ value: 'sol', label: 'Sol' }, { value: 'orta', label: 'Orta' }]} /></Field>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AppearanceTab({ draft, setDraft }) {
   const a = draft.appearance;
   const s = draft.settings;
@@ -320,6 +413,14 @@ function AppearanceTab({ draft, setDraft }) {
   return (
     <div className="stack">
       <p className="muted">Form, müşterinin sitesine iframe ile gömülecek. Bu ayarlarla sitenin bir parçası gibi görünmesini sağlayın.</p>
+
+      <section className="sub-card stack">
+        <h3>Tasarım</h3>
+        <div className="pf-hint">Bir tasarıma tıklayın; renkleri, yazı tipi ve köşeleri tek seferde değişir. Sağdaki önizlemede hemen görünür, müşteriye <b>Yayınla</b> deyince geçer. Sonra renkleri aşağıdan dilediğiniz gibi ayarlayabilirsiniz.</div>
+        <StylePicker value={a.style || DEFAULT_STYLE} onChange={(id) => setDraft({ ...draft, appearance: applyFormStyle(a, id) })} />
+      </section>
+
+      <LogoSection a={a} set={set} />
 
       <section className="sub-card stack">
         <h3>Başlık</h3>
@@ -544,8 +645,30 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         )}
       </section>
 
+      <AssistantSection form={form} s={s} set={set} appearance={draft.appearance} />
+
       <section className="sub-card stack">
         <h3>KVKK aydınlatma metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
+        <div className="kv-box">
+          <div className="pf-label">Veri sorumlusu (işletme) bilgileri</div>
+          <div className="grid-2">
+            <Field label="Şirket unvanı" htmlFor="kv-co" hint="Vergi levhasındaki ad. Ör: Vital Veteriner Hizmetleri Ltd. Şti."><input id="kv-co" disabled={!isAdmin} placeholder={form.isletme || ''} value={s.kvkk.company || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, company: e.target.value } })} /></Field>
+            <Field label="KVKK başvuru e-postası" htmlFor="kv-em"><input id="kv-em" disabled={!isAdmin} type="email" placeholder="info@isletme.com" value={s.kvkk.contactEmail || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, contactEmail: e.target.value } })} /></Field>
+            <Field label="Telefon" htmlFor="kv-tel"><input id="kv-tel" disabled={!isAdmin} type="tel" placeholder="0212 …" value={s.kvkk.contactPhone || ''} onChange={(e) => set({ kvkk: { ...s.kvkk, contactPhone: e.target.value } })} /></Field>
+            <Field label="Adres" hint="Ayarlar'daki işletme adresi kullanılır."><input disabled value={s.address || '— Yukarıdan işletme adresini girin —'} /></Field>
+          </div>
+          {isAdmin && (
+            <button type="button" className="btn btn-primary" onClick={async () => {
+              const has = (s.kvkk.text || '').trim();
+              if (has && !(await confirm({ title: 'Metin yeniden oluşturulsun mu?', message: 'Mevcut aydınlatma metninin yerine forma göre hazırlanan yeni metin yazılacak.', confirmText: 'Oluştur' }))) return;
+              const text = buildKvkkText({ isletme: form.isletme || form.name, settings: s, fields: draft.fields, randevu: draft.randevu });
+              set({ kvkk: { ...s.kvkk, enabled: true, text } });
+              toast('Aydınlatma metni forma göre hazırlandı. Kontrol edip Yayınla deyin.');
+            }}>✨ Forma göre hazır metni oluştur</button>
+          )}
+          {kvkkMissing(draft).length > 0 && <div className="notice notice-warn">Aydınlatma metninde {kvkkMissing(draft).join(' ve ')} geçmiyor. Yukarıdaki düğmeyle metni yeniden oluşturun.</div>}
+          <div className="pf-hint">Metin; formdaki alanlara, randevu, WhatsApp hatırlatma, bekleme listesi, tekrar çağırma ve saklama süresi ayarlarına göre otomatik yazılır. Alan eklerseniz ya da ayar değiştirirseniz düğmeye tekrar basın. Hukuki tavsiye değildir; ilk kurulumda bir avukata kontrol ettirin.</div>
+        </div>
         <Toggle id="st-kv" disabled={!isAdmin} checked={s.kvkk.enabled} onChange={(v) => set({ kvkk: { ...s.kvkk, enabled: v } })} label="Formda KVKK onay kutusu göster (işaretlenmeden gönderilemez)" />
         {s.kvkk.enabled && (
           <>
@@ -558,6 +681,23 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
         )}
         {isAdmin && !s.kvkk.enabled && <div className="notice notice-warn">KVKK onayı kapalı. Kişisel veri topluyorsanız aydınlatma yükümlülüğünün başka şekilde karşılandığından emin olun.</div>}
       </section>
+
+      {MARKETING_FEATURE && <section className="sub-card stack">
+        <div className="row-between">
+          <h3>📣 Kampanya izni (ticari ileti) {!isAdmin && <Badge tone="gray">Sadece Ana Admin</Badge>}</h3>
+          <Toggle id="st-mk" disabled={!isAdmin} checked={!!s.marketing?.enabled} onChange={(v) => set({ marketing: { ...s.marketing, label: s.marketing?.label || DEFAULT_MARKETING_LABEL, enabled: v, text: v && !s.marketing?.text ? buildMarketingText({ isletme: form.isletme || form.name, settings: s }) : s.marketing?.text } })} label={s.marketing?.enabled ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken formun sonunda <b>isteğe bağlı, işaretsiz</b> bir kutu çıkar. İşaretleyenin onay zamanı kayda yazılır; Müşteriler ekranında "Kampanya izni olanlar" diye ayrılır. Randevu hatırlatması için bu izin gerekmez; indirim/kampanya mesajı için gerekir (işletme ayrıca İYS'ye kayıtlı olmalı).</div>
+        {s.marketing?.enabled && (
+          <>
+            <Field label="Kutunun yanındaki cümle"><input disabled={!isAdmin} value={s.marketing.label} onChange={(e) => set({ marketing: { ...s.marketing, label: e.target.value } })} /></Field>
+            <Field label="Ayrıntı metni" hint="Formda &quot;Ayrıntılar&quot; bağlantısında açılır.">
+              <textarea disabled={!isAdmin} rows={6} value={s.marketing.text || ''} onChange={(e) => set({ marketing: { ...s.marketing, text: e.target.value } })} />
+            </Field>
+            {isAdmin && <div><button type="button" className="btn btn-sm" onClick={() => set({ marketing: { ...s.marketing, text: buildMarketingText({ isletme: form.isletme || form.name, settings: s }) } })}>Hazır metni yeniden yaz</button></div>}
+          </>
+        )}
+      </section>}
 
       <section className="sub-card stack">
         <h3>Açık rıza metni {!isAdmin && <Badge tone="gray">Sadece Ana Admin değiştirebilir</Badge>}</h3>
@@ -574,14 +714,155 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
           </>
         )}
       </section>
+
+      {isAdmin && <PurgeData form={form} />}
     </div>
+  );
+}
+
+// Test kayıtlarını temizle (sadece Ana Admin): form müşteriye teslim edilmeden önce denemeleri siler
+function PurgeData({ form }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function run(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api.purgeFormData(form.id, typed);
+      toast(`${r.deleted} kayıt ve randevuları silindi. Form temiz.`);
+      setOpen(false);
+      setTyped('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="danger-zone stack">
+      <h3>Test kayıtlarını temizle <Badge tone="blue">Ana Admin</Badge></h3>
+      <p className="muted small">Formu müşteriye teslim etmeden önce deneme amaçlı yapılan <b>bütün kayıtları, randevuları ve yüklenen dosyaları</b> kalıcı olarak siler. Formun alanları, tasarımı ve ayarları olduğu gibi kalır. Kullanıcılar bu bölümü görmez.</p>
+      <div><button type="button" className="btn btn-danger-ghost" onClick={() => setOpen(true)}>Kayıtları temizle…</button></div>
+      {open && (
+        <Modal title="Test kayıtlarını temizle" onClose={() => setOpen(false)}>
+          <form className="stack" onSubmit={run}>
+            <div className="notice notice-err"><b>{form.name}</b> formundaki bütün kayıtlar, randevular ve dosyalar <b>kalıcı olarak</b> silinecek. Çöp kutusuna gitmez, geri alınamaz.</div>
+            <Field label={`Onaylamak için formun linkini yazın: ${form.slug}`} htmlFor="pg-s">
+              <input id="pg-s" autoComplete="off" autoCapitalize="none" spellCheck={false} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={form.slug} />
+            </Field>
+            {error && <div className="notice notice-err" role="alert">{error}</div>}
+            <div className="row-end">
+              <button type="button" className="btn" onClick={() => setOpen(false)}>Vazgeç</button>
+              <button className="btn btn-danger" disabled={busy || typed.trim() !== form.slug}>{busy ? 'Siliniyor…' : 'Kalıcı olarak sil'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </section>
   );
 }
 
 // ======================================================= RANDEVU
 const WEEK = [[1, 'Pazartesi'], [2, 'Salı'], [3, 'Çarşamba'], [4, 'Perşembe'], [5, 'Cuma'], [6, 'Cumartesi'], [0, 'Pazar']];
 
-function RandevuTab({ draft, setDraft, isAdmin }) {
+const AS_COLORS = [
+  ['#3F6688', 'Gece mavisi'], ['#2F5BEA', 'Mavi'], ['#0E7490', 'Petrol'], ['#0F9F6E', 'Yeşil'], ['#15803D', 'Koyu yeşil'],
+  ['#C0127A', 'Fuşya'], ['#DB2777', 'Pembe'], ['#8B5CF6', 'Mor'], ['#DC2626', 'Kırmızı'], ['#EA580C', 'Turuncu'],
+  ['#B45309', 'Kahve'], ['#111827', 'Siyah']
+];
+const AS_ITEMS = [['randevu', '🗓 Randevu al'], ['fiyat', '💰 Fiyatlar'], ['saat', '🕒 Çalışma saatleri'], ['adres', '📍 Adres'], ['sss', '❓ Sık sorulanlar'], ['yonet', '📅 Randevumu yönet'], ['wa', '💬 WhatsApp']];
+
+// Ücretsiz sohbet asistanı (yapay zekâ yok): işletme sitesine tek satırla eklenen balon
+function AssistantSection({ form, s, set, appearance }) {
+  const toast = useToast();
+  const as = s.assistant;
+  const primary = /^#[0-9a-f]{6}$/i.test(appearance?.primary || '') ? appearance.primary : '#2F5BEA';
+  const color = /^#[0-9a-f]{6}$/i.test(as.color || '') ? as.color : primary;
+  const on = readableOn(color);
+  const logo = appearance?.logo;
+  const put = (patch) => set({ assistant: { ...as, ...patch } });
+  const faq = as.faq || [];
+  const setFaq = (i, patch) => put({ faq: faq.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
+  const code = `<script src="${formBaseUrl()}/asistan.js" data-form="${form.slug}" defer></script>`;
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>💬 Sohbet asistanı <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="as-on" checked={!!as.enabled} onChange={(v) => put({ enabled: v })} label={as.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      {as.enabled && !form.published?.settings?.assistant?.enabled && (
+        <div className="notice notice-warn"><b>Asistan henüz yayında değil.</b> Açık olması taslakta kaldı; sitenizde görünmesi için sağ üstten <b>Yayınla</b> deyin.</div>
+      )}
+      {!as.enabled && form.published?.settings?.assistant?.enabled && (
+        <div className="notice notice-warn">Asistan yayında hâlâ açık. Kapatmak için <b>Yayınla</b> deyin.</div>
+      )}
+      <div className="pf-hint">Sitenizin köşesinde sohbet balonu çıkar. Müşteri düğmelere dokunarak fiyatları, çalışma saatlerini, adresi ve boş randevu saatlerini görür; saate dokununca form o saat seçili açılır. Bilgiler paneldeki ayarlardan otomatik gelir.</div>
+      {as.enabled && (
+        <>
+          <div className="pf-label">Renk</div>
+          <div className="as-colors" role="radiogroup" aria-label="Asistan rengi">
+            <button type="button" role="radio" aria-checked={!as.color} className={`as-sw as-sw-auto ${!as.color ? 'is-on' : ''}`} style={{ background: primary }} title="Formun rengi" onClick={() => put({ color: '' })}><span>Form</span></button>
+            {AS_COLORS.map(([c, n]) => (
+              <button key={c} type="button" role="radio" aria-checked={as.color.toUpperCase() === c} aria-label={n} title={n} className={`as-sw ${as.color.toUpperCase() === c ? 'is-on' : ''}`} style={{ background: c }} onClick={() => put({ color: c })} />
+            ))}
+            <label className={`as-sw as-sw-custom ${as.color && !AS_COLORS.some(([c]) => c === as.color.toUpperCase()) ? 'is-on' : ''}`} title="Özel renk" style={as.color && !AS_COLORS.some(([c]) => c === as.color.toUpperCase()) ? { background: as.color } : undefined}>
+              <input type="color" aria-label="Özel renk seç" value={color} onChange={(e) => put({ color: e.target.value.toUpperCase() })} />
+            </label>
+          </div>
+          <div className="grid-2">
+            <Field label="Sohbet başlığı" htmlFor="as-ti" hint="Boşsa işletme adı yazar."><input id="as-ti" maxLength={60} placeholder={form.isletme || form.name} value={as.title || ''} onChange={(e) => put({ title: e.target.value })} /></Field>
+            <Field label="Başlığın altındaki yazı" htmlFor="as-su" hint="Boş bırakılırsa çıkmaz."><input id="as-su" maxLength={80} value={as.subtitle ?? ''} onChange={(e) => put({ subtitle: e.target.value })} /></Field>
+          </div>
+          <Field label="Balonun yanındaki kısa yazı" htmlFor="as-pk" hint="Sitede balonun üstünde bir kez çıkar; müşteri kapatırsa o ziyarette tekrar çıkmaz. Boş bırakılırsa çıkmaz."><input id="as-pk" maxLength={120} value={as.peek ?? ''} onChange={(e) => put({ peek: e.target.value })} /></Field>
+          <div className="as-prev" aria-label="Önizleme">
+            <div className="as-prev-box">
+              <div className="as-prev-h" style={{ background: color, color: on }}>
+                <span className="as-prev-av">{logo ? <img src={logo} alt="" /> : '💬'}</span>
+                <span className="as-prev-t"><b>{as.title || form.isletme || form.name}</b>{as.subtitle && <span>{as.subtitle}</span>}</span>
+                <span aria-hidden="true">✕</span>
+              </div>
+              <div className="as-prev-b"><span className="as-prev-bot">{as.greeting || `Merhaba 👋 ${form.isletme || form.name}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`}</span><span className="as-prev-me" style={{ background: color, color: on }}>💰 Fiyatlar</span></div>
+            </div>
+            <div className="as-prev-side">
+              {as.peek && <span className="as-prev-peek">{as.peek}</span>}
+              <span className="as-prev-btn" style={{ background: color, color: on }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg></span>
+            </div>
+          </div>
+          <Field label="Karşılama mesajı" htmlFor="as-gr"><input id="as-gr" maxLength={300} placeholder={`Merhaba 👋 ${form.isletme || form.name}'e hoş geldiniz. Size nasıl yardımcı olabilirim?`} value={as.greeting || ''} onChange={(e) => put({ greeting: e.target.value })} /></Field>
+          <div className="pf-label">Menüde görünsün</div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            {AS_ITEMS.map(([k, t]) => (
+              <button key={k} type="button" className={`nf-chip ${as.items[k] ? 'is-on' : ''}`} aria-pressed={!!as.items[k]} onClick={() => put({ items: { ...as.items, [k]: !as.items[k] } })}>{as.items[k] ? '✓ ' : ''}{t}</button>
+            ))}
+          </div>
+          <Field label="WhatsApp numarası" htmlFor="as-wa" hint="Boş bırakılırsa WhatsApp düğmesi çıkmaz."><input id="as-wa" type="tel" placeholder="0532 000 00 00" value={as.whatsapp || ''} onChange={(e) => put({ whatsapp: e.target.value })} /></Field>
+          <div className="pf-label">Sık sorulanlar</div>
+          {faq.map((f, i) => (
+            <div key={i} className="as-faq">
+              <input aria-label="Soru" placeholder="Soru (ör: Otopark var mı?)" value={f.q} onChange={(e) => setFaq(i, { q: e.target.value })} />
+              <textarea aria-label="Cevap" rows={2} placeholder="Cevap" value={f.a} onChange={(e) => setFaq(i, { a: e.target.value })} />
+              <button type="button" className="link-sm" onClick={() => put({ faq: faq.filter((_, j) => j !== i) })}>Sil</button>
+            </div>
+          ))}
+          {faq.length < 30 && <div><button type="button" className="btn btn-sm" onClick={() => put({ faq: [...faq, { q: '', a: '' }] })}>+ Soru ekle</button></div>}
+          <div className="pf-label">Sitenize ekleyin (tek satır, &lt;/body&gt; öncesine)</div>
+          <pre className="as-code">{code}</pre>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button type="button" className="btn btn-sm" onClick={async () => toast((await copyText(code)) ? 'Kopyalandı.' : 'Kopyalanamadı.', 'ok')}>Kodu kopyala</button>
+            <a className="btn btn-sm" href={`/asistan/${form.slug}?onizleme=1`} target="_blank" rel="noopener noreferrer">Önizle ↗</a>
+          </div>
+          <div className="pf-hint">Önizleme kaydedilmiş taslağı gösterir. Sitenizdeki balon, formu <b>Yayınla</b> dedikten sonra çıkar.</div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function RandevuTab({ form, draft, setDraft, isAdmin }) {
   const cfg = draft.randevu || clone(DEFAULT_RANDEVU);
   const set = (patch) => setDraft({ ...draft, randevu: { ...cfg, ...patch } });
   const [closed, setClosed] = useState('');
@@ -616,23 +897,27 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
       </section>
 
       <section className="sub-card stack">
-        <h3>Hizmetler</h3>
+        <div className="row-between">
+          <h3>Hizmetler</h3>
+          <Toggle id="svc-price" checked={!!cfg.showPrices} onChange={(v) => set({ showPrices: v })} label="Fiyatları göster" />
+        </div>
         <div className="table-wrap">
           <table className="tbl tbl-compact">
-            <thead><tr><th>Hizmet adı</th><th>Süre (dk)</th><th>Ara (dk)</th><th aria-label="İşlem" /></tr></thead>
+            <thead><tr><th>Hizmet adı</th><th>Süre (dk)</th><th>Ara (dk)</th>{cfg.showPrices && <th>Fiyat (₺)</th>}<th aria-label="İşlem" /></tr></thead>
             <tbody>
               {cfg.services.map((s, i) => (
                 <tr key={s.id}>
-                  <td><input aria-label="Hizmet adı" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} /></td>
+                  <td><div className="opt-row"><EmojiPick value={s.name} onChange={(v) => setService(i, { name: v })} /><input aria-label="Hizmet adı" value={s.name} onChange={(e) => setService(i, { name: e.target.value })} /></div></td>
                   <td><input aria-label="Süre" type="number" min="5" step="5" value={s.duration} onChange={(e) => setService(i, { duration: Number(e.target.value) })} /></td>
                   <td><input aria-label="Arka arkaya randevu arası" type="number" min="0" step="5" value={s.buffer || 0} onChange={(e) => setService(i, { buffer: Number(e.target.value) })} /></td>
+                  {cfg.showPrices && <td><input aria-label="Fiyat" type="number" min="0" step="1" inputMode="decimal" placeholder="—" value={s.price ?? ''} onChange={(e) => setService(i, { price: e.target.value === '' ? '' : Number(e.target.value) })} /></td>}
                   <td><button type="button" className="icon-btn" aria-label="Hizmeti sil" disabled={cfg.services.length === 1} onClick={() => set({ services: cfg.services.filter((_, k) => k !== i) })}>✕</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="pf-hint">"Ara": randevudan sonra bırakılacak temizlik/hazırlık süresi.</div>
+        <div className="pf-hint">"Ara": randevudan sonra bırakılacak temizlik/hazırlık süresi.{cfg.showPrices ? ' Fiyatı boş bırakılan hizmette fiyat yazmaz.' : ' "Fiyatları göster" açılırsa müşteri her hizmetin fiyatını formda görür.'}</div>
         <div><button type="button" className="btn btn-sm" onClick={() => set({ services: [...cfg.services, { id: uid('svc_'), name: 'Yeni hizmet', duration: 30, buffer: 0 }] })}>+ Hizmet ekle</button></div>
       </section>
 
@@ -739,6 +1024,42 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
       </section>
 
       <section className="sub-card stack">
+        <div className="row-between">
+          <h3>🗓 Randevumu yönet</h3>
+          <Toggle id="self-manage" checked={!!cfg.selfManage} onChange={(v) => set({ selfManage: v })} label={cfg.selfManage ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken formun sağ üstünde "Randevumu yönet" bağlantısı çıkar. Müşteri telefon numarası ve ad soyadıyla aktif randevusunu görür, iptal edebilir (iptal süresi kuralı geçerlidir). İki bilgi birden eşleşmezse hiçbir şey gösterilmez; çok deneme yapan kısa süre engellenir.</div>
+      </section>
+
+      <section className="sub-card stack">
+        <div className="row-between">
+          <h3>⭐ Google yorum isteği</h3>
+          <Toggle id="rv-on" checked={!!cfg.review?.enabled} onChange={(v) => set({ review: { ...(cfg.review || {}), enabled: v } })} label={cfg.review?.enabled ? 'Açık' : 'Kapalı'} />
+        </div>
+        <div className="pf-hint">Açıkken randevusu "Geldi" olarak işaretlenen müşteriler <b>Yorumlar</b> ekranına düşer. Personel tek dokunuşla WhatsApp'tan yorum isteği gönderir; müşteri linke dokununca Google yorum ekranı açılır.</div>
+        {cfg.review?.enabled && (
+          <>
+            <Field label="Google yorum linkiniz" htmlFor="rv-url" hint='Google İşletme Profili → "Yorum isteyin" / "Yorum formunu paylaşın" bağlantısı (https://g.page/r/... gibi).'>
+              <input id="rv-url" type="url" placeholder="https://g.page/r/..." value={cfg.review.googleUrl || ''} onChange={(e) => set({ review: { ...cfg.review, googleUrl: e.target.value.trim() } })} />
+            </Field>
+            {!cfg.review.googleUrl && <div className="notice notice-warn">Link girilmeden yorum isteği çalışmaz.</div>}
+            <Field label="Müşteri linke dokununca">
+              <Segmented label="Yorum akışı" value={cfg.review.mode === 'puan' ? 'puan' : 'google'} onChange={(v) => set({ review: { ...cfg.review, mode: v } })} options={[{ value: 'google', label: 'Doğrudan Google yorum ekranı (tek adım)' }, { value: 'puan', label: 'Önce bizde 1-5 yıldız' }]} />
+            </Field>
+            <div className="pf-hint">{cfg.review.mode === 'puan' ? 'Müşteri önce bizim sayfada puan verir (1-2 yıldızda size bildirim gelir), sonra herkese "Google\'da yorum yaz" düğmesi gösterilir. İki adım olduğu için Google\'a giden sayısı daha az olur.' : 'Önerilen. Müşteri linke dokunduğu anda Google\'ın yorum ekranı açılır; yıldızı ve yorumu doğrudan Google\'da verir. Panelde kime gönderildiği ve kimin Google\'a gittiği görünür.'}</div>
+            <Field label="Mesaj metni" htmlFor="rv-text" hint="{ad}, {isletme}, {hizmet}, {puan_linki} yer tutucularını kullanabilirsiniz. {puan_linki} mutlaka olmalı.">
+              <textarea id="rv-text" rows={3} value={cfg.review.text || DEFAULT_REVIEW_TEXT} onChange={(e) => set({ review: { ...cfg.review, text: e.target.value } })} />
+            </Field>
+            <div className="wa-bubble">{fillReview(cfg.review.text, { name: 'Ayşe Yılmaz', isletme: form?.isletme || form?.name, service: cfg.services?.[0]?.name, url: `${formBaseUrl().replace(/^https?:\/\//, '')}/yorum/…` })}</div>
+          </>
+        )}
+      </section>
+
+      <WaReminderSection form={form} draft={draft} cfg={cfg} set={set} />
+      <RecallSection form={form} draft={draft} cfg={cfg} set={set} />
+      <WaitlistSection form={form} draft={draft} cfg={cfg} set={set} />
+
+      <section className="sub-card stack">
         <h3>Müşteriye SMS <Badge tone="blue">Ücretli ek özellik</Badge> {!isAdmin && <Badge tone="gray">Sadece Ana Admin açabilir</Badge>}</h3>
         <Toggle id="sms-c" disabled={!isAdmin} checked={cfg.sms?.confirm} onChange={(v) => set({ sms: { ...cfg.sms, confirm: v } })} label="Randevu alınınca, onaylanınca, taşınınca veya iptal edilince SMS gönder" />
         <Toggle id="sms-r" disabled={!isAdmin} checked={cfg.sms?.reminder} onChange={(v) => set({ sms: { ...cfg.sms, reminder: v } })} label="Hatırlatmayı SMS ile de gönder" />
@@ -746,6 +1067,176 @@ function RandevuTab({ draft, setDraft, isAdmin }) {
         <div className="pf-hint">SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) bağlanana kadar SMS'ler gönderilmez, "Giden mailler" sayfasında görünür. SMS ücretlidir.</div>
       </section>
     </div>
+  );
+}
+
+// WhatsApp ile tek tık hatırlatma ayarları (ücretsiz; personel gönderir)
+function WaReminderSection({ form, draft, cfg, set }) {
+  const wa = { ...DEFAULT_WA, ...(cfg.wa || {}) };
+  const setWa = (patch) => set({ wa: { ...wa, ...patch } });
+  const ref = useRef(null);
+  const text = wa.text || DEFAULT_WA_TEXT;
+  const extra = draft.fields.filter((f) => ['text', 'radio', 'select'].includes(f.type) && !/ad.?soyad|isim|name/i.test(f.key)).slice(0, 6);
+  const svc = cfg.services?.[0]?.name || 'Muayene';
+  const sampleVals = Object.fromEntries(extra.map((f) => [f.key, f.options?.[0] || (f.key.includes('hayvan') ? 'Pamuk' : f.label)]));
+  const preview = fillReminder(text, { name: 'Ayşe Yılmaz', date: addDays(today(), 1), start: '14:00', isletme: form?.isletme || form?.name || 'İşletmeniz', service: svc, partySize: 1, cancelUrl: `${formBaseUrl().replace(/^https?:\/\//, '')}/iptal/…` }, sampleVals);
+  function insert(v) {
+    const el = ref.current;
+    const at = el ? el.selectionStart : text.length;
+    const next = text.slice(0, at) + v + text.slice(el ? el.selectionEnd : at);
+    setWa({ text: next });
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = at + v.length;
+    });
+  }
+  const hasTel = draft.fields.some((f) => f.type === 'tel');
+  return (
+    <section className="sub-card stack wa-set">
+      <div className="row-between">
+        <h3>📲 WhatsApp hatırlatma <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="wa-on" checked={wa.enabled} onChange={(v) => setWa({ enabled: v })} label={wa.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Personel "Hatırlatmalar" ekranında düğmeye basınca WhatsApp, müşterinin sohbetiyle ve bu mesaj hazır yazılı olarak açılır; gönder'e kendisi basar.</div>
+      {!hasTel && <div className="notice notice-warn">Formda telefon alanı yok; WhatsApp hatırlatması için bir telefon alanı ekleyin.</div>}
+      {wa.enabled && (
+        <>
+          <Field label="Ne zaman hatırlatılsın?">
+            <Segmented label="Hatırlatma zamanı" value={wa.when} onChange={(v) => setWa({ when: v })} options={[{ value: 'once', label: '1 gün önce' }, { value: 'ayni', label: 'Aynı gün' }, { value: 'ikisi', label: 'İkisi de' }]} />
+          </Field>
+          <Field label='Personele "hatırlatmaları gönderin" bildirimi' htmlFor="wa-at" hint="Bu formda bildirim tiki olan kullanıcıların telefonuna her gün bu saatte gelir.">
+            <input id="wa-at" type="time" className="auto-w" value={wa.notifyAt} onChange={(e) => setWa({ notifyAt: e.target.value || '10:00' })} />
+          </Field>
+          <Field label="Mesaj metni" htmlFor="wa-text">
+            <textarea id="wa-text" ref={ref} rows="4" value={text} onChange={(e) => setWa({ text: e.target.value })} />
+          </Field>
+          <div className="wa-vars">
+            {[...WA_VARS, ...extra.map((f) => [`{${f.key}}`, f.label])].map(([v, label]) => (
+              <button type="button" key={v} className="wa-var" title={label} onClick={() => insert(v)}>{label}</button>
+            ))}
+            {wa.text && <button type="button" className="nf-link" onClick={() => setWa({ text: '' })}>Varsayılana dön</button>}
+          </div>
+          <div className="pf-label">Önizleme</div>
+          <div className="wa-bubble">{preview}</div>
+        </>
+      )}
+    </section>
+  );
+}
+
+
+// Mesaj metni + yer tutucu kutucukları + önizleme (tekrar çağırma / bekleme listesi)
+function MsgEditor({ id, text, fallback, vars, extra, onChange, preview }) {
+  const ref = useRef(null);
+  const cur = text || fallback;
+  function insert(v) {
+    const el = ref.current;
+    const at = el ? el.selectionStart : cur.length;
+    onChange(cur.slice(0, at) + v + cur.slice(el ? el.selectionEnd : at));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = at + v.length;
+    });
+  }
+  return (
+    <>
+      <Field label="WhatsApp mesajı" htmlFor={id}>
+        <textarea id={id} ref={ref} rows="4" value={cur} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+      <div className="wa-vars">
+        {[...vars, ...extra.map((f) => [`{${f.key}}`, f.label])].map(([v, label]) => (
+          <button type="button" key={v} className="wa-var" title={label} onClick={() => insert(v)}>{label}</button>
+        ))}
+        {text && <button type="button" className="nf-link" onClick={() => onChange('')}>Varsayılana dön</button>}
+      </div>
+      <div className="pf-label">Müşteriye böyle gider</div>
+      <div className="wa-bubble">{preview(cur)}</div>
+    </>
+  );
+}
+// KVKK metni açık ama yeni açılan özelliklerden bahsetmiyorsa uyarı
+function kvkkMissing(draft) {
+  const k = draft.settings?.kvkk;
+  const txt = String(k?.text || '').toLocaleLowerCase('tr');
+  if (!k?.enabled || !txt.trim() || !draft.fields.some((f) => f.type === 'randevu')) return [];
+  const r = draft.randevu || {};
+  const out = [];
+  if (r.waitlist?.enabled && !txt.includes('bekleme listesi')) out.push('bekleme listesi');
+  if (r.recall?.enabled && Object.keys(r.recall.days || {}).length && !txt.includes('tekrar zamanı')) out.push('tekrar çağırma');
+  return out;
+}
+const sampleExtra = (draft) => draft.fields.filter((f) => ['text', 'radio', 'select'].includes(f.type) && !/ad.?soyad|isim|name/i.test(f.key)).slice(0, 6);
+const sampleValsOf = (extra) => Object.fromEntries(extra.map((f) => [f.key, f.options?.[0] || (f.key.includes('hayvan') ? 'Pamuk' : f.label)]));
+
+function RecallSection({ form, draft, cfg, set }) {
+  const rc = { enabled: false, text: '', days: {}, ...(cfg.recall || {}) };
+  const put = (patch) => set({ recall: { ...rc, ...patch } });
+  const extra = sampleExtra(draft);
+  const svc = cfg.services.find((x) => rc.days?.[x.id]) || cfg.services[0];
+  const base = formBaseUrl().replace(/^https?:\/\//, '');
+  const any = cfg.services.some((x) => rc.days?.[x.id]);
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>🔁 Tekrar çağırma <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="rc-on" checked={!!rc.enabled} onChange={(v) => put({ enabled: v })} label={rc.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Randevusu "Geldi" olan müşteri, seçtiğiniz süre dolmadan 7 gün önce <b>Hatırlatmalar → Çağır</b> listesine düşer. Personel tek dokunuşla WhatsApp'tan yazar; müşteri linke dokununca form o hizmet seçili açılır.</div>
+      {rc.enabled && (
+        <>
+          <div className="table-wrap">
+            <table className="tbl tbl-compact">
+              <thead><tr><th>Hizmet</th><th>Ne zaman tekrar çağrılsın?</th></tr></thead>
+              <tbody>
+                {cfg.services.map((x) => (
+                  <tr key={x.id}>
+                    <td><b>{x.name}</b></td>
+                    <td>
+                      <select aria-label={`${x.name} tekrar çağırma süresi`} value={rc.days?.[x.id] || 0} onChange={(e) => {
+                        const days = { ...(rc.days || {}) };
+                        if (Number(e.target.value)) days[x.id] = Number(e.target.value);
+                        else delete days[x.id];
+                        put({ days });
+                      }}>
+                        {RECALL_OPTIONS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!any && <div className="notice notice-warn">En az bir hizmete süre seçin; yoksa kimse listeye düşmez.</div>}
+          {kvkkMissing(draft).includes('tekrar çağırma') && <div className="notice notice-warn">KVKK aydınlatma metninizde tekrar çağırma geçmiyor. <b>Ayarlar → KVKK aydınlatma metni</b> bölümünde "Forma göre hazır metni oluştur"a basın.</div>}
+          <MsgEditor id="rc-text" text={rc.text} fallback={DEFAULT_RECALL_TEXT} vars={RECALL_VARS} extra={extra} onChange={(v) => put({ text: v })}
+            preview={(t) => fillRecall(t, { name: 'Ali Veli', isletme: form?.isletme || form?.name || 'İşletmeniz', service: svc?.name || 'Muayene', lastDate: addDays(today(), -365), url: `${base}/f/${form?.slug || 'form'}?hizmet=${svc?.id || ''}` }, sampleValsOf(extra))} />
+        </>
+      )}
+    </section>
+  );
+}
+
+function WaitlistSection({ form, draft, cfg, set }) {
+  const wl = { enabled: false, text: '', ...(cfg.waitlist || {}) };
+  const put = (patch) => set({ waitlist: { ...wl, ...patch } });
+  const base = formBaseUrl().replace(/^https?:\/\//, '');
+  const svc = cfg.services[0];
+  return (
+    <section className="sub-card stack">
+      <div className="row-between">
+        <h3>🔔 Bekleme listesi <Badge tone="green">Ücretsiz</Badge></h3>
+        <Toggle id="wl-on" checked={!!wl.enabled} onChange={(v) => put({ enabled: v })} label={wl.enabled ? 'Açık' : 'Kapalı'} />
+      </div>
+      <div className="pf-hint">Müşteri dolu bir gün seçince "Yer açılırsa haber verelim mi?" kutusu çıkar; adını ve telefonunu bırakır. O gün bir randevu iptal olunca size bildirim gelir; <b>Hatırlatmalar → Bekleyen</b> listesinden tek dokunuşla WhatsApp'tan haber verirsiniz. Gün geçince bilgileri silinir.</div>
+      {wl.enabled && (
+        <MsgEditor id="wl-text" text={wl.text} fallback={DEFAULT_WAIT_TEXT} vars={WAIT_VARS} extra={[]} onChange={(v) => put({ text: v })}
+          preview={(t) => fillWait(t, { name: 'Can Öztürk', isletme: form?.isletme || form?.name || 'İşletmeniz', date: today(), time: '14:00', service: svc?.name, url: `${base}/f/${form?.slug || 'form'}?tarih=${today()}&saat=14:00` })} />
+      )}
+      {wl.enabled && !draft.fields.some((f) => f.type === 'randevu') && <div className="notice notice-warn">Formda randevu alanı yok.</div>}
+      {kvkkMissing(draft).includes('bekleme listesi') && <div className="notice notice-warn">KVKK aydınlatma metninizde bekleme listesi geçmiyor. <b>Ayarlar → KVKK aydınlatma metni</b> bölümünde "Forma göre hazır metni oluştur"a basın.</div>}
+    </section>
   );
 }
 
@@ -935,7 +1426,7 @@ export default function FormBuilder({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to="/panel" className="back">← Formlar</Link>
+          <Link to={`/panel/formlar/${id}`} className="back">← {form.isletme || form.name}</Link>
           <h1>{form.name}</h1>
           <div className="row small muted">
             <span>{form.isletme}</span>
@@ -963,7 +1454,7 @@ export default function FormBuilder({ id }) {
           {tab === 'alanlar' && <FieldsTab draft={draft} setDraft={setDraft} formId={id} />}
           {tab === 'gorunum' && <AppearanceTab draft={draft} setDraft={setDraft} />}
           {tab === 'ayarlar' && <SettingsTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} onMetaSaved={load} onControlSaved={(c) => setForm({ ...form, control: c })} />}
-          {tab === 'randevu' && <RandevuTab draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
+          {tab === 'randevu' && <RandevuTab form={form} draft={draft} setDraft={setDraft} isAdmin={isAdmin} />}
           {tab === 'paylas' && <ShareTab form={form} />}
           {tab === 'gecmis' && <HistoryTab form={form} isAdmin={isAdmin} onRestored={load} />}
         </div>

@@ -76,6 +76,10 @@ export function phoneIntl(raw) {
   if (d.length === 10 && d.startsWith('5')) return `90${d}`;
   return d;
 }
+// 450 → "450 ₺", 1250.5 → "1.250,5 ₺"
+export const formatPrice = (n) => (n === '' || n === null || n === undefined || Number.isNaN(Number(n)) ? '' : `${Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ₺`);
+export const servicePrice = (cfg, s) => (cfg?.showPrices && s && s.price !== '' && s.price !== undefined && s.price !== null ? formatPrice(s.price) : '');
+
 export const telUrl = (raw) => {
   const d = phoneIntl(raw);
   return d ? `tel:+${d}` : '';
@@ -90,4 +94,14 @@ export function directionsUrl(settings) {
   if (/^https:\/\//i.test(own)) return own;
   const a = String(settings?.address || '').trim();
   return a ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(a)}` : '';
+}
+
+// Renk üstünde okunur yazı rengi (açık renkte koyu, koyu renkte beyaz yazı)
+export function readableOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return '#fff';
+  const n = parseInt(m[1], 16);
+  const lin = (c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.45 ? '#16222f' : '#fff';
 }

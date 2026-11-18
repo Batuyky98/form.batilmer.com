@@ -11,6 +11,7 @@ import { Modal, useToast } from './ui.jsx';
 import { deviceState, enablePush, isAndroid, isIOS, registerWorker } from '../lib/push.js';
 import { SESSION_IDLE_MS, SESSION_WARN_MS } from '../lib/shared.js';
 import { formatDateTime } from '../lib/util.js';
+import { getSteps } from '../lib/onboarding.js';
 
 const LiveCtx = createContext(null);
 export const useLive = () => useContext(LiveCtx);
@@ -203,6 +204,8 @@ export function LiveProvider({ children }) {
   // Girişten sonra bildirim izni penceresi
   useEffect(() => {
     if (blocked || !info.hasForms || !info.enabled || path === '/panel/bildirimler') return;
+    // İlk girişte "Başlarken" kartı bildirimi zaten adım adım açtırıyor; kart gizlenmeden ayrıca pencere açılmaz
+    if (!getSteps(user?.id).gizle) return;
     if (Number(store.get(PROMPT_KEY) || 0) > Date.now()) return;
     let alive = true;
     registerWorker();

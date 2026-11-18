@@ -3,6 +3,7 @@
 // (SELECT ... FOR UPDATE ile) tekrar kontrol edilerek yazılmalı; böylece iki kişi aynı saati alamaz.
 
 import { addDays, dateTimeToMs, dayOfWeek, minToTime, timeToMin, today } from './util.js';
+import { DEFAULT_WA } from './reminder.js';
 
 export const DEFAULT_RANDEVU = {
   services: [{ id: 'svc1', name: 'Randevu', duration: 30, buffer: 0 }],
@@ -32,6 +33,19 @@ export const DEFAULT_RANDEVU = {
   cancelCutoffHours: 2,
   perContactLimit: 2,
   reminderHours: 24,
+  // Hizmet fiyatları formda görünsün mü (her hizmette isteğe bağlı 'price')
+  showPrices: false,
+  // Formda 'Randevumu yönet' (telefon + ad soyadla randevuyu bul, iptal et)
+  selfManage: false,
+  // Google yorum isteği: randevu 'Geldi' olunca puan istenir; herkese Google düğmesi gösterilir
+  // mode: 'google' = link doğrudan Google yorum ekranını açar (tek adım) · 'puan' = önce bizde 1-5 yıldız
+  review: { enabled: false, googleUrl: '', text: '', mode: 'google' },
+  // Tekrar çağırma: 'Geldi' olan müşteri, hizmetin süresi (recallDays) dolunca listeye düşer; personel WhatsApp'tan çağırır
+  recall: { enabled: false, text: '', days: {} }, // days: { [serviceId]: gün } · 0/boş = çağırma
+  // Bekleme listesi: dolu günde müşteri "yer açılırsa haber ver" der; yer açılınca personel WhatsApp'tan haber verir
+  waitlist: { enabled: false, text: '' },
+  // WhatsApp ile tek tık hatırlatma (personel gönderir; ücretsiz)
+  wa: { ...DEFAULT_WA },
   sms: { confirm: false, reminder: false } // canlıda SMS sağlayıcısı (Netgsm, İleti Merkezi vb.) ile gönderilecek
 };
 

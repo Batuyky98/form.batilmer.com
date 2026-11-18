@@ -53,6 +53,9 @@ export const deleteMyDevice = serverOnly('deleteMyDevice', true);
 export const sendTestNotification = serverOnly('sendTestNotification', { sent: 0, failed: 0 });
 export const pollNotifications = serverOnly('pollNotifications', { items: [], unread: 0, enabled: false, hasForms: false, session: null });
 export const markNotificationsSeen = serverOnly('markNotificationsSeen', true);
+export const purgeFormData = serverOnly('purgeFormData', () => {
+  throw new Error('Demo modunda kullanılamaz.');
+});
 // kullanıcılar ve yetkiler
 export const listUsers = call('listUsers');
 export const createUser = call('createUser');
@@ -83,6 +86,7 @@ export const getAvailability = call('getAvailability');
 export const submitForm = call('submitForm');
 export const getAppointmentByToken = call('getAppointmentByToken');
 export const cancelByToken = call('cancelByToken');
+export const findMyAppointments = serverOnly('findMyAppointments', () => []);
 // kayıtlar
 export const listSubmissions = call('listSubmissions');
 export const setSubmissionStatus = call('setSubmissionStatus');
@@ -106,3 +110,28 @@ export const purgeItem = call('purgeItem');
 export const listLogs = call('listLogs');
 export const listOutbox = call('listOutbox');
 export const clearOutbox = call('clearOutbox');
+// WhatsApp hatırlatma ve müşteri kartı (sunucu özellikleri; demo modunda boş döner)
+export const listReminders = serverOnly('listReminders', () => ({ date: '', items: [], counts: { bugun: 0, yarin: 0 }, forms: [] }));
+export const markReminded = serverOnly('markReminded', () => ({ waAt: Date.now(), waBy: '' }));
+export const listCustomers = serverOnly('listCustomers', () => ({ items: [], total: 0 }));
+export const getCustomer = serverOnly('getCustomer', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const addCustomerNote = serverOnly('addCustomerNote', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const deleteCustomerNote = serverOnly('deleteCustomerNote', () => true);
+// Müsaitlik: çalışma saatleri, kapalı günler (randevu yetkisi yeterli)
+export const getSchedule = serverOnly('getSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const saveSchedule = serverOnly('saveSchedule', () => { throw new Error('Demo modunda kullanılamaz.'); });
+// Google yorum isteği
+export const listReviewQueue = serverOnly('listReviewQueue', () => ({ items: [], forms: [] }));
+export const markReviewSent = serverOnly('markReviewSent', () => true);
+export const listReviews = serverOnly('listReviews', () => ({ items: [], stats: null, forms: [] }));
+export const getReviewPage = serverOnly('getReviewPage', () => null);
+export const submitReview = serverOnly('submitReview', () => { throw new Error('Demo modunda kullanılamaz.'); });
+export const reviewGoogleClick = serverOnly('reviewGoogleClick', () => null);
+export const getAssistant = serverOnly('getAssistant', () => null);
+// Tekrar çağırma, bekleme listesi, ay sonu raporu
+export const listRecalls = serverOnly('listRecalls', () => ({ items: [], done: [], forms: [], stats: { sent: 0, booked: 0 } }));
+export const markRecall = serverOnly('markRecall', () => ({}));
+export const listWaitlist = serverOnly('listWaitlist', () => ({ groups: [], forms: [], count: 0, open: 0 }));
+export const markWaitlist = serverOnly('markWaitlist', () => true);
+export const joinWaitlist = serverOnly('joinWaitlist', () => true);
+export const monthReport = serverOnly('monthReport', () => ({ forms: [], report: null }));

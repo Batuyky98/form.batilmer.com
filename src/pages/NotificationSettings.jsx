@@ -117,7 +117,11 @@ export default function NotificationSettings() {
             <>
               <button type="button" className="btn btn-sm" disabled={busy} onClick={async () => {
                 const r = await api.sendTestNotification().catch((e) => toast(e.message, 'err'));
-                if (r) toast(r.sent ? `Deneme bildirimi gönderildi (${r.sent} cihaz).` : 'Gönderilemedi. Bildirimleri kapatıp yeniden açmayı deneyin.', r.sent ? 'ok' : 'err');
+                if (r) {
+                  if (r.sent) toast(`Deneme bildirimi gönderildi (${r.sent} cihaz).`);
+                  else if (!r.failed) toast('Bu hesapta bildirimi açık cihaz yok. Önce "Bu cihazda bildirimleri aç" deyin.', 'err');
+                  else toast(`Gönderilemedi. ${(r.errors || [])[0] || ''}`, 'err');
+                }
                 load();
               }}>Deneme bildirimi gönder</button>
               <button type="button" className="btn btn-sm btn-danger-ghost" disabled={busy} onClick={turnOff}>Bu cihazda kapat</button>

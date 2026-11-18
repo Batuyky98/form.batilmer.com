@@ -148,7 +148,7 @@ bash deploy/geri-al.sh                             # önceki sürüme dön
 | --- | --- | --- |
 | Çöp kutusu | Panel (Ana Admin geri alır) | Kalıcı silinene kadar |
 | Gece yedeği (03:30) | Sunucuda `yedekler/` | Son 14 gün |
-| Sunucu dışı kopya | Google Drive (şifreli, aşağıda) | Son 30 gün |
+| Sunucu dışı kopya | Google Drive (şifreli, aşağıda) | Son 14 gün |
 | Hostinger yedeği | Hostinger paneli | Haftalık |
 
 ### Yedek gerçekten çalışıyor mu? (ayda bir)
@@ -162,6 +162,8 @@ Son yedeği **geçici, internete kapalı ayrı bir MySQL kutusuna** açar, için
 
 ### Sunucu dışı yedek (Google Drive, ücretsiz, şifreli)
 
+**Kısa yol (önerilen):** sunucuda `sudo bash /opt/batilmer-form-paneli/deploy/yedek-kur.sh` çalıştırın. Betik rclone'u kurar, Google Drive bağlantısını adım adım sorar, şifreli hedefi ve şifreleri kendisi oluşturur, `sunucu.env`'i doldurur, healthchecks.io adresini sorar ve bir deneme yedeği gönderir. Aşağıdaki adımlar aynı işin elle yapılışıdır.
+
 Yedekler şu an aynı sunucuda; sunucuya bir şey olursa onlar da gider. Her gece bir kopyasını Google Drive'a **şifreleyerek** göndermek için (müşteri verisi olduğu için şifresiz göndermeyin):
 
 1. Sunucuda rclone'u kurun: `apt-get install -y rclone`
@@ -169,6 +171,13 @@ Yedekler şu an aynı sunucuda; sunucuya bir şey olursa onlar da gider. Her gec
 3. Yine `rclone config` → `n` → ad: `gdrive-sifreli` → tür: `crypt` → remote: `gdrive:batilmer-yedek` → dosya adları şifrelensin: `1` → **iki şifre belirleyin ve bunları sunucu dışında (şifre yöneticisinde) saklayın**. Bu şifreler olmadan yedek açılamaz.
 4. `nano /opt/batilmer-form-paneli/sunucu.env` → en alta `RCLONE_HEDEF=gdrive-sifreli:` yazın, kaydedin.
 5. Deneyin: `bash deploy/yedek.sh` → "sunucu dışına kopyalandı" yazmalı. Kontrol: `rclone ls gdrive-sifreli:`
+
+### Yedek alınmazsa haber al (healthchecks.io, ücretsiz)
+
+1. healthchecks.io'da ücretsiz hesap açın → "Add Check" → Period: **1 day**, Grace: **2 hours** → e-posta adresinizi bildirime ekleyin.
+2. Çıkan adresi (`https://hc-ping.com/...`) kopyalayın.
+3. `nano /opt/batilmer-form-paneli/sunucu.env` → en alta `HEALTHCHECK_URL=https://hc-ping.com/...` yazın, kaydedin.
+4. Deneyin: `bash deploy/yedek.sh` → healthchecks.io'da kontrol yeşile döner. Bir gece yedek alınmazsa (ya da sunucu dışına gönderilemezse) size e-posta gelir.
 
 ## Yedekten geri yükleme
 
@@ -197,3 +206,17 @@ Site çökerse bunu veterinerden değil sizin öğrenmeniz için: uptimerobot.co
 - SSL hatası: DNS kaydını kontrol edin; `docker logs --tail=50 site-caddy-1`
 - Caddy ayarını geri almak: Caddyfile'ın yanında `Caddyfile.yedek-TARIH` dosyası var; içeriğini geri kopyalayıp `docker exec -w /etc/caddy site-caddy-1 caddy reload --config /etc/caddy/Caddyfile` çalıştırın.
 - **"Traefik'i Dağıt" butonuna basmayın**: Caddy ile çakışır, ana site kapanır.
+
+## Otomatik güncelleme (GitHub → sunucu)
+
+Bir kez açılır. Dala her gönderimde GitHub derler ve testleri çalıştırır; sunucuya kurulum sadece
+Actions → "Sunucuya gönder" → Run workflow ile elle başlatılınca olur (yedek alır, panel ayağa kalkmazsa
+önceki sürüme döner). Elle zip/scp gerekmez.
+
+1. Sunucuda, proje klasöründe: `bash deploy/otomatik-kur.sh`
+2. Ekrana yazılan 3 değeri GitHub'da depo → Settings → Secrets and variables → Actions →
+   New repository secret ile aynı isimlerle ekleyin: `SUNUCU_ADRES`, `SUNUCU_PARMAK_IZI`, `SUNUCU_ANAHTAR`.
+3. GitHub → Actions → "Sunucuya gönder" → Run workflow ile ilk kurulumu deneyin.
+
+GitHub'ın anahtarı sunucuda yalnızca güncellemeyi çalıştırabilir; kabuk açamaz.
+Kayıtlar: `/var/log/batilmer-guncelle.log`. Kapatmak için: `bash deploy/otomatik-kur.sh kapat`

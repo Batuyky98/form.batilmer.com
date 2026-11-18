@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as api from '../lib/api.js';
-import { navigate } from '../router.jsx';
+import ApptSheet from '../components/ApptSheet.jsx';
 import { Badge, Empty, Spinner, useIsMobile } from '../components/ui.jsx';
 import { addDays, dayOfMonth, dayOfWeek, formatDate, formatDateShort, today, weekdayName, weekdayShort } from '../lib/util.js';
 
@@ -11,6 +11,8 @@ export default function AllCalendar() {
   const [formFilter, setFormFilter] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const [data, setData] = useState(null);
+  const [sheet, setSheet] = useState(null);
+  const [tick, setTick] = useState(0);
   const mobile = useIsMobile();
   const start = addDays(anchor, -((dayOfWeek(anchor) + 6) % 7));
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -18,7 +20,7 @@ export default function AllCalendar() {
 
   useEffect(() => {
     api.listAllAppointments({ from: start, to: end }).then(setData);
-  }, [start, end]);
+  }, [start, end, tick]);
 
   if (!data) return <div className="page"><Spinner /></div>;
   const items = data.items.filter((a) => (!formFilter || a.formId === formFilter) && (showCancelled || a.status !== 'iptal'));
@@ -29,7 +31,7 @@ export default function AllCalendar() {
       <div className="page-head">
         <div>
           <h1>Tüm randevular</h1>
-          <p className="muted">Yetkili olduğunuz tüm formların randevuları tek takvimde. Bir randevuya tıklayınca o formun takvimi açılır.</p>
+          {!mobile && <p className="muted small">Bir randevuya dokununca işlemler açılır.</p>}
         </div>
       </div>
       {!data.forms.length ? (
@@ -59,12 +61,16 @@ export default function AllCalendar() {
                 })}
               </div>
             )}
-            <div className="row wrap">
-              <select aria-label="Form filtresi" value={formFilter} onChange={(e) => setFormFilter(e.target.value)}>
-                <option value="">Tüm formlar ({data.forms.length})</option>
-                {data.forms.map((f) => <option key={f.id} value={f.id}>{f.isletme ? `${f.isletme} – ` : ''}{f.name}</option>)}
-              </select>
-              <label className="inline-check"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> İptalleri göster</label>
+            <div className="row wrap cal-filters">
+              {data.forms.length > 1 && (
+                <select aria-label="Form filtresi" className="auto-w" value={formFilter} onChange={(e) => setFormFilter(e.target.value)}>
+                  <option value="">Tüm formlar ({data.forms.length})</option>
+                  {data.forms.map((f) => <option key={f.id} value={f.id}>{f.isletme ? `${f.isletme} – ` : ''}{f.name}</option>)}
+                </select>
+              )}
+              <button type="button" className={`pill-toggle ${showCancelled ? 'is-on' : ''}`} aria-pressed={showCancelled} onClick={() => setShowCancelled((v) => !v)}>
+                {showCancelled ? '✓ ' : ''}İptalleri göster
+              </button>
             </div>
           </div>
           <div className={`calendar ${mobile ? 'calendar-day' : ''}`}>
@@ -80,16 +86,27 @@ export default function AllCalendar() {
                     {list.map((a) => {
                       const f = data.forms.find((x) => x.id === a.formId);
                       return (
-                        <button key={a.id} type="button" className={`cal-item status-${a.status}`} onClick={() => navigate(`/panel/formlar/${a.formId}/randevular?tarih=${a.date}`)}>
+                        <div key={a.id} className={`cal-item status-${a.status}`}>
+                        <button type="button" className="cal-main" onClick={() => setSheet(a)}>
                           <span className="cal-time">{a.start}<small>{a.end}</small></span>
                           <span className="cal-name">{a.name || 'İsimsiz'}{a.partySize > 1 ? ` · ${a.partySize} kişi` : ''}</span>
                           <span className="cal-meta">{a.service}{a.resource ? ` · ${a.resource}` : ''}</span>
                           <span className="cal-form">{f?.isletme || f?.name}</span>
                           <Badge tone={STATUS_TONE[a.status]}>{api.STATUS_LABELS[a.status]}</Badge>
                         </button>
+                        </div>
                       );
                     })}
-                    {!list.length && <div className="muted small cal-empty">Randevu yok</div>}
+                    {!list.length && (
+                      <div className="cal-empty cal-empty-nice">
+                        <span aria-hidden="true">🗓️</span>
+                        <b>{d === today() ? 'Bugün randevu yok' : 'Bu gün randevu yok'}</b>
+                        {mobile && (() => {
+                          const week = items.filter((a) => a.status !== 'iptal').length;
+                          return <span>{week ? `Bu hafta toplam ${week} randevu var; üstteki günlerden seçebilirsiniz.` : 'Bu hafta randevu yok. Yeni randevu gelince bildirim alırsınız.'}</span>;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 </section>
               );
@@ -97,6 +114,7 @@ export default function AllCalendar() {
           </div>
         </>
       )}
+      {sheet && <ApptSheet appt={sheet} isletme={data.forms.length > 1 ? (data.forms.find((f) => f.id === sheet.formId)?.isletme || '') : ''} onClose={() => setSheet(null)} onDone={() => setTick((t) => t + 1)} />}
     </div>
   );
 }

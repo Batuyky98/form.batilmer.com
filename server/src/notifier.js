@@ -47,7 +47,7 @@ async function recipients(db, formId, kind) {
 }
 
 async function deliver(db, sub, payload, keys) {
-  const r = await sendPush(sub, payload, keys, subject(), { topic: payload.tag?.slice(0, 32).replace(/[^A-Za-z0-9_-]/g, '') || undefined });
+  const r = await sendPush(sub, payload, keys, subject());
   if (r.status === 'ok') {
     await db.query('UPDATE push_subscriptions SET last_ok_at = ?, fail_count = 0 WHERE id = ?', [Date.now(), sub.id]);
   } else if (r.status === 'gone') {
@@ -59,7 +59,7 @@ async function deliver(db, sub, payload, keys) {
     else await db.query('UPDATE push_subscriptions SET fail_count = ? WHERE id = ?', [fails, sub.id]);
     console.error(`[bildirim] gönderilemedi (${sub.id}): ${r.detail}`);
   }
-  return r.status;
+  return r;
 }
 
 async function tick(db) {
@@ -86,7 +86,9 @@ export async function sendTestPush(db, userId) {
   const keys = await vapidKeys(db);
   const payload = { title: 'Deneme bildirimi', body: 'Bildirimler bu cihazda çalışıyor. ✔', url: '/panel/bildirimler', tag: `test-${uid('')}`, ts: Date.now() };
   const results = await Promise.all(subs.map((s) => deliver(db, s, payload, keys)));
-  return { sent: results.filter((r) => r === 'ok').length, failed: results.filter((r) => r !== 'ok').length };
+  const bad = results.filter((r) => r.status !== 'ok');
+  // Hata olursa sebebini panelde göster (ör. "403 invalid JWT", "410 abonelik silinmiş")
+  return { sent: results.length - bad.length, failed: bad.length, errors: bad.map((r) => `${r.status === 'gone' ? 'Cihaz aboneliği geçersiz (yeniden açın)' : 'Hata'}: ${String(r.detail || '').slice(0, 160)}`) };
 }
 
 export function startNotifier(db) {

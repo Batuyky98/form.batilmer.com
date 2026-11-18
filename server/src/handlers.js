@@ -15,10 +15,13 @@ import { today, addDays, dateTimeToMs, dateOfMs, dayOfWeek, formatDateTime, form
 import { validateAll, fileExt } from '../../src/lib/validators.js';
 import { visibilityMap } from '../../src/lib/conditions.js';
 import { t as tt } from '../../src/lib/i18n.js';
-import { checkSlot, getSlots, endTime, serviceById, ACTIVE_STATUSES } from '../../src/lib/availability.js';
-import { buildFormContent, normalizeContent, DEFAULT_CONTROL } from '../../src/lib/templates.js';
-import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
+import { checkSlot, getSlots, endTime, serviceById, firstBookableDate, isDateOpen, ACTIVE_STATUSES } from '../../src/lib/availability.js';
+import { buildFormContent, normalizeContent, DEFAULT_CONTROL, DEFAULT_SETTINGS } from '../../src/lib/templates.js';
+import { applyFormStyle, FORM_STYLES } from '../../src/lib/formStyles.js';
+import { STATUS_LABELS, SUBMISSION_STATUSES, submissionStatusLabel, displayValue, contactFrom, fillTemplate, passwordProblem, directionsUrl, servicePrice, SESSION_IDLE_MS, SESSION_MAX_MS } from '../../src/lib/shared.js';
 import { appointmentTerm, buildIcs, googleCalendarUrl } from '../../src/lib/calendar.js';
+import { phoneKey, phonePretty, fillReminder, fillReview, waLink, waPhoneOk, DEFAULT_WA, RECALL_DAYS, fillRecall, fillWait, longDate, dayWord } from '../../src/lib/reminder.js';
+import { DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../../src/lib/kvkkTemplate.js';
 
 // ---------------------------------------------------------------- hata
 export class ApiError extends Error {
@@ -89,7 +92,7 @@ function mapSub(r) {
   return {
     id: r.id, formId: r.form_id, values: J(r.vals, {}), labels: J(r.labels, {}), types: J(r.types, {}), order: J(r.ord, []),
     status: r.status || 'yeni', notes: J(r.notes, []), appointmentId: r.appointment_id, manual: !!Number(r.manual),
-    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
+    kvkkAt: num(r.kvkk_at), consentAt: num(r.consent_at), marketingAt: num(r.marketing_at), ip: r.ip, userAgent: r.user_agent, createdAt: num(r.created_at), deletedAt: num(r.deleted_at)
   };
 }
 
@@ -99,7 +102,7 @@ function mapAppt(r) {
     id: r.id, formId: r.form_id, submissionId: r.submission_id, serviceId: r.service_id, resourceId: r.resource_id,
     date: r.date, start: r.start, end: r.end_time, buffer: Number(r.buffer), partySize: Number(r.party_size), status: r.status,
     cancelToken: r.cancel_token, cancelledBy: r.cancelled_by, reminderSent: !!Number(r.reminder_sent),
-    contact: J(r.contact, {}), lang: r.lang, source: r.source, createdAt: num(r.created_at)
+    contact: J(r.contact, {}), lang: r.lang, source: r.source, createdAt: num(r.created_at), waAt: num(r.wa_at), waBy: r.wa_by || ''
   };
 }
 const panelAppt = (a) => {
@@ -123,20 +126,49 @@ async function log(q, userId, action, target = '') {
   await q('INSERT INTO logs (id, user_id, action, target, at) VALUES (?, ?, ?, ?, ?)', [uid('l_'), userId, str(action, 300), str(target, 300), now()]);
 }
 
-async function mail(q, to, subject, body, kind = 'bilgi') {
+// ref: { formId, subId } → müşteriye giden mesaj o kayda bağlanır; kayıt kalıcı silinince mesaj da silinir
+async function mail(q, to, subject, body, kind = 'bilgi', ref = {}) {
   const list = (Array.isArray(to) ? to : [to]).map((x) => String(x || '').trim()).filter(Boolean);
   for (const addr of list) {
-    await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-      uid('m_'), addr.slice(0, 190), str(subject, 300), String(body || '').slice(0, 20000), kind, 'mail', 'bekliyor', now()
+    await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at, form_id, submission_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      uid('m_'), addr.slice(0, 190), str(subject, 300), String(body || '').slice(0, 20000), kind, 'mail', 'bekliyor', now(), ref.formId || null, ref.subId || null
     ]);
   }
 }
 
-async function sms(q, phone, text) {
+async function sms(q, phone, text, ref = {}) {
   if (!phone) return;
-  await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-    uid('m_'), String(phone).slice(0, 30), 'SMS', String(text).slice(0, 1000), 'sms', 'sms', 'bekliyor', now()
+  await q('INSERT INTO outbox (id, recipient, subject, body, kind, channel, status, at, form_id, submission_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+    uid('m_'), String(phone).slice(0, 30), 'SMS', String(text).slice(0, 1000), 'sms', 'sms', 'bekliyor', now(), ref.formId || null, ref.subId || null
   ]);
+}
+
+// Kayıtları iz bırakmadan siler: kayıt, randevu, dosya kaydı, giden mail/SMS ve kaydı kalmayan müşterinin notları.
+// Diskteki dosyaların id'lerini döndürür (işlem bitince removeUploads ile silinir).
+async function forgetSubmissions(q, formId, ids) {
+  if (!ids.length) return [];
+  const files = [];
+  const pks = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    const part = ids.slice(i, i + 500);
+    const m = ph(part);
+    files.push(...(await q(`SELECT id FROM files WHERE submission_id IN (${m})`, part)).map((r) => r.id));
+    await q(`DELETE FROM files WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM outbox WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM reviews WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM recalls WHERE submission_id IN (${m})`, part);
+    pks.push(...(await q(`SELECT phone_key FROM submissions WHERE id IN (${m}) AND phone_key IS NOT NULL`, part)).map((r) => r.phone_key));
+    await q(`DELETE FROM appointments WHERE submission_id IN (${m})`, part);
+    await q(`DELETE FROM submissions WHERE id IN (${m})`, part);
+  }
+  // Bekleme listesi: o telefonun bu formda başka kaydı kalmadıysa silinir (aktif müşterinin bekleme kaydı korunur)
+  const gone = [...new Set(pks)];
+  for (let i = 0; i < gone.length; i += 500) {
+    const part = gone.slice(i, i + 500);
+    await q(`DELETE FROM waitlist WHERE form_id = ? AND phone_key IN (${ph(part)}) AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)`, [formId, ...part, formId]);
+  }
+  await q('DELETE FROM customer_notes WHERE form_id = ? AND phone_key NOT IN (SELECT phone_key FROM submissions WHERE form_id = ? AND phone_key IS NOT NULL)', [formId, formId]);
+  return files;
 }
 
 const cancelUrl = (appt) => `${config.publicUrl}/iptal/${appt.cancelToken}`;
@@ -177,7 +209,7 @@ function appointmentCard(form, appt, cfg, lang, settings = {}) {
   const title = `${biz} – ${svc && svc !== term ? `${term}: ${svc}` : term}`;
   const cancel = cancelUrl(appt);
   return {
-    date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, resource: res, resourceLabel: cfg.resourceLabel || '',
+    date: appt.date, start: appt.start, end: appt.end, status: appt.status, service: svc, price: servicePrice(cfg, serviceById(cfg, appt.serviceId)), resource: res, resourceLabel: cfg.resourceLabel || '',
     partySize: cfg.capacityMode === 'kisi' ? appt.partySize : null, term, isletme: biz,
     cancelUrl: cancel, cancelCutoffHours: Number(cfg.cancelCutoffHours || 0),
     address: settings.address || '', directionsUrl: directionsUrl(settings),
@@ -336,7 +368,7 @@ async function formIsOpen(q, form) {
 // =====================================================================
 const H = {};
 // Giriş yapmadan çağrılabilen işlemler
-export const PUBLIC = new Set(['login', 'loginTotp', 'logout', 'currentUser', 'publicConfig', 'requestPasswordReset', 'resetPassword', 'getPublicForm', 'getAvailability', 'submitForm', 'getAppointmentByToken', 'cancelByToken']);
+export const PUBLIC = new Set(['login', 'loginTotp', 'logout', 'currentUser', 'publicConfig', 'requestPasswordReset', 'resetPassword', 'getPublicForm', 'getAvailability', 'submitForm', 'getAppointmentByToken', 'cancelByToken', 'joinWaitlist']);
 // İlk girişte şifre değiştirmeden önce de çağrılabilenler
 const MUST_CHANGE_OK = new Set(['changePassword', 'currentUser', 'logout', 'sessionInfo', 'touchSession']);
 // Ana Admin Authenticator'ı kurmadan önce çağrılabilenler
@@ -822,7 +854,7 @@ H.getForm = async (ctx, id) => {
   return { ...form, perms };
 };
 
-H.createForm = async (ctx, { name, isletme, slug, templateId } = {}) => {
+H.createForm = async (ctx, { name, isletme, slug, templateId, styleId } = {}) => {
   const admin = await requireAdmin(ctx);
   if (!str(name)) fail('Form adı zorunlu.');
   const s = slugify(slug || `${isletme || ''} ${name}`);
@@ -831,6 +863,7 @@ H.createForm = async (ctx, { name, isletme, slug, templateId } = {}) => {
     if ((await q('SELECT id FROM forms WHERE slug = ? AND deleted_at IS NULL', [s])).length) fail('Bu form linki kullanılıyor, başka bir link seçin.');
     const c = buildFormContent(templateId);
     c.settings.title = str(name, 200);
+    if (FORM_STYLES.some((x) => x.id === styleId)) c.appearance = applyFormStyle(c.appearance, styleId);
     const id = uid('f_');
     await q('INSERT INTO forms (id, name, isletme, slug, control, draft, published, published_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)', [
       id, str(name, 200), str(isletme, 200), s, S(DEFAULT_CONTROL), S(c), admin.id, now(), now()
@@ -867,15 +900,62 @@ function cleanDraft(draft, prev, user) {
   if (user.role !== 'admin') {
     next.settings.kvkk = clone(prev.settings.kvkk);
     next.settings.consent = clone(prev.settings.consent);
+    next.settings.marketing = clone(prev.settings.marketing);
     // Müşteriye mail ve SMS ücretli ek özellik: sadece Ana Admin açıp kapatır
     next.settings.customerMails = !!prev.settings.customerMails;
     next.randevu.sms = clone(prev.randevu.sms);
   }
   if (next.randevu.openFrom && !/^\d{4}-\d{2}-\d{2}$/.test(next.randevu.openFrom)) next.randevu.openFrom = '';
   next.randevu.term = str(next.randevu.term, 40);
+  next.randevu.showPrices = !!next.randevu.showPrices;
+  next.randevu.selfManage = !!next.randevu.selfManage;
+  const rv = next.randevu.review || {};
+  const gUrl = String(rv.googleUrl || '').trim();
+  next.randevu.review = { enabled: !!rv.enabled, googleUrl: /^https:\/\/[^\s"'<>]{4,490}$/i.test(gUrl) ? gUrl : '', text: String(rv.text || '').slice(0, 1000), mode: rv.mode === 'puan' ? 'puan' : 'google' };
+  for (const svc of next.randevu.services || []) {
+    const p = svc.price === '' || svc.price === null || svc.price === undefined ? '' : Number(svc.price);
+    svc.price = p === '' || !Number.isFinite(p) || p < 0 ? '' : Math.min(Math.round(p * 100) / 100, 10_000_000);
+  }
+  const rc = next.randevu.recall || {};
+  const svcIds = new Set((next.randevu.services || []).map((s) => s.id));
+  next.randevu.recall = {
+    enabled: !!rc.enabled,
+    text: String(rc.text || '').slice(0, 1000),
+    days: Object.fromEntries(Object.entries(rc.days && typeof rc.days === 'object' ? rc.days : {}).filter(([k, v]) => svcIds.has(k) && RECALL_DAYS.includes(Number(v)) && Number(v) > 0).map(([k, v]) => [k, Number(v)]))
+  };
+  const wl = next.randevu.waitlist || {};
+  next.randevu.waitlist = { enabled: !!wl.enabled, text: String(wl.text || '').slice(0, 1000) };
+  const wa = next.randevu.wa || {};
+  next.randevu.wa = {
+    enabled: wa.enabled !== false,
+    when: ['once', 'ayni', 'ikisi'].includes(wa.when) ? wa.when : DEFAULT_WA.when,
+    notifyAt: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(wa.notifyAt || '')) ? wa.notifyAt : DEFAULT_WA.notifyAt,
+    text: String(wa.text || '').slice(0, 1000)
+  };
+  if (!FORM_STYLES.some((x) => x.id === next.appearance.style)) next.appearance.style = 'yuzen';
+  // Logo: sadece küçük png/jpeg/webp resim (panel yüklerken 400px'e küçültür)
+  const logo = String(next.appearance.logo || '');
+  next.appearance.logo = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(logo) && logo.length <= 400_000 ? logo : '';
+  if (!['kucuk', 'orta', 'buyuk'].includes(next.appearance.logoSize)) next.appearance.logoSize = 'orta';
+  if (!['sol', 'orta'].includes(next.appearance.logoAlign)) next.appearance.logoAlign = 'orta';
   next.settings.address = str(next.settings.address, 300);
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
+  next.settings.marketing.text = String(next.settings.marketing.text || '').slice(0, 30000);
+  next.settings.marketing.label = str(next.settings.marketing.label, 300) || DEFAULT_MARKETING_LABEL;
+  for (const k of ['company', 'contactEmail', 'contactPhone']) next.settings.kvkk[k] = str(next.settings.kvkk[k], 200);
+  const as = next.settings.assistant || {};
+  next.settings.assistant = {
+    enabled: !!as.enabled,
+    color: /^#[0-9a-f]{6}$/i.test(as.color || '') ? as.color : '',
+    title: str(as.title, 60),
+    subtitle: str(as.subtitle, 80),
+    peek: str(as.peek, 120),
+    greeting: str(as.greeting, 300),
+    whatsapp: String(as.whatsapp || '').replace(/[^\d+]/g, '').slice(0, 16),
+    items: Object.fromEntries(['randevu', 'fiyat', 'saat', 'adres', 'sss', 'yonet', 'wa'].map((k) => [k, as.items?.[k] !== false])),
+    faq: (Array.isArray(as.faq) ? as.faq : []).map((x) => ({ q: str(x?.q, 200), a: str(x?.a, 1500) })).filter((x) => x.q && x.a).slice(0, 30)
+  };
   for (const k of ['kvkk', 'consent']) if (next.settings[k].url && !/^https?:\/\//i.test(next.settings[k].url)) next.settings[k].url = '';
   next.settings.mapsUrl = /^https:\/\/[^\s"'<>]{4,490}$/i.test(String(next.settings.mapsUrl || '').trim()) ? String(next.settings.mapsUrl).trim() : '';
   const keys = next.fields.map((x) => x.key);
@@ -887,6 +967,9 @@ function cleanDraft(draft, prev, user) {
       fld.options = (fld.options || []).map((o) => String(o).trim()).filter(Boolean);
       if (!fld.options.length) fail(`"${fld.label}" alanına en az bir seçenek ekleyin.`);
     }
+    if (!['baslik', 'kutu', 'ikisi'].includes(fld.display)) delete fld.display;
+    fld.label = str(fld.label, 200);
+    fld.placeholder = str(fld.placeholder, 200);
     if (fld.type === 'dosya') fld.maxMB = Math.min(config.maxUploadMB, Math.max(1, Number(fld.maxMB) || 2));
   }
   return next;
@@ -928,7 +1011,7 @@ H.publishForm = async (ctx, id, { note = '', cancelAffected = false } = {}) => {
         await q("UPDATE appointments SET status = 'iptal', cancelled_by = 'isletme' WHERE id = ?", [a.id]);
         if (a.contact?.email && customerMails(pub)) {
           const lang = a.lang || 'tr';
-          await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: form.isletme || form.name }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
+          await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: form.isletme || form.name }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu', { formId: a.formId, subId: a.submissionId });
         }
       }
       if (affected.length) await log(q, user.id, `${affected.length} randevuyu iptal etti (saat değişikliği)`, form.name);
@@ -1040,6 +1123,50 @@ async function dayData(q, formId, date) {
 
 const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
 
+// Ücretsiz sohbet asistanı: herkese açık bilgiler (kişisel veri yok)
+H.getAssistant = async (ctx, slug, { preview = false } = {}) => {
+  const form = await formBySlug(ctx.db.query, slug);
+  if (!form) return null;
+  // Önizleme: panelden giriş yapmış ve formu görme yetkisi olan kişi, yayınlanmamış taslağı da görür
+  let isPreview = false;
+  if (preview && ctx.req) {
+    try {
+      const user = await requireUser(ctx);
+      isPreview = !!(await permsFor(ctx.db.query, user, form.id)).view;
+    } catch {
+      isPreview = false;
+    }
+  }
+  if (!isPreview && !form.published) return null;
+  const c = isPreview ? normalizeContent(form.draft) : content(form);
+  const as = c.settings.assistant || {};
+  const live = !!(form.published && form.published.settings?.assistant?.enabled);
+  if (!as.enabled && !isPreview) return null;
+  const state = await formIsOpen(ctx.db.query, form);
+  const cfg = c.randevu;
+  const hasAppt = c.fields.some((f) => f.type === 'randevu');
+  const a = c.appearance || {};
+  return {
+    slug: form.slug, isletme: form.isletme || form.name, title: as.title || form.isletme || form.name, subtitle: as.subtitle ?? DEFAULT_SETTINGS.assistant.subtitle, peek: as.peek ?? DEFAULT_SETTINGS.assistant.peek, greeting: as.greeting, items: as.items, faq: as.faq,
+    whatsapp: as.whatsapp, open: !!state.open, lang: c.settings.language || 'tr',
+    address: c.settings.address || '', directions: directionsUrl(c.settings) || '',
+    phone: c.settings.kvkk?.contactPhone || '',
+    primary: as.color || a.primary || '#2F5BEA', logo: a.logo || '',
+    hasAppt, selfManage: !!cfg?.selfManage,
+    services: hasAppt ? (cfg.services || []).map((s) => ({ id: s.id, name: s.name, duration: s.duration, price: servicePrice(cfg, s) })) : [],
+    hours: hasAppt ? cfg.hours : null, closedDates: hasAppt ? (cfg.closedDates || []).filter((d) => d >= today()) : [],
+    firstDate: hasAppt ? firstBookableDate(cfg) : '', maxDaysAhead: hasAppt ? Number(cfg.maxDaysAhead || 30) : 0,
+    ...(isPreview ? { preview: true, live, enabledDraft: !!as.enabled } : {})
+  };
+};
+
+// Siteye gömülen balonun (asistan.js) ihtiyacı: renk ve balon yazısı. Kapalıysa null → balon hiç çıkmaz.
+export async function assistantBubble(db, slug) {
+  if (!/^[a-z0-9-]{1,80}$/.test(String(slug || ''))) return null;
+  const d = await H.getAssistant({ db }, slug);
+  return d ? { color: d.primary, peek: d.peek, title: d.title } : null;
+}
+
 H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize } = {}) => {
   if (!isDate(date)) return [];
   const form = await formBySlug(ctx.db.query, slug);
@@ -1049,7 +1176,7 @@ H.getAvailability = async (ctx, slug, { date, serviceId, resourceId, partySize }
 };
 
 H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
-  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, turnstileToken = '' } = meta || {};
+  const { honeypot = '', startedAt = 0, kvkkAccepted = false, consentAccepted = false, marketingAccepted = false, turnstileToken = '' } = meta || {};
   const pre = await formBySlug(ctx.db.query, slug);
   const lang = pre?.published?.settings?.language || 'tr';
   // Bot: gizli alan doluysa ya da 2 saniyeden hızlı gönderildiyse sessizce "başarılı" de, kaydetme
@@ -1145,7 +1272,7 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         labels: Object.fromEntries(fields.map((f) => [f.key, f.label])),
         types: Object.fromEntries(fields.map((f) => [f.key, f.type])),
         order: fields.map((f) => f.key),
-        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, appointmentId: null
+        kvkkAt: c.settings.kvkk?.enabled ? now() : null, consentAt: consentOn && consentAccepted ? now() : null, marketingAt: MARKETING_FEATURE && c.settings.marketing?.enabled && marketingAccepted === true ? now() : null, appointmentId: null
       };
 
       // Randevu: form satırı kilitli olduğu için aynı anda iki kişi aynı saati alamaz
@@ -1177,9 +1304,9 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         clean[rField.key] = { ...r, serviceId: svc.id, resourceId: check.resourceId };
         const pending = appt.status === 'bekliyor';
         if (contact.email && customerMails(c)) {
-          await mail(q, contact.email, tt(lang, pending ? 'mailRequestSubject' : 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, pending ? tt(lang, 'mailPendingText') : tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
+          await mail(q, contact.email, tt(lang, pending ? 'mailRequestSubject' : 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, pending ? tt(lang, 'mailPendingText') : tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: form.id, subId: sub.id });
         }
-        if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, pending ? 'smsPending' : 'smsConfirm', { x: biz, d: `${appt.date} ${appt.start}`, u: cancelUrl(appt) }));
+        if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, pending ? 'smsPending' : 'smsConfirm', { x: biz, d: `${appt.date} ${appt.start}`, u: cancelUrl(appt) }), { formId: form.id, subId: sub.id });
       }
 
       // Dosyaları diske yaz
@@ -1190,14 +1317,16 @@ H.submitForm = async (ctx, slug, values = {}, meta = {}) => {
         await q('INSERT INTO files (id, form_id, submission_id, name, mime, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [up.id, form.id, sub.id, up.name, up.mime, up.buffer.length, now()]);
       }
 
-      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)', [
-        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now()
+      await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, consent_at, marketing_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)', [
+        sub.id, form.id, S(clean), S(sub.labels), S(sub.types), S(sub.order), 'yeni', '[]', sub.appointmentId, sub.kvkkAt, sub.consentAt, sub.marketingAt, ctx.ip.slice(0, 64), str(ctx.userAgent, 255), now(), phoneKey(contact.phone) || null
       ]);
 
       const ar = c.settings.autoReply;
       if (ar?.enabled && contact.email && !appt && customerMails(c)) {
-        await mail(q, contact.email, fillTemplate(ar.subject, sub.labels, clean, c.randevu), fillTemplate(ar.body, sub.labels, clean, c.randevu), 'otomatik-cevap');
+        await mail(q, contact.email, fillTemplate(ar.subject, sub.labels, clean, c.randevu), fillTemplate(ar.body, sub.labels, clean, c.randevu), 'otomatik-cevap', { formId: form.id, subId: sub.id });
       }
+      // Bekleme listesindeki kişi o gün randevu aldıysa listeden düşer
+      if (appt && phoneKey(contact.phone)) await q('UPDATE waitlist SET booked_at = ? WHERE form_id = ? AND date = ? AND phone_key = ? AND booked_at IS NULL', [now(), form.id, appt.date, phoneKey(contact.phone)]);
       // Yetkili kişilere panel + telefon bildirimi (içerikte kişisel veri yok)
       await addNotice(q, form, 'yeni', appt, c.randevu);
       return {
@@ -1291,7 +1420,11 @@ H.deleteSubmission = async (ctx, id) => {
     if (!s) fail('Kayıt bulunamadı.', 'yok', 404);
     const { user, form } = await requirePerm(ctx, q, s.formId, 'delete');
     await q('UPDATE submissions SET deleted_at = ? WHERE id = ?', [now(), id]);
-    if (s.appointmentId) await q(`UPDATE appointments SET status = 'iptal', cancelled_by = 'isletme' WHERE id = ? AND status IN ${ACTIVE_SQL}`, [s.appointmentId]);
+    if (s.appointmentId) {
+      const a = await loadAppt(q, s.appointmentId);
+      const r = await q(`UPDATE appointments SET status = 'iptal', cancelled_by = 'isletme' WHERE id = ? AND status IN ${ACTIVE_SQL}`, [s.appointmentId]);
+      if (a && r.affectedRows) await waitNotice(q, form, a);
+    }
     await log(q, user.id, 'Kayıt sildi (çöp kutusu)', form.name);
     return true;
   });
@@ -1336,7 +1469,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       headers.push('Randevu durumu');
     } else headers.push(labels[k]);
   }
-  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı');
+  headers.push('Kayıt durumu', 'Son not', 'KVKK onay zamanı', 'Açık rıza zamanı', 'Kampanya izni zamanı');
   const fmt = (ms) => (ms ? formatDateTime(ms) : '');
   const data = subs.map((s) => {
     const row = [fmt(s.createdAt)];
@@ -1351,7 +1484,7 @@ H.exportSubmissions = async (ctx, formId, rows = []) => {
       } else row.push(displayValue(types[k], v, cfg));
     }
     const userNotes = (s.notes || []).filter((n) => !n.system);
-    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt));
+    row.push(submissionStatusLabel(s.status), userNotes.length ? userNotes[userNotes.length - 1].text : '', fmt(s.kvkkAt), fmt(s.consentAt), fmt(s.marketingAt));
     return row;
   });
   await log(q, user.id, `Excel indirdi (${subs.length} kayıt)`, form.name);
@@ -1424,11 +1557,660 @@ H.listAllAppointments = async (ctx, { from, to } = {}) => {
     items: appts.map((a) => {
       const cfg = content(forms.find((f) => f.id === a.formId)).randevu;
       return {
-        id: a.id, formId: a.formId, date: a.date, start: a.start, end: a.end, status: a.status, partySize: a.partySize, name: a.contact?.name || '', phone: a.contact?.phone || '',
+        id: a.id, formId: a.formId, submissionId: a.submissionId, customerKey: phoneKey(a.contact?.phone), date: a.date, start: a.start, end: a.end, status: a.status, partySize: a.partySize, name: a.contact?.name || '', phone: a.contact?.phone || '',
         service: serviceById(cfg, a.serviceId)?.name || '', resource: (cfg.resources || []).find((r) => r.id === a.resourceId)?.name || ''
       };
     })
   };
+};
+
+// ---------------------------------------------------------------- WhatsApp hatırlatma
+// Personel listeden tek tıkla WhatsApp'ı açar, mesaj hazır gelir; gönder'e kendisi basar.
+async function permittedForms(q, user, perm, { randevu = false } = {}) {
+  const out = [];
+  for (const f of (await q('SELECT * FROM forms WHERE deleted_at IS NULL')).map(mapForm)) {
+    const c = content(f);
+    if (randevu && !c.fields.some((x) => x.type === 'randevu')) continue;
+    if ((await permsFor(q, user, f.id))[perm]) out.push(f);
+  }
+  return out;
+}
+
+const subContact = (row) => {
+  const types = J(row.types, {});
+  const labels = J(row.labels, {});
+  const fields = Object.keys(types).map((key) => ({ key, type: types[key], label: labels[key] || key }));
+  return contactFrom(fields, J(row.vals, {}));
+};
+
+// Telefon anahtarlarına göre geçmiş: kaç kez geldi / gelmedi
+async function historyByPhone(q, formIds, keys) {
+  const out = {};
+  if (!formIds.length || !keys.length) return out;
+  const rows = await q(
+    `SELECT s.phone_key, a.status FROM submissions s JOIN appointments a ON a.id = s.appointment_id
+     WHERE s.form_id IN (${ph(formIds)}) AND s.phone_key IN (${ph(keys)}) AND s.deleted_at IS NULL`,
+    [...formIds, ...keys]
+  );
+  for (const r of rows) {
+    const h = (out[r.phone_key] ||= { total: 0, geldi: 0, gelmedi: 0 });
+    h.total += 1;
+    if (r.status === 'geldi') h.geldi += 1;
+    if (r.status === 'gelmedi') h.gelmedi += 1;
+  }
+  return out;
+}
+
+H.listReminders = async (ctx, { day = 'yarin' } = {}) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const dates = { bugun: today(), yarin: addDays(today(), 1) };
+  const date = dates[day] || dates.yarin;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => content(f).randevu.wa?.enabled !== false);
+  const empty = { date, items: [], counts: { bugun: 0, yarin: 0 }, forms: [] };
+  if (!forms.length) return empty;
+  const ids = forms.map((f) => f.id);
+  const counts = {};
+  for (const [k, d] of Object.entries(dates)) {
+    counts[k] = Number((await q(`SELECT COUNT(*) AS c FROM appointments WHERE form_id IN (${ph(ids)}) AND date = ? AND status IN ${PENDING_SQL}`, [...ids, d]))[0].c);
+  }
+  const appts = (await q(`SELECT * FROM appointments WHERE form_id IN (${ph(ids)}) AND date = ? AND status IN ${PENDING_SQL} ORDER BY start`, [...ids, date])).map(mapAppt);
+  const subIds = appts.map((a) => a.submissionId);
+  const subs = subIds.length ? await q(`SELECT id, vals, phone_key FROM submissions WHERE id IN (${ph(subIds)})`, subIds) : [];
+  const subMap = Object.fromEntries(subs.map((r) => [r.id, r]));
+  const keyOf = (a) => subMap[a.submissionId]?.phone_key || phoneKey(a.contact?.phone);
+  const hist = await historyByPhone(q, ids, [...new Set(appts.map(keyOf).filter(Boolean))]);
+  const items = appts.map((a) => {
+    const form = forms.find((f) => f.id === a.formId);
+    const c = content(form);
+    const cfg = c.randevu;
+    const svc = serviceById(cfg, a.serviceId)?.name || '';
+    const res = (cfg.resources || []).find((r) => r.id === a.resourceId)?.name || '';
+    const isletme = form.isletme || form.name;
+    const text = fillReminder(cfg.wa?.text, { name: a.contact?.name, date: a.date, start: a.start, isletme, service: svc, resource: res, partySize: a.partySize, cancelUrl: cancelUrl(a) }, J(subMap[a.submissionId]?.vals, {}));
+    const key = keyOf(a);
+    const h = hist[key] || { total: 0, geldi: 0, gelmedi: 0 };
+    return {
+      id: a.id, formId: a.formId, isletme, formName: form.name, date: a.date, start: a.start, end: a.end, status: a.status,
+      name: a.contact?.name || '', phone: phonePretty(a.contact?.phone), phoneOk: !!a.contact?.phone && waPhoneOk(a.contact.phone),
+      waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '', text,
+      emailAuto: !!(a.contact?.email && customerMails(c)), emailSent: !!(a.contact?.email && customerMails(c) && a.reminderSent),
+      service: svc, resource: res, partySize: a.partySize, waAt: a.waAt, waBy: a.waBy,
+      customerKey: key, visits: h.geldi, noShow: h.gelmedi, firstTime: h.total <= 1
+    };
+  });
+  return { date, items, counts, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+H.markReminded = async (ctx, id, done = true) => {
+  return ctx.db.tx(async (q) => {
+    const a = await loadAppt(q, String(id || ''));
+    if (!a) fail('Randevu bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, a.formId, 'randevu');
+    if (done) await q('UPDATE appointments SET wa_at = ?, wa_by = ? WHERE id = ?', [now(), str(user.name, 150), a.id]);
+    else await q('UPDATE appointments SET wa_at = NULL, wa_by = NULL WHERE id = ?', [a.id]);
+    return done ? { waAt: now(), waBy: user.name } : { waAt: null, waBy: '' };
+  });
+};
+
+
+// ---------------------------------------------------------------- Tekrar çağırma
+// 'Geldi' olan randevunun hizmetinde süre ayarlıysa (ör. aşı 365 gün), süre dolmadan 7 gün önce listeye düşer.
+// Aynı müşteri o hizmet için daha sonra yeniden geldiyse / randevu aldıysa düşmez (ya da listeden çıkar).
+const recallOn = (c) => !!(c.randevu?.recall?.enabled && Object.keys(c.randevu.recall.days || {}).length);
+const RECALL_AHEAD = 7;
+const RECALL_MAX_LATE = 90;
+const formLink = (form, qs = '') => `${config.publicUrl}/f/${form.slug}${qs}`;
+
+async function laterVisit(q, formId, pk, svcId, date) {
+  return (await q(`SELECT a.id FROM appointments a JOIN submissions s ON s.appointment_id = a.id WHERE a.form_id = ? AND s.phone_key = ? AND a.service_id = ? AND a.date > ? AND a.status IN ${ACTIVE_SQL} LIMIT 1`, [formId, pk, svcId, date])).length > 0;
+}
+
+async function syncRecalls(q, form) {
+  const cfg = content(form).randevu;
+  const t = today();
+  for (const [svcId, days] of Object.entries(cfg.recall?.days || {})) {
+    if (!serviceById(cfg, svcId) || !(Number(days) > 0)) continue;
+    const from = addDays(t, -(Number(days) + RECALL_MAX_LATE));
+    const to = addDays(t, -(Number(days) - RECALL_AHEAD));
+    const rows = await q(
+      `SELECT a.*, s.phone_key AS pk FROM appointments a JOIN submissions s ON s.appointment_id = a.id
+       WHERE a.form_id = ? AND a.service_id = ? AND a.status = 'geldi' AND a.date >= ? AND a.date <= ? AND s.deleted_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM recalls r WHERE r.appointment_id = a.id)`,
+      [form.id, svcId, from, to]
+    );
+    for (const r of rows) {
+      const a = mapAppt(r);
+      const pk = r.pk || phoneKey(a.contact?.phone);
+      if (!pk) continue;
+      if ((await q("SELECT id FROM recalls WHERE form_id = ? AND phone_key = ? AND service_id = ? AND status = 'gerek_yok' LIMIT 1", [form.id, pk, svcId])).length) continue;
+      if (await laterVisit(q, form.id, pk, svcId, a.date)) continue;
+      await q('INSERT INTO recalls (id, form_id, appointment_id, submission_id, phone_key, service_id, due_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+        uid('rc_'), form.id, a.id, a.submissionId, pk, svcId, addDays(a.date, Number(days)), 'bekliyor', now()
+      ]);
+    }
+  }
+  // Açık çağrılar: müşteri kendisi randevu aldıysa kapanır (çağrıldıysa "geri geldi" sayılır)
+  const open = await q("SELECT r.id, r.phone_key, r.service_id, a.date FROM recalls r JOIN appointments a ON a.id = r.appointment_id WHERE r.form_id = ? AND r.status IN ('bekliyor','cagrildi')", [form.id]);
+  for (const r of open) {
+    if (await laterVisit(q, form.id, r.phone_key, r.service_id, r.date)) await q("UPDATE recalls SET status = 'geldi', booked_at = ? WHERE id = ?", [now(), r.id]);
+  }
+}
+
+function recallItem(r, form, vals) {
+  const cfg = content(form).randevu;
+  const contact = J(r.contact, {});
+  const service = serviceById(cfg, r.service_id)?.name || '';
+  const isletme = form.isletme || form.name;
+  const text = fillRecall(cfg.recall.text, { name: contact.name, isletme, service, lastDate: r.last_date, url: formLink(form, `?hizmet=${encodeURIComponent(r.service_id)}`) }, vals);
+  return {
+    id: r.id, formId: r.form_id, isletme, name: contact.name || '', phone: phonePretty(contact.phone), customerKey: r.phone_key || '',
+    service, lastDate: r.last_date, dueDate: r.due_date, status: r.status, sentAt: num(r.sent_at), sentBy: r.sent_by || '', bookedAt: num(r.booked_at),
+    days: Number(cfg.recall.days?.[r.service_id] || 0), text,
+    waUrl: contact.phone && waPhoneOk(contact.phone) ? waLink(contact.phone, text) : ''
+  };
+}
+
+H.listRecalls = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => recallOn(content(f)));
+  const empty = { items: [], done: [], forms: [], stats: { sent: 0, booked: 0 } };
+  if (!forms.length) return empty;
+  for (const f of forms) await ctx.db.tx((tq) => syncRecalls(tq, f));
+  const ids = forms.map((f) => f.id);
+  const rows = await q(
+    `SELECT r.*, a.contact, a.date AS last_date, s.vals FROM recalls r JOIN appointments a ON a.id = r.appointment_id LEFT JOIN submissions s ON s.id = r.submission_id
+     WHERE r.form_id IN (${ph(ids)}) AND ((r.status = 'bekliyor' AND r.due_date <= ? AND (r.hidden_until IS NULL OR r.hidden_until <= ?)) OR (r.status IN ('cagrildi','geldi') AND r.sent_at > ?))
+     ORDER BY r.due_date, r.created_at`,
+    [...ids, addDays(today(), RECALL_AHEAD), today(), now() - 7 * 864e5]
+  );
+  const byId = new Map(forms.map((f) => [f.id, f]));
+  const all = rows.map((r) => recallItem(r, byId.get(r.form_id), J(r.vals, {})));
+  const monthStart = dateTimeToMs(`${today().slice(0, 7)}-01`, '00:00');
+  const st = (await q(`SELECT status FROM recalls WHERE form_id IN (${ph(ids)}) AND sent_at >= ?`, [...ids, monthStart]));
+  return {
+    items: all.filter((x) => x.status === 'bekliyor'),
+    done: all.filter((x) => x.status !== 'bekliyor'),
+    forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })),
+    stats: { sent: st.length, booked: st.filter((r) => r.status === 'geldi').length }
+  };
+};
+
+H.markRecall = async (ctx, id, action) => {
+  return ctx.db.tx(async (q) => {
+    const r = (await q('SELECT * FROM recalls WHERE id = ?', [String(id || '')]))[0];
+    if (!r) fail('Bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, r.form_id, 'randevu');
+    if (action === 'sent') await q("UPDATE recalls SET status = 'cagrildi', sent_at = ?, sent_by = ? WHERE id = ? AND status = 'bekliyor'", [now(), str(user.name, 150), r.id]);
+    else if (action === 'undo') await q("UPDATE recalls SET status = 'bekliyor', sent_at = NULL, sent_by = NULL WHERE id = ? AND status IN ('cagrildi','gerek_yok')", [r.id]);
+    else if (action === 'snooze') await q("UPDATE recalls SET status = 'bekliyor', hidden_until = ? WHERE id = ?", [addDays(today(), 7), r.id]);
+    else if (action === 'dismiss') await q("UPDATE recalls SET status = 'gerek_yok' WHERE id = ?", [r.id]);
+    else fail('Geçersiz işlem.');
+    const x = (await q('SELECT * FROM recalls WHERE id = ?', [r.id]))[0];
+    return { status: x.status, dueDate: x.due_date, hiddenUntil: x.hidden_until || '', sentAt: num(x.sent_at), sentBy: x.sent_by || '' };
+  });
+};
+
+// ---------------------------------------------------------------- Bekleme listesi
+// Dolu günde müşteri "yer açılırsa haber verin" der. Yer açılınca (iptal) personele bildirim gider;
+// personel listeden tek dokunuşla WhatsApp'tan haber verir. Gün geçince kişisel bilgiler silinir.
+const waitOn = (c) => !!c.randevu?.waitlist?.enabled;
+const WAIT_PREFS = ['hepsi', 'sabah', 'ogle', 'aksam'];
+const prefOk = (pref, time) => (pref === 'sabah' ? time < '12:00' : pref === 'ogle' ? time >= '12:00' && time < '17:00' : pref === 'aksam' ? time >= '17:00' : true);
+
+H.joinWaitlist = async (ctx, slug, { date, serviceId, pref, name, phone } = {}) => {
+  if (!rateLimit(`wait:${ctx.ip}`, 10, 60 * 60000)) fail('Çok fazla deneme yaptınız. Biraz sonra tekrar deneyin.', 'sinir', 429);
+  const form = await formBySlug(ctx.db.query, slug);
+  if (!form?.published) fail('Form bulunamadı.', 'yok', 404);
+  const c = content(form);
+  const cfg = c.randevu;
+  if (!waitOn(c) || !c.fields.some((f) => f.type === 'randevu')) fail('Bekleme listesi kapalı.');
+  const max = addDays(firstBookableDate(cfg), Number(cfg.maxDaysAhead || 30));
+  if (!isDate(date) || date < today() || date > max || !isDateOpen(cfg, date)) fail('Bu gün için bekleme listesine yazılamaz.');
+  const svc = serviceById(cfg, serviceId) || cfg.services?.[0];
+  if (!svc) fail('Hizmet bulunamadı.');
+  const nm = str(name, 100);
+  if (nm.length < 2) fail('Adınızı ve soyadınızı yazın.');
+  const pk = phoneKey(phone);
+  if (!pk || !waPhoneOk(phone)) fail('Geçerli bir cep telefonu yazın (WhatsApp için).');
+  const p = WAIT_PREFS.includes(pref) ? pref : 'hepsi';
+  return ctx.db.tx(async (q) => {
+    // Gerçekten dolu mu? (boş saat varsa listeye gerek yok)
+    const { appts, blocks } = await dayData(q, form.id, date);
+    if (getSlots(cfg, appts, blocks, { date, serviceId: svc.id }).length) fail('Bu gün için hâlâ boş saat var, hemen seçebilirsiniz.', 'bos');
+    const ex = (await q('SELECT id FROM waitlist WHERE form_id = ? AND date = ? AND phone_key = ? AND booked_at IS NULL', [form.id, date, pk]))[0];
+    if (ex) {
+      await q('UPDATE waitlist SET service_id = ?, pref = ?, name = ?, phone = ? WHERE id = ?', [svc.id, p, nm, str(phone, 30), ex.id]);
+    } else {
+      const [{ c: n }] = await q('SELECT COUNT(*) AS c FROM waitlist WHERE form_id = ? AND date = ? AND booked_at IS NULL', [form.id, date]);
+      if (Number(n) >= 50) fail('Bu gün için bekleme listesi dolu. Başka bir gün seçin.');
+      await q('INSERT INTO waitlist (id, form_id, date, service_id, pref, name, phone, phone_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [uid('w_'), form.id, date, svc.id, p, nm, str(phone, 30), pk, now()]);
+    }
+    return true;
+  });
+};
+
+// Randevu iptal olunca: o gün bekleyen varsa personele "yer açıldı" bildirimi (kişisel veri yok)
+async function waitNotice(q, form, appt) {
+  if (!waitOn(content(form)) || appt.date < today()) return;
+  const [{ c: n }] = await q("SELECT COUNT(*) AS c FROM waitlist WHERE form_id = ? AND date = ? AND booked_at IS NULL AND name <> ''", [form.id, appt.date]);
+  if (!Number(n)) return;
+  const day = appt.date === today() ? 'Bugün' : appt.date === addDays(today(), 1) ? 'Yarın' : `${weekdayShort(appt.date)} ${formatDateShort(appt.date)}`;
+  await q('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+    uid('n_'), form.id, 'bekleme', `🔔 Yer açıldı: ${day} ${appt.start}`, str(`${form.isletme || form.name} · Bekleme listesinde ${Number(n)} kişi. Dokunun, haber verin.`, 500), '/panel/hatirlatmalar?sekme=bekleyen', now()
+  ]);
+}
+
+H.listWaitlist = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => waitOn(content(f)));
+  if (!forms.length) return { groups: [], forms: [], count: 0, open: 0 };
+  const ids = forms.map((f) => f.id);
+  const rows = await q(`SELECT * FROM waitlist WHERE form_id IN (${ph(ids)}) AND date >= ? AND booked_at IS NULL AND name <> '' ORDER BY date, created_at`, [...ids, today()]);
+  const groups = new Map();
+  for (const r of rows) {
+    const k = `${r.form_id}|${r.date}|${r.service_id}`;
+    if (!groups.has(k)) groups.set(k, { formId: r.form_id, date: r.date, serviceId: r.service_id, rows: [] });
+    groups.get(k).rows.push(r);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const form = forms.find((f) => f.id === g.formId);
+    const cfg = content(form).randevu;
+    const { appts, blocks } = await dayData(q, form.id, g.date);
+    const slots = getSlots(cfg, appts, blocks, { date: g.date, serviceId: g.serviceId }).map((x) => x.time);
+    const service = serviceById(cfg, g.serviceId)?.name || '';
+    const isletme = form.isletme || form.name;
+    out.push({
+      formId: form.id, isletme, date: g.date, serviceId: g.serviceId, service, slots: slots.slice(0, 8), open: slots.length > 0,
+      entries: g.rows.map((r) => {
+        const time = slots.find((t) => prefOk(r.pref, t)) || '';
+        const text = time ? fillWait(cfg.waitlist.text, { name: r.name, isletme, date: g.date, time, service, url: formLink(form, `?tarih=${g.date}&saat=${time}&hizmet=${encodeURIComponent(g.serviceId)}`) }) : '';
+        return {
+          id: r.id, name: r.name, phone: phonePretty(r.phone), customerKey: r.phone_key || '', pref: r.pref, createdAt: num(r.created_at), notifiedAt: num(r.notified_at), notifiedBy: r.notified_by || '',
+          time, waUrl: time && waPhoneOk(r.phone) ? waLink(r.phone, text) : ''
+        };
+      })
+    });
+  }
+  out.sort((a, b) => Number(b.open) - Number(a.open) || a.date.localeCompare(b.date));
+  return { groups: out, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })), count: rows.length, open: out.filter((g) => g.open).reduce((n, g) => n + g.entries.filter((e) => !e.notifiedAt).length, 0) };
+};
+
+H.markWaitlist = async (ctx, id, action) => {
+  return ctx.db.tx(async (q) => {
+    const r = (await q('SELECT * FROM waitlist WHERE id = ?', [String(id || '')]))[0];
+    if (!r) fail('Bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, r.form_id, 'randevu');
+    if (action === 'notified') await q('UPDATE waitlist SET notified_at = ?, notified_by = ? WHERE id = ?', [now(), str(user.name, 150), r.id]);
+    else if (action === 'undo') await q('UPDATE waitlist SET notified_at = NULL, notified_by = NULL WHERE id = ?', [r.id]);
+    else if (action === 'remove') await q('DELETE FROM waitlist WHERE id = ?', [r.id]);
+    else fail('Geçersiz işlem.');
+    return true;
+  });
+};
+
+
+// ---------------------------------------------------------------- Ay sonu raporu
+const TR_MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+const TR_DAYS_SHORT = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+const monthOf = (m) => (/^\d{4}-(0[1-9]|1[0-2])$/.test(String(m || '')) ? m : today().slice(0, 7));
+const shiftMonth = (m, n) => {
+  const [y, mo] = m.split('-').map(Number);
+  const d = new Date(Date.UTC(y, mo - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+const monthEnd = (m) => addDays(`${shiftMonth(m, 1)}-01`, -1);
+const monthLabel = (m) => `${TR_MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+
+async function monthNumbers(q, forms, month) {
+  const ids = forms.map((f) => f.id);
+  const from = `${month}-01`;
+  const to = monthEnd(month);
+  const msFrom = dateTimeToMs(from, '00:00');
+  const msTo = dateTimeToMs(addDays(to, 1), '00:00');
+  const rows = await q(`SELECT a.*, s.phone_key AS pk FROM appointments a LEFT JOIN submissions s ON s.appointment_id = a.id WHERE a.form_id IN (${ph(ids)}) AND a.date >= ? AND a.date <= ?`, [...ids, from, to]);
+  const appts = rows.map((r) => ({ ...mapAppt(r), pk: r.pk || phoneKey(J(r.contact, {}).phone) }));
+  const active = appts.filter((a) => a.status !== 'iptal');
+  const past = active.filter((a) => a.date < today() || (a.date === today() && a.status !== 'bekliyor' && a.status !== 'onaylandi'));
+  const noShow = active.filter((a) => a.status === 'gelmedi');
+  const cfgOf = (id) => content(forms.find((f) => f.id === id)).randevu;
+  // Ciro: "Geldi" işaretlenenler + henüz günü gelmemiş onaylı/bekleyen randevular.
+  // Günü geçmiş ama "Geldi" işaretlenmemiş randevular ciroya katılmaz (ayrıca sayılır).
+  const exact = (cfg, id) => (cfg.services || []).find((s) => s.id === id) || null;
+  let revenue = 0;
+  let priced = false;
+  let unmarked = 0;
+  for (const a of active) {
+    if (a.status === 'gelmedi') continue;
+    if (a.status !== 'geldi' && a.date < today()) { unmarked++; continue; }
+    const sv = exact(cfgOf(a.formId), a.serviceId);
+    const p = Number(sv?.price);
+    if (sv && sv.price !== '' && sv.price !== undefined && sv.price !== null && Number.isFinite(p)) {
+      revenue += p * (cfgOf(a.formId).capacityMode === 'kisi' ? Math.max(1, a.partySize) : 1);
+      priced = true;
+    }
+  }
+  // Yeni müşteri: bu formlardaki ilk randevusu bu ay olan
+  const keys = [...new Set(active.map((a) => a.pk).filter(Boolean))];
+  let newCount = 0;
+  for (let i = 0; i < keys.length; i += 400) {
+    const part = keys.slice(i, i + 400);
+    const firsts = await q(`SELECT s.phone_key AS pk, MIN(a.date) AS first FROM appointments a JOIN submissions s ON s.appointment_id = a.id WHERE a.form_id IN (${ph(ids)}) AND a.status <> 'iptal' AND s.phone_key IN (${ph(part)}) GROUP BY s.phone_key`, [...ids, ...part]);
+    newCount += firsts.filter((r) => r.first >= from).length;
+  }
+  const weekdays = [1, 2, 3, 4, 5, 6, 0].map((d) => ({ day: d, label: TR_DAYS_SHORT[d], count: active.filter((a) => dayOfWeek(a.date) === d).length }));
+  const hours = {};
+  for (const a of active) hours[a.start.slice(0, 2)] = (hours[a.start.slice(0, 2)] || 0) + 1;
+  let peak = null;
+  for (const h of Object.keys(hours)) {
+    const n = (hours[h] || 0) + (hours[String(Number(h) + 1).padStart(2, '0')] || 0);
+    if (!peak || n > peak.n) peak = { h: Number(h), n };
+  }
+  const svcCount = new Map();
+  for (const a of active) {
+    const f = forms.find((x) => x.id === a.formId);
+    const name = exact(cfgOf(a.formId), a.serviceId)?.name || 'Silinmiş hizmet';
+    const label = forms.length > 1 ? `${name} · ${f.isletme || f.name}` : name;
+    svcCount.set(label, (svcCount.get(label) || 0) + 1);
+  }
+  const waForms = forms.filter((f) => content(f).randevu.wa?.enabled !== false).map((f) => f.id);
+  const waBase = active.filter((a) => waForms.includes(a.formId));
+  const cnt = async (sql, params) => Number((await q(sql, params))[0].c);
+  const recSent = await cnt(`SELECT COUNT(*) AS c FROM recalls WHERE form_id IN (${ph(ids)}) AND sent_at >= ? AND sent_at < ?`, [...ids, msFrom, msTo]);
+  const recBooked = await cnt(`SELECT COUNT(*) AS c FROM recalls WHERE form_id IN (${ph(ids)}) AND sent_at >= ? AND sent_at < ? AND status = 'geldi'`, [...ids, msFrom, msTo]);
+  const waitN = await cnt(`SELECT COUNT(*) AS c FROM waitlist WHERE form_id IN (${ph(ids)}) AND created_at >= ? AND created_at < ?`, [...ids, msFrom, msTo]);
+  const waitBooked = await cnt(`SELECT COUNT(*) AS c FROM waitlist WHERE form_id IN (${ph(ids)}) AND created_at >= ? AND created_at < ? AND booked_at IS NOT NULL`, [...ids, msFrom, msTo]);
+  const revSent = await cnt(`SELECT COUNT(*) AS c FROM reviews WHERE form_id IN (${ph(ids)}) AND sent_at >= ? AND sent_at < ?`, [...ids, msFrom, msTo]);
+  const revGoogle = await cnt(`SELECT COUNT(*) AS c FROM reviews WHERE form_id IN (${ph(ids)}) AND google_at >= ? AND google_at < ?`, [...ids, msFrom, msTo]);
+  const noShowNoRem = noShow.filter((a) => !a.waAt).length;
+  return {
+    month, label: monthLabel(month), from, to, partial: to >= today(),
+    total: active.length, cancelled: appts.length - active.length, noShow: noShow.length, noShowRate: pct(noShow.length, past.length), noShowNoReminder: noShowNoRem,
+    customers: keys.length, newCustomers: newCount, returning: keys.length - newCount,
+    revenue: priced ? Math.round(revenue) : null, unmarked,
+    weekdays, peakHour: peak && peak.n ? `${String(peak.h).padStart(2, '0')}:00–${String(peak.h + 2).padStart(2, '0')}:00` : '',
+    services: [...svcCount.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 8),
+    recall: { sent: recSent, booked: recBooked },
+    waitlist: { joined: waitN, booked: waitBooked },
+    reviews: { sent: revSent, google: revGoogle },
+    reminders: { sent: waBase.filter((a) => a.waAt).length, base: waBase.length, rate: pct(waBase.filter((a) => a.waAt).length, waBase.length) }
+  };
+}
+
+H.monthReport = async (ctx, { month, formId } = {}) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  let forms = await permittedForms(q, user, 'view', { randevu: true });
+  const all = forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme }));
+  if (formId) forms = forms.filter((f) => f.id === formId);
+  if (!forms.length) return { forms: all, report: null };
+  const m = monthOf(month);
+  const cur = await monthNumbers(q, forms, m);
+  const prev = await monthNumbers(q, forms, shiftMonth(m, -1));
+  // Gelecek ay tekrar çağrılacaklar (tahmini)
+  const next = shiftMonth(m, 1);
+  let upcoming = 0;
+  let upcomingSvc = '';
+  for (const f of forms) {
+    const cfg = content(f).randevu;
+    if (!recallOn(content(f))) continue;
+    for (const [svcId, days] of Object.entries(cfg.recall.days || {})) {
+      const from = addDays(`${next}-01`, -Number(days));
+      const to = addDays(monthEnd(next), -Number(days));
+      const [{ c }] = await q("SELECT COUNT(*) AS c FROM appointments WHERE form_id = ? AND service_id = ? AND status = 'geldi' AND date >= ? AND date <= ?", [f.id, svcId, from, to]);
+      if (Number(c) > 0 && (!upcomingSvc || Number(c) > upcoming)) upcomingSvc = serviceById(cfg, svcId)?.name || '';
+      upcoming += Number(c);
+    }
+  }
+  // Basit öneriler (kurallara göre)
+  const tips = [];
+  const busy = [...cur.weekdays].sort((a, b) => b.count - a.count)[0];
+  const avg = cur.total / Math.max(1, cur.weekdays.filter((d) => d.count).length);
+  if (busy && busy.count >= 8 && busy.count >= avg * 1.3) tips.push({ icon: '📈', text: `${TR_DAYS[busy.day]} en yoğun gününüz (${busy.count} randevu, ortalamanın %${Math.round((busy.count / avg - 1) * 100)} üstü). O gün çalışma saatini uzatmak ya da personel eklemek daha çok randevu demek.` });
+  if (cur.noShow >= 2 && cur.noShowNoReminder >= Math.ceil(cur.noShow / 2)) tips.push({ icon: '📵', text: `Gelmeyen ${cur.noShow} kişiden ${cur.noShowNoReminder}'${cur.noShowNoReminder === 1 ? 'i' : 'si'} hatırlatma gönderilmeyen randevulardı. Hatırlatmaları her gün göndermek gelmeme oranını düşürür.` });
+  if (upcoming > 0) tips.push({ icon: '🔁', text: `${TR_MONTHS[Number(next.slice(5, 7)) - 1]} ayında yaklaşık ${upcoming} müşterinin ${upcomingSvc ? `${upcomingSvc} ` : ''}zamanı geliyor. Hatırlatmalar → Çağır listesinden tek dokunuşla çağırabilirsiniz.` });
+  if (!forms.some((f) => recallOn(content(f))) && cur.total >= 10) tips.push({ icon: '🔁', text: 'Tekrar çağırma kapalı. Form → Randevu sekmesinden hizmetlere süre verirseniz, zamanı gelen müşteriler listeye düşer.' });
+  if (!forms.some((f) => content(f).randevu?.review?.enabled) && cur.total >= 10) tips.push({ icon: '⭐', text: 'Google yorum isteği kapalı. Açarsanız gelen müşterilerden tek dokunuşla Google yorumu isteyebilirsiniz.' });
+  if (cur.cancelled >= 3 && !forms.some((f) => waitOn(content(f)))) tips.push({ icon: '🔔', text: `Bu ay ${cur.cancelled} randevu iptal edildi. Bekleme listesini açarsanız boşalan saatler dolu günlerde bekleyenlere gider.` });
+  const months = Array.from({ length: 6 }, (_, i) => shiftMonth(today().slice(0, 7), -i)).reverse().map((x) => ({ value: x, label: monthLabel(x), partial: x === today().slice(0, 7) }));
+  return { forms: all, months, report: { ...cur, prev: { total: prev.total, noShowRate: prev.noShowRate, label: prev.label, revenue: prev.revenue }, isletme: forms.length === 1 ? forms[0].isletme || forms[0].name : `${forms.length} işletme`, tips: tips.slice(0, 4) } };
+};
+
+// ---------------------------------------------------------------- Google yorum isteği
+// Randevu "Geldi" olunca müşteriden puan istenir. Google kurallarına uygun olarak HERKESE aynı şekilde
+// sorulur ve puan ne olursa olsun Google'da paylaşma düğmesi gösterilir (memnun olmayan gizlenmez).
+const reviewOn = (c) => !!(c.randevu?.review?.enabled && c.randevu.review.googleUrl);
+const reviewUrl = (tok) => `${config.publicUrl}/yorum/${tok}`;
+
+H.listReviewQueue = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'randevu', { randevu: true })).filter((f) => reviewOn(content(f)));
+  if (!forms.length) return { items: [], forms: [] };
+  const ids = forms.map((f) => f.id);
+  const from = addDays(today(), -7);
+  const appts = (await q(`SELECT * FROM appointments WHERE form_id IN (${ph(ids)}) AND status = 'geldi' AND date >= ? AND date <= ? ORDER BY date DESC, start DESC`, [...ids, from, today()])).map(mapAppt);
+  const items = [];
+  for (const a of appts) {
+    const pk = phoneKey(a.contact?.phone);
+    let r = (await q('SELECT * FROM reviews WHERE appointment_id = ?', [a.id]))[0];
+    if (r?.sent_at) continue;
+    // Aynı müşteriye 30 gün içinde ikinci kez sorulmaz
+    if (pk && (await q('SELECT id FROM reviews WHERE form_id = ? AND phone_key = ? AND sent_at > ? AND appointment_id <> ?', [a.formId, pk, now() - 30 * 864e5, a.id])).length) continue;
+    if (!r) {
+      r = { id: uid('rv_'), token: randomToken(16) };
+      await q('INSERT INTO reviews (id, form_id, appointment_id, submission_id, phone_key, token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [r.id, a.formId, a.id, a.submissionId, pk || null, r.token, now()]);
+    }
+    const form = forms.find((f) => f.id === a.formId);
+    const cfg = content(form).randevu;
+    const service = serviceById(cfg, a.serviceId)?.name || '';
+    const text = fillReview(cfg.review.text, { name: a.contact?.name, isletme: form.isletme || form.name, service, url: reviewUrl(r.token) });
+    items.push({
+      id: r.id, apptId: a.id, formId: a.formId, isletme: form.isletme || form.name, date: a.date, start: a.start, name: a.contact?.name || '', phone: phonePretty(a.contact?.phone),
+      service, waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '', customerKey: pk
+    });
+  }
+  return { items, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+H.markReviewSent = async (ctx, id) => {
+  return ctx.db.tx(async (q) => {
+    const r = (await q('SELECT * FROM reviews WHERE id = ?', [String(id || '')]))[0];
+    if (!r) fail('Bulunamadı.', 'yok', 404);
+    const { user } = await requirePerm(ctx, q, r.form_id, 'randevu');
+    await q('UPDATE reviews SET sent_at = ?, sent_by = ? WHERE id = ? AND sent_at IS NULL', [now(), str(user.name, 150), r.id]);
+    return true;
+  });
+};
+
+H.listReviews = async (ctx) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = (await permittedForms(q, user, 'view', { randevu: true })).filter((f) => content(f).randevu?.review?.enabled);
+  if (!forms.length) return { items: [], stats: null, forms: [] };
+  const ids = forms.map((f) => f.id);
+  const rows = await q(`SELECT r.*, a.contact, a.date, a.start, a.service_id FROM reviews r JOIN appointments a ON a.id = r.appointment_id WHERE r.form_id IN (${ph(ids)}) AND r.sent_at IS NOT NULL ORDER BY COALESCE(r.rated_at, r.sent_at) DESC LIMIT 500`, ids);
+  const rated = rows.filter((r) => r.rating);
+  const shown = rows.filter((r) => r.rating || r.google_at);
+  const dist = [1, 2, 3, 4, 5].map((n) => rated.filter((r) => Number(r.rating) === n).length);
+  const stats = {
+    sent: rows.length, rated: rated.length, google: rows.filter((r) => r.google_at).length,
+    avg: rated.length ? Math.round((rated.reduce((s, r) => s + Number(r.rating), 0) / rated.length) * 10) / 10 : null, dist
+  };
+  const items = shown.map((r) => {
+    const form = forms.find((f) => f.id === r.form_id);
+    return {
+      id: r.id, formId: r.form_id, isletme: form.isletme || form.name, rating: r.rating ? Number(r.rating) : null, comment: r.comment || '', ratedAt: num(r.rated_at) || num(r.google_at),
+      name: J(r.contact, {}).name || '', date: r.date, service: serviceById(content(form).randevu, r.service_id)?.name || '', google: !!r.google_at, customerKey: r.phone_key || ''
+    };
+  });
+  return { items, stats, forms: forms.map((f) => ({ id: f.id, name: f.name, isletme: f.isletme })) };
+};
+
+// Herkese açık puan sayfası (müşteri). Kişisel veri dönmez; sadece işletme, hizmet ve tarih.
+async function loadReview(q, tok) {
+  if (!/^[a-f0-9]{32}$/.test(String(tok || ''))) return null;
+  const r = (await q('SELECT r.*, a.date, a.service_id FROM reviews r JOIN appointments a ON a.id = r.appointment_id WHERE r.token = ?', [tok]))[0];
+  if (!r) return null;
+  const form = await loadForm(q, r.form_id);
+  if (!form || !reviewOn(content(form))) return null;
+  return { r, form, cfg: content(form).randevu };
+}
+
+H.getReviewPage = async (ctx, tok) => {
+  const x = await loadReview(ctx.db.query, tok);
+  if (!x) return null;
+  const a = content(x.form).appearance || {};
+  return {
+    isletme: x.form.isletme || x.form.name, service: serviceById(x.cfg, x.r.service_id)?.name || '', date: x.r.date,
+    rated: !!x.r.rating, rating: x.r.rating ? Number(x.r.rating) : null, googleUrl: x.cfg.review.googleUrl, mode: x.cfg.review.mode === 'puan' ? 'puan' : 'google', logo: a.logo || '', primary: a.primary || '#2F5BEA'
+  };
+};
+
+H.submitReview = async (ctx, tok, { rating, comment = '' } = {}) => {
+  if (!rateLimit(`review:${ctx.ip}`, 20, 15 * 60000)) fail('Çok fazla deneme yaptınız.', 'sinir', 429);
+  const n = Math.round(Number(rating));
+  if (!(n >= 1 && n <= 5)) fail('1 ile 5 arasında bir puan seçin.');
+  return ctx.db.tx(async (q) => {
+    const x = await loadReview(q, tok);
+    if (!x) fail('Bağlantı geçersiz veya süresi dolmuş.', 'yok', 404);
+    if (x.r.rating) fail('Bu ziyaret için puanınız zaten alındı. Teşekkürler!');
+    await q('UPDATE reviews SET rating = ?, comment = ?, rated_at = ? WHERE id = ?', [n, str(comment, 1000), now(), x.r.id]);
+    if (n <= 2) {
+      const svc = serviceById(x.cfg, x.r.service_id)?.name || '';
+      await q('INSERT INTO notifications (id, form_id, kind, title, body, url, push_done, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)', [
+        uid('n_'), x.form.id, 'yorum', `Düşük puan: ${'★'.repeat(n)}${'☆'.repeat(5 - n)}`, str(`${x.form.isletme || x.form.name} · ${svc} · ${formatDateShort(x.r.date)}. Müşteriyi arayıp gönlünü almak için dokunun.`, 500), '/panel/yorumlar?sekme=gelen', now()
+      ]);
+    }
+    return { googleUrl: x.cfg.review.googleUrl };
+  });
+};
+
+H.reviewGoogleClick = async (ctx, tok) => {
+  const x = await loadReview(ctx.db.query, tok);
+  if (!x) return null;
+  await ctx.db.query('UPDATE reviews SET google_at = COALESCE(google_at, ?) WHERE id = ?', [now(), x.r.id]);
+  return x.cfg.review.googleUrl;
+};
+
+// ---------------------------------------------------------------- müşteri kartı
+// Müşteri = telefon numarası. Kullanıcı sadece görme yetkisi olduğu formlardaki kayıtları görür.
+H.listCustomers = async (ctx, { q: search = '', marketing = false } = {}) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const forms = await permittedForms(q, user, 'view');
+  if (!forms.length) return { items: [], total: 0 };
+  const ids = forms.map((f) => f.id);
+  const rows = await q(`SELECT id, form_id, vals, types, labels, phone_key, appointment_id, created_at, marketing_at FROM submissions WHERE form_id IN (${ph(ids)}) AND deleted_at IS NULL AND phone_key IS NOT NULL ORDER BY created_at DESC LIMIT 20000`, ids);
+  const appts = Object.fromEntries((await q(`SELECT id, status, date, start FROM appointments WHERE form_id IN (${ph(ids)})`, ids)).map((a) => [a.id, a]));
+  const map = new Map();
+  for (const r of rows) {
+    let c = map.get(r.phone_key);
+    if (!c) {
+      const ct = subContact(r);
+      c = { key: r.phone_key, name: ct.name, phone: phonePretty(r.phone_key), email: ct.email, records: 0, visits: 0, noShow: 0, last: 0, next: '', forms: new Set(), marketing: false, mAt: 0, lastAt: 0 };
+      map.set(r.phone_key, c);
+    }
+    if (!c.name) c.name = subContact(r).name;
+    c.records += 1;
+    c.last = Math.max(c.last, num(r.created_at));
+    // En son kayıttaki tercih geçerli (izin verip sonra vermediyse izin yok sayılır)
+    if (num(r.created_at) >= c.lastAt) { c.lastAt = num(r.created_at); c.marketing = !!r.marketing_at; c.mAt = num(r.marketing_at) || 0; }
+    const f = forms.find((x) => x.id === r.form_id);
+    if (f) c.forms.add(f.isletme || f.name);
+    const a = appts[r.appointment_id];
+    if (a) {
+      if (a.status === 'geldi') c.visits += 1;
+      if (a.status === 'gelmedi') c.noShow += 1;
+      if (a.date >= today() && ['bekliyor', 'onaylandi'].includes(a.status) && (!c.next || `${a.date} ${a.start}` < c.next)) c.next = `${a.date} ${a.start}`;
+    }
+  }
+  const s = String(search || '').trim().toLocaleLowerCase('tr');
+  const digits = s.replace(/\D/g, '');
+  let items = [...map.values()].map((c) => ({ ...c, forms: [...c.forms] }));
+  if (marketing) items = items.filter((c) => c.marketing);
+  if (s) items = items.filter((c) => c.name.toLocaleLowerCase('tr').includes(s) || (digits.length >= 3 && c.key.includes(phoneKey(digits) || digits.replace(/^0/, ''))));
+  return { items: items.slice(0, 300), total: items.length };
+};
+
+H.getCustomer = async (ctx, key) => {
+  const user = await requireUser(ctx);
+  const q = ctx.db.query;
+  const pk = phoneKey(key);
+  if (!pk) fail('Geçersiz telefon.');
+  const forms = await permittedForms(q, user, 'view');
+  const ids = forms.map((f) => f.id);
+  const rows = ids.length ? (await q(`SELECT * FROM submissions WHERE form_id IN (${ph(ids)}) AND phone_key = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 500`, [...ids, pk])).map(mapSub) : [];
+  if (!rows.length) fail('Bu numarayla kayıt bulunamadı.', 'yok', 404);
+  const apptIds = rows.map((r) => r.appointmentId).filter(Boolean);
+  const appts = apptIds.length ? Object.fromEntries((await q(`SELECT * FROM appointments WHERE id IN (${ph(apptIds)})`, apptIds)).map(mapAppt).map((a) => [a.id, a])) : {};
+  const revs = apptIds.length ? Object.fromEntries((await q(`SELECT appointment_id, rating, comment FROM reviews WHERE rating IS NOT NULL AND appointment_id IN (${ph(apptIds)})`, apptIds)).map((r) => [r.appointment_id, { rating: Number(r.rating), comment: r.comment || '' }])) : {};
+  let name = '';
+  let email = '';
+  const stats = { records: rows.length, appointments: 0, geldi: 0, gelmedi: 0, iptal: 0 };
+  const upcoming = [];
+  const items = rows.map((r) => {
+    const form = forms.find((f) => f.id === r.formId);
+    const c = content(form);
+    const fields = r.order.map((k) => ({ key: k, type: r.types[k], label: r.labels[k] || k }));
+    const ct = contactFrom(fields, r.values);
+    name ||= ct.name;
+    email ||= ct.email;
+    const a = appts[r.appointmentId];
+    let appt = null;
+    if (a) {
+      stats.appointments += 1;
+      if (stats[a.status] !== undefined) stats[a.status] += 1;
+      appt = { id: a.id, review: revs[a.id] || null, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(c.randevu, a.serviceId)?.name || '', resource: (c.randevu.resources || []).find((x) => x.id === a.resourceId)?.name || '' };
+      if (a.date >= today() && ['bekliyor', 'onaylandi'].includes(a.status)) upcoming.push({ ...appt, formId: form.id, isletme: form.isletme || form.name });
+    }
+    // Kartta kısa özet: iletişim ve randevu dışındaki alanlar (hayvan adı, şikâyet…)
+    const details = fields
+      .filter((f) => !['tel', 'email', 'randevu', 'dosya', 'tc'].includes(f.type) && String(r.values[f.key] ?? '').trim() && r.values[f.key] !== ct.name)
+      .slice(0, 6)
+      .map((f) => ({ label: f.label, value: displayValue(f.type, r.values[f.key], c.randevu) }));
+    return { id: r.id, formId: r.formId, formName: form.name, isletme: form.isletme || form.name, createdAt: r.createdAt, status: r.status, manual: r.manual, notesCount: r.notes.length, appt, details };
+  });
+  const notes = ids.length
+    ? (await q(`SELECT * FROM customer_notes WHERE phone_key = ? AND form_id IN (${ph(ids)}) ORDER BY created_at DESC LIMIT 200`, [pk, ...ids])).map((n) => ({
+        id: n.id, formId: n.form_id, text: n.text, by: n.user_name, at: num(n.created_at), mine: n.user_id === user.id || user.role === 'admin'
+      }))
+    : [];
+  upcoming.sort((x, y) => `${x.date}${x.start}`.localeCompare(`${y.date}${y.start}`));
+  const noteForms = [...new Map(items.map((i) => [i.formId, { id: i.formId, name: i.isletme === i.formName ? i.formName : `${i.isletme} – ${i.formName}` }])).values()];
+  const latest = rows[0];
+  return { key: pk, name, phone: phonePretty(pk), phoneRaw: pk, email, stats, upcoming, items, notes, noteForms, firstAt: rows[rows.length - 1].createdAt, lastAt: rows[0].createdAt, marketingAt: latest.marketingAt || null };
+};
+
+H.addCustomerNote = async (ctx, key, formId, text) => {
+  return ctx.db.tx(async (q) => {
+    const { user, form } = await requirePerm(ctx, q, formId, 'view');
+    const pk = phoneKey(key);
+    const t = String(text || '').trim().slice(0, 2000);
+    if (!pk || !t) fail('Not boş olamaz.');
+    const has = await q('SELECT id FROM submissions WHERE form_id = ? AND phone_key = ? AND deleted_at IS NULL LIMIT 1', [form.id, pk]);
+    if (!has.length) fail('Bu müşterinin bu formda kaydı yok.');
+    const id = uid('cn_');
+    await q('INSERT INTO customer_notes (id, form_id, phone_key, user_id, user_name, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, form.id, pk, user.id, str(user.name, 150), t, now()]);
+    return { id, formId: form.id, text: t, by: user.name, at: now(), mine: true };
+  });
+};
+
+H.deleteCustomerNote = async (ctx, id) => {
+  return ctx.db.tx(async (q) => {
+    const user = await requireUser(ctx);
+    const n = (await q('SELECT * FROM customer_notes WHERE id = ?', [String(id || '')]))[0];
+    if (!n) fail('Not bulunamadı.', 'yok', 404);
+    await requirePerm(ctx, q, n.form_id, 'view');
+    if (n.user_id !== user.id && user.role !== 'admin') fail('Sadece kendi notunuzu silebilirsiniz.', 'yetki', 403);
+    await q('DELETE FROM customer_notes WHERE id = ?', [n.id]);
+    return true;
+  });
 };
 
 H.adminSlots = async (ctx, formId, { date, serviceId, resourceId, partySize, excludeId } = {}) => {
@@ -1464,14 +2246,15 @@ H.setAppointmentStatus = async (ctx, id, status) => {
     await q('UPDATE appointments SET status = ?, cancelled_by = ? WHERE id = ?', [status, status === 'iptal' ? 'isletme' : a.cancelledBy, id]);
     if (prev !== status) {
       if (a.contact?.email && customerMails(c)) {
-        if (status === 'onaylandi') await mail(q, a.contact.email, tt(lang, 'mailApprovedSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
-        if (status === 'iptal') await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: biz }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu');
+        if (status === 'onaylandi') await mail(q, a.contact.email, tt(lang, 'mailApprovedSubject', { x: biz }), appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: a.formId, subId: a.submissionId });
+        if (status === 'iptal') await mail(q, a.contact.email, tt(lang, 'mailCancelledSubject', { x: biz }), tt(lang, 'mailCancelledBody', { d: `${a.date} ${a.start}`, u: `${config.publicUrl}/f/${form.slug}` }), 'randevu', { formId: a.formId, subId: a.submissionId });
       }
       if (cfg.sms?.confirm && a.contact?.phone) {
-        if (status === 'onaylandi') await sms(q, a.contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }));
-        if (status === 'iptal') await sms(q, a.contact.phone, tt(lang, 'smsCancelled', { x: biz, d: `${a.date} ${a.start}` }));
+        if (status === 'onaylandi') await sms(q, a.contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${a.date} ${a.start}`, u: cancelUrl(a) }), { formId: a.formId, subId: a.submissionId });
+        if (status === 'iptal') await sms(q, a.contact.phone, tt(lang, 'smsCancelled', { x: biz, d: `${a.date} ${a.start}` }), { formId: a.formId, subId: a.submissionId });
       }
     }
+    if (status === 'iptal' && prev !== 'iptal') await waitNotice(q, form, a);
     await log(q, user.id, `Randevu durumu: ${STATUS_LABELS[status]}`, `${form.name} ${a.date} ${a.start}`);
     return true;
   });
@@ -1492,11 +2275,12 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
     const check = checkSlot(cfg, appts, blocks, { date, time, serviceId: a.serviceId, resourceId: resourceId || null, partySize: a.partySize, excludeId: a.id, ignoreNotice: true });
     if (!check.ok) fail('Bu saat dolu veya çalışma saatleri dışında.');
     const old = `${a.date} ${a.start}`;
+    const freed = { date: a.date, start: a.start };
     a.date = date;
     a.start = time;
     a.end = endTime(cfg, a.serviceId, time);
     a.resourceId = check.resourceId;
-    await q('UPDATE appointments SET date = ?, start = ?, end_time = ?, resource_id = ?, reminder_sent = 0 WHERE id = ?', [a.date, a.start, a.end, a.resourceId, id]);
+    await q('UPDATE appointments SET date = ?, start = ?, end_time = ?, resource_id = ?, reminder_sent = 0, wa_at = NULL, wa_by = NULL WHERE id = ?', [a.date, a.start, a.end, a.resourceId, id]);
     const sub = await loadSub(q, a.submissionId);
     if (sub) {
       const rKey = Object.keys(sub.types).find((k) => sub.types[k] === 'randevu');
@@ -1505,10 +2289,14 @@ H.moveAppointment = async (ctx, id, { date, time, resourceId } = {}) => {
         await q('UPDATE submissions SET vals = ? WHERE id = ?', [S(sub.values), sub.id]);
       }
     }
-    if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu');
-    if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }));
+    if (a.contact?.email && customerMails(c)) await mail(q, a.contact.email, tt(lang, 'mailMovedSubject', { x: biz }), `${tt(lang, 'mailOld')} ${old}\n` + appointmentMailBody(form, a, cfg, tt(lang, 'statusLabels')[a.status], lang), 'randevu', { formId: a.formId, subId: a.submissionId });
+    if (cfg.sms?.confirm && a.contact?.phone) await sms(q, a.contact.phone, tt(lang, 'smsMoved', { x: biz, d: `${date} ${time}` }), { formId: a.formId, subId: a.submissionId });
+    if (freed.date !== date || freed.start !== time) await waitNotice(q, form, freed);
     await log(q, user.id, 'Randevu taşıdı', `${form.name} ${old} → ${date} ${time}`);
-    return true;
+    // Müşteriye WhatsApp'tan "saatiniz değişti" mesajı (personel tek dokunuşla gönderir)
+    const svc = serviceById(cfg, a.serviceId)?.name || '';
+    const text = `Merhaba ${a.contact?.name || ''}, ${biz} randevunuz ${dayWord(date)} ${longDate(date)} saat ${time}${svc ? ` (${svc})` : ''} olarak güncellendi. Size uymuyorsa bu linkten iptal edebilirsiniz: ${cancelUrl(a)}`.replace(/\s{2,}/g, ' ');
+    return { waUrl: a.contact?.phone && waPhoneOk(a.contact.phone) ? waLink(a.contact.phone, text) : '' };
   });
 };
 
@@ -1543,12 +2331,13 @@ H.createManualAppointment = async (ctx, formId, { name, phone, email, note, date
     await q('INSERT INTO appointments (id, form_id, submission_id, service_id, resource_id, date, start, end_time, buffer, party_size, status, cancel_token, reminder_sent, contact, lang, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)', [
       appt.id, form.id, subId, appt.serviceId, appt.resourceId, date, time, appt.end, appt.buffer, ps, 'onaylandi', appt.cancelToken, S(contact), lang, 'manuel', now()
     ]);
-    await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)', [
-      subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now()
+    await q('INSERT INTO submissions (id, form_id, vals, labels, types, ord, status, notes, appointment_id, manual, kvkk_at, ip, user_agent, created_at, phone_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, ?, ?)', [
+      subId, form.id, S(values), S(labels), S(types), S(order), 'yeni', '[]', appt.id, 'panel (manuel)', '', now(), phoneKey(contact.phone) || null
     ]);
     const biz = form.isletme || form.name;
-    if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu');
-    if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${date} ${time}`, u: cancelUrl(appt) }));
+    if (contact.email && customerMails(c)) await mail(q, contact.email, tt(lang, 'mailConfirmSubject', { x: biz }), appointmentMailBody(form, appt, cfg, tt(lang, 'statusLabels').onaylandi, lang), 'randevu', { formId: form.id, subId });
+    if (cfg.sms?.confirm && contact.phone) await sms(q, contact.phone, tt(lang, 'smsConfirm', { x: biz, d: `${date} ${time}`, u: cancelUrl(appt) }), { formId: form.id, subId });
+    if (phoneKey(contact.phone)) await q('UPDATE waitlist SET booked_at = ? WHERE form_id = ? AND date = ? AND phone_key = ? AND booked_at IS NULL', [now(), form.id, date, phoneKey(contact.phone)]);
     await log(q, user.id, 'Manuel randevu ekledi', `${form.name} ${date} ${time}`);
     return appt.id;
   });
@@ -1559,9 +2348,67 @@ H.addBlock = async (ctx, formId, { date, start, end, resourceId, note } = {}) =>
   if (!isDate(date) || !tm.test(String(start || '')) || !tm.test(String(end || '')) || start >= end) fail('Geçerli bir tarih ve saat aralığı girin.');
   return ctx.db.tx(async (q) => {
     const { user, form } = await requirePerm(ctx, q, formId, 'randevu', { lock: true });
+    if ((await q('SELECT id FROM blocks WHERE form_id = ? AND date = ? AND start = ? AND end_time = ? AND COALESCE(resource_id, \'\') = ?', [form.id, date, start, end, resourceId || ''])).length) fail('Bu saat zaten kapalı.');
     await q('INSERT INTO blocks (id, form_id, date, start, end_time, resource_id, note) VALUES (?, ?, ?, ?, ?, ?, ?)', [uid('b_'), form.id, date, start, end, resourceId || null, str(note, 300)]);
     await log(q, user.id, 'Saat blokladı', `${form.name} ${date} ${start}-${end}`);
     return true;
+  });
+};
+
+// ---------------------------------------------------------------- müsaitlik (işletme kendisi yönetir)
+// Formu düzenleme yetkisi olmayan personel de (randevu yetkisiyle) sadece çalışma saatlerini,
+// kapalı günleri ve kapalı saatleri değiştirebilir. Değişiklik hemen geçerli olur (ayrıca yayınlamaya gerek yok).
+const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+function cleanHours(hours) {
+  const out = {};
+  for (const d of [0, 1, 2, 3, 4, 5, 6]) {
+    const list = (Array.isArray(hours?.[d]) ? hours[d] : [])
+      .map((r) => ({ start: String(r?.start || ''), end: String(r?.end || '') }))
+      .filter((r) => HM.test(r.start) && HM.test(r.end));
+    if (list.some((r) => r.start >= r.end)) fail('Bitiş saati başlangıçtan sonra olmalı.');
+    list.sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 1; i < list.length; i++) if (list[i].start < list[i - 1].end) fail('Aynı gündeki saat aralıkları çakışıyor.');
+    if (list.length > 4) fail('Bir güne en fazla 4 aralık eklenebilir.');
+    out[d] = list;
+  }
+  return out;
+}
+
+async function upcomingBlocks(q, formId) {
+  return (await q('SELECT * FROM blocks WHERE form_id = ? AND date >= ? ORDER BY date, start', [formId, today()])).map((b) => ({ id: b.id, date: b.date, start: b.start, end: b.end_time, note: b.note, resourceId: b.resource_id }));
+}
+
+H.getSchedule = async (ctx, formId) => {
+  const q = ctx.db.query;
+  const { form } = await requirePerm(ctx, q, formId, 'randevu');
+  const cfg = content(form).randevu;
+  return { form: { id: form.id, name: form.name, isletme: form.isletme }, hours: cfg.hours, closedDates: (cfg.closedDates || []).filter((d) => d >= today()), blocks: await upcomingBlocks(q, form.id), resourceLabel: cfg.resourceLabel, resources: (cfg.resources || []).map((r) => ({ id: r.id, name: r.name })) };
+};
+
+// patch: { hours?, closedDates? }  dryRun: sadece etkilenen randevuları döndür
+H.saveSchedule = async (ctx, formId, patch = {}, { dryRun = false } = {}) => {
+  return ctx.db.tx(async (q) => {
+    const { user, form } = await requirePerm(ctx, q, formId, 'randevu', { lock: true });
+    const cur = content(form).randevu;
+    const next = { ...cur };
+    if (patch.hours !== undefined) next.hours = cleanHours(patch.hours);
+    if (patch.closedDates !== undefined) {
+      if (!Array.isArray(patch.closedDates)) fail('Geçersiz tarih listesi.');
+      const keep = (cur.closedDates || []).filter((d) => d < today()); // geçmiş kayıtlar silinmesin
+      next.closedDates = [...new Set([...keep, ...patch.closedDates.map(String).filter(isDate)])].sort().slice(-400);
+    }
+    const affected = (await findAffectedAppointments(q, form, next))
+      .map((a) => ({ id: a.id, date: a.date, start: a.start, name: a.contact?.name || '' }))
+      .sort((x, y) => `${x.date} ${x.start}`.localeCompare(`${y.date} ${y.start}`));
+    if (dryRun) return { affected };
+    for (const col of ['draft', 'published']) {
+      const c = form[col];
+      if (!c) continue;
+      c.randevu = { ...c.randevu, hours: next.hours, closedDates: next.closedDates };
+      await q(`UPDATE forms SET ${col} = ?, updated_at = ? WHERE id = ?`, [S(c), now(), form.id]);
+    }
+    await log(q, user.id, patch.hours !== undefined ? 'Çalışma saatlerini güncelledi' : 'Kapalı günleri güncelledi', form.name);
+    return { affected, hours: next.hours, closedDates: next.closedDates.filter((d) => d >= today()) };
   });
 };
 
@@ -1595,6 +2442,26 @@ H.getAppointmentByToken = async (ctx, tok) => {
   };
 };
 
+// "Randevumu yönet": müşteri telefon + ad soyadla kendi aktif randevularını görür.
+// İkisi birden eşleşmezse hiçbir şey dönmez (numaranın kayıtlı olup olmadığı da belli olmaz).
+const normName = (s) => String(s || '').toLocaleLowerCase('tr').replace(/[^a-zçğıöşü0-9]/g, '');
+H.findMyAppointments = async (ctx, slug, { phone = '', name = '' } = {}) => {
+  if (!rateLimit(`mine:ip:${ctx.ip}`, 10, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.', 'sinir', 429);
+  const form = await formBySlug(ctx.db.query, slug);
+  if (!form?.published || !content(form).randevu?.selfManage) fail('Bu özellik bu formda kapalı.', 'yetki', 403);
+  const pk = phoneKey(phone);
+  const nm = normName(name);
+  if (!pk || nm.length < 3) fail('Telefon numaranızı ve randevudaki ad soyadınızı yazın.');
+  if (!rateLimit(`mine:tel:${form.id}:${pk}`, 5, 15 * 60000)) fail('Çok fazla deneme yaptınız. Lütfen 15 dakika sonra tekrar deneyin.', 'sinir', 429);
+  const cfg = content(form).randevu;
+  const rows = (await ctx.db.query(`SELECT * FROM appointments WHERE form_id = ? AND date >= ? AND status IN ${PENDING_SQL} ORDER BY date, start`, [form.id, today()])).map(mapAppt);
+  const mine = rows.filter((a) => phoneKey(a.contact?.phone) === pk && normName(a.contact?.name) === nm);
+  return mine.map((a) => {
+    const cutoff = dateTimeToMs(a.date, a.start) - Number(cfg.cancelCutoffHours || 0) * 3600000;
+    return { token: a.cancelToken, date: a.date, start: a.start, end: a.end, status: a.status, service: serviceById(cfg, a.serviceId)?.name || '', canCancel: now() < cutoff, cutoffHours: Number(cfg.cancelCutoffHours || 0) };
+  });
+};
+
 H.cancelByToken = async (ctx, tok) => {
   if (!tokenOk(tok)) fail('Randevu bulunamadı.', 'yok', 404);
   if (!rateLimit(`cancel:${ctx.ip}`, 20, 15 * 60000)) fail('Çok fazla deneme yaptınız.', 'sinir', 429);
@@ -1612,6 +2479,7 @@ H.cancelByToken = async (ctx, tok) => {
     if (now() >= cutoffMs) fail(tt(lang, 'cutoffPassed', { n: cfg.cancelCutoffHours }));
     await q("UPDATE appointments SET status = 'iptal', cancelled_by = 'musteri' WHERE id = ?", [a.id]);
     await addNotice(q, form, 'iptal', a, cfg);
+    await waitNotice(q, form, a);
     await log(q, null, 'Müşteri randevuyu iptal etti', `${form.name} ${a.date} ${a.start}`);
     return true;
   });
@@ -1657,6 +2525,24 @@ H.restoreItem = async (ctx, kind, id) => {
   });
 };
 
+// Test kayıtlarını temizle: formdaki TÜM kayıtlar, randevular, dosyalar ve bildirimler kalıcı silinir.
+// Sadece Ana Admin; yanlışlıkla olmasın diye formun linkini yazarak onaylar. Form ve ayarları kalır.
+H.purgeFormData = async (ctx, formId, confirmSlug) => {
+  const admin = await requireAdmin(ctx);
+  const files = await ctx.db.tx(async (q) => {
+    const form = await loadForm(q, String(formId || ''), { lock: true });
+    if (!form) fail('Form bulunamadı.', 'yok', 404);
+    if (String(confirmSlug || '').trim() !== form.slug) fail('Onay için formun linkini aynen yazın.');
+    const ids = (await q('SELECT id FROM files WHERE form_id = ?', [form.id])).map((r) => r.id);
+    const [{ c: subs }] = await q('SELECT COUNT(*) AS c FROM submissions WHERE form_id = ?', [form.id]);
+    for (const t of ['files', 'appointments', 'submissions', 'notifications', 'customer_notes', 'outbox', 'reviews', 'recalls', 'waitlist']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [form.id]);
+    await log(q, admin.id, `Test kayıtlarını temizledi (${Number(subs)} kayıt)`, form.name);
+    return { ids, subs: Number(subs) };
+  });
+  await removeUploads(files.ids);
+  return { deleted: files.subs };
+};
+
 H.purgeItem = async (ctx, kind, id) => {
   const admin = await requireAdmin(ctx);
   const fileIds = await ctx.db.tx(async (q) => {
@@ -1664,15 +2550,12 @@ H.purgeItem = async (ctx, kind, id) => {
     if (kind === 'form') {
       if (!(await q('SELECT id FROM forms WHERE id = ? AND deleted_at IS NOT NULL', [id])).length) fail('Bulunamadı.', 'yok', 404);
       files = (await q('SELECT id FROM files WHERE form_id = ?', [id])).map((r) => r.id);
-      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
+      for (const t of ['submissions', 'appointments', 'permissions', 'form_versions', 'blocks', 'files', 'notifications', 'customer_notes', 'reminder_runs', 'outbox', 'reviews', 'recalls', 'waitlist']) await q(`DELETE FROM ${t} WHERE form_id = ?`, [id]);
       await q('DELETE FROM forms WHERE id = ?', [id]);
     } else if (kind === 'submission') {
       const s = (await q('SELECT * FROM submissions WHERE id = ? AND deleted_at IS NOT NULL', [id]))[0];
       if (!s) fail('Bulunamadı.', 'yok', 404);
-      files = (await q('SELECT id FROM files WHERE submission_id = ?', [id])).map((r) => r.id);
-      await q('DELETE FROM files WHERE submission_id = ?', [id]);
-      await q('DELETE FROM appointments WHERE submission_id = ?', [id]);
-      await q('DELETE FROM submissions WHERE id = ?', [id]);
+      files = await forgetSubmissions(q, s.form_id, [id]);
     } else if (kind === 'user') {
       if (!(await q("SELECT id FROM users WHERE id = ? AND deleted_at IS NOT NULL AND role <> 'admin'", [id])).length) fail('Bulunamadı.', 'yok', 404);
       await q('DELETE FROM permissions WHERE user_id = ?', [id]);
@@ -1714,7 +2597,9 @@ export async function authorizeFile(ctx, fileId) {
   const user = await requireUser(ctx);
   if (sub?.deleted_at && user.role !== 'admin') fail('Dosya bulunamadı.', 'yok', 404);
   await requirePerm(ctx, ctx.db.query, f.form_id, 'view');
-  await log(ctx.db.query, user.id, 'Dosya indirdi', f.name);
+  // Dosya adı kişisel bilgi içerebilir (ör. "ahmet-yilmaz-rapor.pdf"); kayda sadece form adı yazılır
+  const fm = (await ctx.db.query('SELECT name FROM forms WHERE id = ?', [f.form_id]))[0];
+  await log(ctx.db.query, user.id, 'Dosya indirdi', fm?.name || '');
   return { id: f.id, name: f.name, mime: f.mime, size: Number(f.size) };
 }
 
@@ -1728,4 +2613,4 @@ export async function dispatch(ctx, name, args) {
 }
 
 export const handlerNames = () => Object.keys(H);
-export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, J };
+export { mapAppt, mapForm, content, appointmentMailBody, mail, sms, log, cancelUrl, customerMails, J, forgetSubmissions };

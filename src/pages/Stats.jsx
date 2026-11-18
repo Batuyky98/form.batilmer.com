@@ -84,7 +84,7 @@ export default function Stats({ id }) {
     <div className="page page-wide">
       <div className="page-head">
         <div>
-          <Link to={`/panel/formlar/${id}/kayitlar`} className="back">← Kayıtlar</Link>
+          <Link to={`/panel/formlar/${id}`} className="back">← {data.form.isletme || data.form.name}</Link>
           <div className="eyebrow">{[data.form.isletme, data.form.name].filter(Boolean).join(' · ')}</div>
           <h1>İstatistik</h1>
         </div>
