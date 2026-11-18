@@ -52,6 +52,10 @@ Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, V
 - Randevu formu kurulumu: panelde işletmeye özel form (`/f/<slug>`) + sadece o forma yetkili kullanıcı, 2FA, bildirim, bio linki/QR. İlk müşteriden önce: işletmeler arası ayrım testi, KVKK metni + hizmet sözleşmesi.
 - Kapanış slaytında [telefon] boş; kullanıcı numarayı verecek. Reels videoları kullanıcıda.
 
+## Claude aboneliği
+- 2 kişi için öneri: yıllık Pro (~400 $). Team Standard yıllık 480 $, toplu indirim yok.
+- Claude for Startups başvuruları kapalı (Kas 2026). Her pazartesi 10:13'te (İstanbul) otomatik kontrol eden zamanlanmış görev var, açılınca telefona bildirim gelir.
+
 ## Reels yapımı (`pazarlama/araclar/`)
 1. Yerel demo sunucusu (sqlite, kurgusal veriler) + `reels-*-kareler.mjs` → Playwright ile iPhone 14 ekran kareleri + `seq.json` (dokunma koordinatları). Giriş bilgisi `DEMO_EPOSTA` / `DEMO_SIFRE` ortam değişkeninden. Bot kuralı: sayfa açılışından 2 sn önce gönderilen form sahte başarı döner, bekle.
 2. `reels-video.py`: kanca açılış, hareketli arka plan, kelime kelime yazı, süzülen telefon, punch-zoom, büyüteç kartı, whip-pan, ilerleme çubuğu, animasyonlu bitiş. 1080x1920, 30 fps. Sahneler/yazılar dosya başındaki `REELS` sözlüğünde.
