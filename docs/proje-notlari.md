@@ -48,7 +48,7 @@ Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, V
 - Paketler (aylık, KDV hariç): Gümüş 4 gönderi + 2 reels 4.999 ₺ · Altın 6 + 3 6.999 ₺ (önerilen) · Platin 8 + 4 8.999 ₺.
 - Çekimi işletme yapar (WhatsApp grubu), biz kurgu/müzik/açıklama/hashtag hazırlayıp **teslim ederiz; paylaşımı işletme yapar**. Yerinde çekim, reklam yönetimi, rapor, DM yanıtlama **yok**. Hesap erişimi gerekmez.
 - Ek: online randevu formu +990 ₺/ay (panel tek başına 690/1.190/1.790 önerisinden ucuz kalsın; pazarlık payı yok, gerekirse ilk ay hediye).
-- Şartlar: en az 3 ay, aylık peşin, 3 ay peşine %10, ilk ay profil paketi hediye (bio metni, öne çıkan kapakları).
+- Şartlar: en az 3 ay, aylık peşin, sadece yıllık peşin ödemede %10 indirim, ilk ay profil paketi hediye (bio metni, öne çıkan kapakları).
 - Randevu formu kurulumu: panelde işletmeye özel form (`/f/<slug>`) + sadece o forma yetkili kullanıcı, 2FA, bildirim, bio linki/QR. İlk müşteriden önce: işletmeler arası ayrım testi, KVKK metni + hizmet sözleşmesi.
 - Kapanış slaytında [telefon] boş; kullanıcı numarayı verecek. Reels videoları kullanıcıda.
 
