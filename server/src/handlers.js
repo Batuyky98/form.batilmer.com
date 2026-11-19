@@ -1174,7 +1174,17 @@ export async function formLinkMeta(db, slug) {
   const en = (s.language || 'tr') === 'en';
   const what = hasAppt ? (en ? 'Book online' : 'Online randevu') : (en ? 'Online form' : 'Online başvuru');
   const desc = String(s.linkPage?.subtitle || s.description || '').trim() || (hasAppt ? (en ? 'Pick a free day and time, book in seconds.' : 'Boş gün ve saati seçin, randevunuzu hemen alın.') : (en ? 'Fill in the form online.' : 'Formu online doldurun.'));
-  return { title: name ? `${name} · ${what}` : what, description: desc.slice(0, 200), color: c.appearance?.primary || '#2F5BEA', lang: s.language || 'tr' };
+  const logo = String(c.appearance?.logo || '');
+  const logoV = logo ? sha256(logo).slice(0, 10) : '';
+  return { title: name ? `${name} · ${what}` : what, description: desc.slice(0, 200), color: c.appearance?.primary || '#2F5BEA', lang: s.language || 'tr', logoV };
+}
+
+// Yayındaki formun logosu (link önizlemesi ve sekme simgesi için ayrı resim adresi)
+export async function formLogo(db, slug) {
+  const form = await formBySlug(db.query, slug);
+  if (!form || !form.published) return null;
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(content(form).appearance?.logo || ''));
+  return m ? { type: m[1], data: Buffer.from(m[2], 'base64') } : null;
 }
 
 export async function assistantBubble(db, slug) {

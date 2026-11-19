@@ -367,7 +367,7 @@ function shrinkImage(file, max = 400) {
   });
 }
 
-function LogoSection({ a, set }) {
+function LogoSection({ a, set, compact = false }) {
   const toast = useToast();
   const ref = useRef(null);
   async function pick(e) {
@@ -380,9 +380,10 @@ function LogoSection({ a, set }) {
       toast(err.message, 'err');
     }
   }
+  const Wrap = compact ? 'div' : 'section';
   return (
-    <section className="sub-card stack">
-      <h3>Logo</h3>
+    <Wrap className={compact ? 'stack-sm' : 'sub-card stack'}>
+      <h3>{compact ? 'İşletme logosu' : 'Logo'}</h3>
       <div className="logo-row">
         <div className={`logo-box ${a.logo ? 'has' : ''}`}>{a.logo ? <img src={a.logo} alt="Logo" /> : <span className="muted small">Logo yok</span>}</div>
         <div className="stack-sm">
@@ -391,16 +392,16 @@ function LogoSection({ a, set }) {
             <button type="button" className="btn" onClick={() => ref.current?.click()}>{a.logo ? 'Değiştir' : 'Logo yükle'}</button>
             {a.logo && <button type="button" className="btn btn-ghost" onClick={() => set({ logo: '' })}>Kaldır</button>}
           </div>
-          <div className="pf-hint">Formun en üstünde görünür. PNG (şeffaf zeminli) en iyisidir; resim otomatik küçültülür.</div>
+          <div className="pf-hint">{compact ? 'Link sayfasının üstünde, tarayıcı sekmesinde ve WhatsApp/Instagram link önizlemesinde görünür (Batilmer logosu yerine).' : 'Formun en üstünde görünür. PNG (şeffaf zeminli) en iyisidir; resim otomatik küçültülür.'}</div>
         </div>
       </div>
-      {a.logo && (
+      {a.logo && !compact && (
         <div className="row wrap" style={{ gap: 16 }}>
           <Field label="Boyut"><Segmented label="Logo boyutu" value={a.logoSize || 'orta'} onChange={(v) => set({ logoSize: v })} options={[{ value: 'kucuk', label: 'Küçük' }, { value: 'orta', label: 'Orta' }, { value: 'buyuk', label: 'Büyük' }]} /></Field>
           <Field label="Hizalama"><Segmented label="Logo hizası" value={a.logoAlign || 'orta'} onChange={(v) => set({ logoAlign: v })} options={[{ value: 'sol', label: 'Sol' }, { value: 'orta', label: 'Orta' }]} /></Field>
         </div>
       )}
-    </section>
+    </Wrap>
   );
 }
 
@@ -598,7 +599,8 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 
       <section className="sub-card stack">
         <h3>Link sayfası <span className="muted small">(Instagram, WhatsApp, QR ile açılınca)</span></h3>
-        <div className="pf-hint">Form linki doğrudan açılınca formun üstünde işletme kartı görünür. Boş bırakılan yazı otomatik dolar; hiç görünmesin isterseniz anahtarı kapatın. Hepsi kapalıysa ve logo yoksa form doğrudan en üstten başlar. Logo <b>Görünüm</b> sekmesinden eklenir; logo yoksa kart logosuz görünür.</div>
+        <div className="pf-hint">Form linki doğrudan açılınca formun üstünde işletme kartı görünür. Boş bırakılan yazı otomatik dolar; hiç görünmesin isterseniz anahtarı kapatın. Hepsi kapalıysa ve logo yoksa form doğrudan en üstten başlar. Logo yoksa kart logosuz görünür; aynı logo Görünüm sekmesinde de kullanılır.</div>
+        <LogoSection compact a={draft.appearance} set={(p) => setDraft({ ...draft, appearance: { ...draft.appearance, ...p } })} />
         <Toggle id="lp-st" checked={s.linkPage?.showTitle !== false} onChange={(v) => set({ linkPage: { ...s.linkPage, showTitle: v } })} label="Başlık göster" />
         {s.linkPage?.showTitle !== false && (
           <Field label="Başlık" htmlFor="lp-title" hint="Boş = işletme adı">

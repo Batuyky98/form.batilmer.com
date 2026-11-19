@@ -10,7 +10,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config, isHttps } from './config.js';
 import { connect } from './db.js';
-import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, assistantBubble, formLinkMeta, BIG_BODY } from './handlers.js';
+import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, assistantBubble, formLinkMeta, formLogo, BIG_BODY } from './handlers.js';
 import { ensureDirs, filePath } from './files.js';
 import { startMailer } from './mailer.js';
 import { startScheduler } from './scheduler.js';
@@ -187,7 +187,8 @@ async function withFormMeta(db, html, slug) {
   const m = await formLinkMeta(db, slug).catch(() => null);
   if (!m) return html;
   const url = `${config.publicUrl}/f/${slug}`;
-  const img = `${config.publicUrl}/icon-512.png`;
+  const logo = m.logoV ? `/api/logo/${slug}?v=${m.logoV}` : '';
+  const img = logo ? `${config.publicUrl}${logo}` : `${config.publicUrl}/icon-512.png`;
   const tags = [
     `<title>${escHtml(m.title)}</title>`,
     `<meta name="description" content="${escHtml(m.description)}" />`,
@@ -200,7 +201,10 @@ async function withFormMeta(db, html, slug) {
     `<link rel="canonical" href="${escHtml(url)}" />`
   ].join('\n  ');
   const color = /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#2F5BEA';
-  return html.toString()
+  let out = html.toString();
+  // İşletmenin logosu varsa sekme simgesi ve "Ana ekrana ekle" simgesi de onun olur
+  if (logo) out = out.replace(/<link rel="icon"[^>]*>/, `<link rel="icon" href="${escHtml(logo)}" />`).replace(/<link rel="shortcut icon"[^>]*>/, '').replace(/<link rel="apple-touch-icon"[^>]*>/, `<link rel="apple-touch-icon" href="${escHtml(logo)}" />`);
+  return out
     .replace(/<title>[\s\S]*?<\/title>/, tags)
     .replace(/<meta name="theme-color" content="[^"]*" \/>/, `<meta name="theme-color" content="${color}" />`)
     .replace('<html lang="tr">', `<html lang="${m.lang === 'en' ? 'en' : 'tr'}">`);
@@ -276,6 +280,13 @@ async function main() {
         const body = JSON.stringify(b);
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=60', 'Content-Length': Buffer.byteLength(body) });
         return res.end(body);
+      }
+      if ((m = /^\/api\/logo\/([a-z0-9-]{1,80})$/.exec(pathname)) && (req.method === 'GET' || req.method === 'HEAD')) {
+        // Herkese açık: yayındaki formun logosu (WhatsApp/Instagram link önizlemesi)
+        const lg = await formLogo(db, m[1]);
+        if (!lg) return sendJson(res, 404, { error: { message: 'Bulunamadı.', code: 'yok' } });
+        res.writeHead(200, { 'Content-Type': lg.type, 'Content-Length': lg.data.length, 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+        return res.end(req.method === 'HEAD' ? undefined : lg.data);
       }
       if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: { message: 'Bulunamadı.', code: 'yok' } });
       if (req.method !== 'GET' && req.method !== 'HEAD') {
