@@ -420,6 +420,25 @@ html.is-embedded, html.is-embedded body { background: transparent !important; ov
 .public-wrap { padding: 32px 16px 24px; max-width: 760px; margin: 0 auto; }
 .public-wrap.embedded { padding: 2px; max-width: none; }
 .public-foot { text-align: center; font-size: 12px; color: var(--muted); margin-top: 16px; }
+/* Form linki bağımsız sayfa (Instagram bio, WhatsApp, QR) */
+.lp { --lp-primary: #2F5BEA; min-height: 100vh; min-height: 100dvh; background:
+  radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--lp-primary) 32%, #fff) 0%, color-mix(in srgb, var(--lp-primary) 8%, #F6F7FB) 45%, #F6F7FB 100%); color: #0F172A; }
+.lp-dark { background: radial-gradient(120% 70% at 50% -10%, color-mix(in srgb, var(--lp-primary) 45%, #0B1020) 0%, #0B1020 55%); color: #F8FAFC; }
+.lp-inner { max-width: 640px; margin: 0 auto; padding: 28px 16px 28px; display: flex; flex-direction: column; gap: 18px; }
+.lp-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding-top: 8px; }
+.lp-logo { width: 84px; height: 84px; border-radius: 24px; overflow: hidden; background: #fff; box-shadow: 0 12px 30px -12px color-mix(in srgb, var(--lp-primary) 60%, transparent), 0 0 0 4px rgba(255,255,255,.7); display: grid; place-items: center; margin-bottom: 8px; }
+.lp-logo img { width: 100%; height: 100%; object-fit: contain; }
+.lp-logo span { width: 100%; height: 100%; display: grid; place-items: center; background: var(--lp-primary); color: #fff; font-weight: 800; font-size: 30px; letter-spacing: .02em; }
+.lp-name { font-size: clamp(24px, 6vw, 30px); font-weight: 800; letter-spacing: -.02em; line-height: 1.15; margin: 0; }
+.lp-sub { margin: 0; font-size: 15px; opacity: .72; }
+.lp-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+.lp-actions a { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; border-radius: 999px; background: rgba(255,255,255,.85); color: #0F172A; font-weight: 700; font-size: 14px; text-decoration: none; box-shadow: 0 1px 2px rgba(15,23,42,.08), 0 0 0 1px rgba(15,23,42,.06); }
+.lp-dark .lp-actions a { background: rgba(255,255,255,.1); color: #F8FAFC; box-shadow: 0 0 0 1px rgba(255,255,255,.14); }
+.lp-actions a.lp-wa { background: #25D366; color: #fff; box-shadow: none; }
+.lp-actions a svg { width: 16px; height: 16px; }
+.public-wrap.lp-wrap { padding: 0; max-width: none; width: 100%; margin: 0; }
+.lp-foot { align-self: center; font-size: 12px; font-weight: 600; opacity: .55; color: inherit; text-decoration: none; padding: 6px 10px; }
+.lp-foot:hover { opacity: .85; }
 
 .bf { container-type: inline-size; color: var(--bf-text); background: var(--bf-bg); border-radius: calc(var(--bf-radius) + 4px); font-size: 15px; line-height: 1.5; display: flex; flex-direction: column; gap: 18px; }
 .bf-bg-beyaz, .bf-bg-ozel { padding: clamp(18px, 4vw, 32px); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); border: 1px solid rgba(15, 23, 42, 0.06); }
@@ -1929,3 +1948,6 @@ html.as-doc, html.as-doc body { height: 100%; margin: 0; background: #f7f9fc; }
 .asx-pv.is-warn { background: #fff4e5; color: #8a4b00; }
 .pf-back-chat { position: sticky; top: 0; z-index: 5; display: block; width: 100%; margin: 0 0 10px; border: 0; background: #fff; border-bottom: 1px solid #e5eaf0; padding: 12px 14px; font: inherit; font-weight: 700; font-size: 14.5px; text-align: left; color: #16222f; cursor: pointer; }
 .pf-back-chat { position: sticky; top: 0; z-index: 5; display: block; width: 100%; margin: 0 0 10px; border: 0; background: #fff; border-bottom: 1px solid #e5eaf0; padding: 12px 14px; font: inherit; font-weight: 700; font-size: 14.5px; text-align: left; color: #16222f; cursor: pointer; }
+.share-howto { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; background: var(--surface); }
+.share-howto summary { cursor: pointer; font-weight: 700; }
+.share-howto ol { margin: 10px 0 6px; padding-left: 20px; display: grid; gap: 4px; }

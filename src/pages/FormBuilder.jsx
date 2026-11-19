@@ -13,6 +13,8 @@ import { APPOINTMENT_TERMS } from '../lib/calendar.js';
 import { directionsUrl, readableOn } from '../lib/shared.js';
 import StylePicker from '../components/StylePicker.jsx';
 import EmojiPick from '../components/EmojiPick.jsx';
+import qrcode from 'qrcode-generator';
+import { WaIcon } from '../components/ContactButtons.jsx';
 import { DEFAULT_WA, DEFAULT_WA_TEXT, DEFAULT_REVIEW_TEXT, WA_VARS, fillReminder, fillReview, RECALL_OPTIONS, DEFAULT_RECALL_TEXT, RECALL_VARS, fillRecall, DEFAULT_WAIT_TEXT, WAIT_VARS, fillWait } from '../lib/reminder.js';
 import { buildKvkkText, buildMarketingText, DEFAULT_MARKETING_LABEL, MARKETING_FEATURE } from '../lib/kvkkTemplate.js';
 import { applyFormStyle, DEFAULT_STYLE } from '../lib/formStyles.js';
@@ -22,7 +24,7 @@ const TABS = [
   ['gorunum', 'Görünüm'],
   ['ayarlar', 'Ayarlar'],
   ['randevu', 'Randevu'],
-  ['paylas', 'Paylaş / Iframe kodu'],
+  ['paylas', 'Paylaş (link / site)'],
   ['gecmis', 'Geçmiş']
 ];
 
@@ -1250,21 +1252,50 @@ function ShareTab({ form }) {
   const [fixedH, setFixedH] = useState(900);
   const codeNoScript = `<iframe src="${url}"\n        title="${title.replace(/"/g, '&quot;')}"\n        style="width:100%;height:${fixedH}px;border:0"\n        loading="lazy"></iframe>`;
   const copy = async (t) => toast((await copyText(t)) ? 'Kopyalandı.' : 'Kopyalanamadı, elle seçip kopyalayın.', 'ok');
+  const qr = useMemo(() => {
+    const q = qrcode(0, 'M');
+    q.addData(url);
+    q.make();
+    return { svg: q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }), png: q.createDataURL(12, 4) };
+  }, [url]);
 
   return (
     <div className="stack">
       {!form.publishedAt && <div className="notice notice-warn">Form henüz yayınlanmadı. Kodu şimdi alabilirsiniz ama form, yayınlanana kadar ziyaretçilere kapalı görünür.</div>}
-      <section className="sub-card stack">
-        <h3>Form linki</h3>
-        <p className="muted small">Sitesi olmayan müşteriler bu linki doğrudan paylaşabilir (Instagram, WhatsApp...).</p>
-        <div className="copy-row"><input readOnly value={url} aria-label="Form linki" onFocus={(e) => e.target.select()} /><button type="button" className="btn btn-sm" onClick={() => copy(url)}>Kopyala</button><a className="btn btn-sm btn-ghost" href={url} target="_blank" rel="noreferrer">Aç ↗</a></div>
+      <section className="sub-card stack share-main">
+        <h3>Form linki <span className="muted small">(Instagram, WhatsApp, QR)</span></h3>
+        <p className="muted small">Link açılınca form kendi başına bir randevu sayfası olarak görünür: işletme adı ve logo, yol tarifi / ara / WhatsApp düğmeleri, marka renginde zemin. Paylaşınca WhatsApp'ta işletme adıyla önizleme çıkar.</p>
+        <div className="share-link"><input readOnly value={url} aria-label="Form linki" onFocus={(e) => e.target.select()} /><button type="button" className="btn btn-primary" onClick={() => copy(url)}>Linki kopyala</button></div>
+        <div className="share-btns">
+          <a className="share-btn share-wa" href={`https://wa.me/?text=${encodeURIComponent(`${form.isletme || title}\n${url}`)}`} target="_blank" rel="noopener noreferrer"><WaIcon /> WhatsApp'ta gönder</a>
+          <a className="share-btn" href={url} target="_blank" rel="noreferrer">↗ Link sayfasını aç</a>
+        </div>
+        <div className="share-qr">
+          {/* SVG metni kütüphanenin kendi ürettiği; içinde kullanıcı girdisi yok */}
+          <div className="qr" aria-label="Formun kare kodu" dangerouslySetInnerHTML={{ __html: qr.svg }} />
+          <div className="stack-sm">
+            <b>Kare kod (QR)</b>
+            <span className="muted small">Kapıya, tezgâha, kartvizite koyun; kamerayla okutan müşteri doğrudan link sayfasına gelir.</span>
+            <a className="btn btn-sm" href={qr.png} download={`${form.slug}-qr.gif`}>QR'ı indir</a>
+          </div>
+        </div>
+        <details className="share-howto">
+          <summary>Instagram'a nasıl eklenir?</summary>
+          <ol>
+            <li>Instagram'da profilinize gidin → <b>Profili düzenle</b>.</li>
+            <li><b>Bağlantılar</b> → <b>Harici bağlantı ekle</b>.</li>
+            <li>Linki yapıştırın, başlığa <b>Online randevu</b> yazın, kaydedin.</li>
+            <li>Story'de: çıkartmalardan <b>Bağlantı</b> seçin, linki yapıştırın.</li>
+          </ol>
+          <p className="muted small">Google İşletme Profili'nde de "Randevu" bağlantısı olarak bu linki kullanabilirsiniz.</p>
+        </details>
       </section>
       <section className="sub-card stack">
-        <h3>Iframe kodu (önerilen)</h3>
-        <p className="muted small">Bu kodu sitenizde formun görüneceği yere yapıştırın. Formun yüksekliği otomatik ayarlanır, kaydırma çubuğu çıkmaz.</p>
+        <h3>Sitenize gömmek için: iframe kodu</h3>
+        <p className="muted small">Web siteniz varsa bu kodu formun görüneceği yere yapıştırın. Formun yüksekliği otomatik ayarlanır, kaydırma çubuğu çıkmaz.</p>
         <pre className="code">{code}</pre>
         <div className="row">
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => copy(code)}>Iframe kodunu kopyala</button>
+          <button type="button" className="btn btn-sm" onClick={() => copy(code)}>Iframe kodunu kopyala</button>
           <a className="btn btn-sm" href={`/test-sitesi?f=${encodeURIComponent(form.slug)}`} target="_blank" rel="noreferrer">Siteye gömülü halini göster ↗</a>
         </div>
       </section>

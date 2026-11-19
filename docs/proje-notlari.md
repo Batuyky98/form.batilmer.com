@@ -13,6 +13,7 @@ Yeni sohbette önce bu dosyayı oku. Her oturum sonunda yeni bilgileri buraya ek
 
 ## Ürün (canlı: form.batilmer.com)
 React 19 + Vite (`src/`), Node 22 sunucu (`server/src`), MySQL (test: node:sqlite). RPC: `POST /api/rpc/<ad>` + `X-Batilmer: 1`. Şema v9 (`server/src/schema.js`). Test: `npm test` (144 test geçiyor).
+Form linki (`/f/<slug>`) doğrudan açılınca bağımsız randevu sayfası: işletme adı/logo, yol tarifi/ara/WhatsApp, marka renginde zemin; sunucu og:title/description yazar (WhatsApp önizlemesi). Iframe içinde eski sade görünüm. Paylaş sekmesi: link + WhatsApp + QR + Instagram adımları önde, iframe altta.
 Yayındaki özellikler: çok adımlı form, randevu + müsaitlik, bildirim (canlı + Web Push), 2FA, tek dokunuşla WhatsApp hatırlatma, müşteri kartı, Google yorum, sohbet asistanı (`public/asistan.js`, site içinde açılır), tekrar çağırma, bekleme listesi, ay sonu raporu (`/panel/rapor`), KVKK metni, çöp kutusu 30 gün, IP/UA 90 gün sonra silinir, gece yedek (`deploy/yedek.sh`).
 
 ## Kullanıcının yapacakları (teslimden önce)

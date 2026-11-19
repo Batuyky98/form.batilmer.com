@@ -10,7 +10,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config, isHttps } from './config.js';
 import { connect } from './db.js';
-import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, assistantBubble, BIG_BODY } from './handlers.js';
+import { ApiError, dispatch, seedAdmin, authorizeFile, icsByToken, assistantBubble, formLinkMeta, BIG_BODY } from './handlers.js';
 import { ensureDirs, filePath } from './files.js';
 import { startMailer } from './mailer.js';
 import { startScheduler } from './scheduler.js';
@@ -180,7 +180,33 @@ function rateLimitIcs(req) {
 }
 
 let indexHtml = null;
-async function serveStatic(req, res, pathname) {
+const escHtml = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+
+// /f/<slug> sayfası: başlık + paylaşım önizlemesi (og:*) sunucuda yazılır; WhatsApp/Instagram JS çalıştırmaz
+async function withFormMeta(db, html, slug) {
+  const m = await formLinkMeta(db, slug).catch(() => null);
+  if (!m) return html;
+  const url = `${config.publicUrl}/f/${slug}`;
+  const img = `${config.publicUrl}/icon-512.png`;
+  const tags = [
+    `<title>${escHtml(m.title)}</title>`,
+    `<meta name="description" content="${escHtml(m.description)}" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:title" content="${escHtml(m.title)}" />`,
+    `<meta property="og:description" content="${escHtml(m.description)}" />`,
+    `<meta property="og:url" content="${escHtml(url)}" />`,
+    `<meta property="og:image" content="${escHtml(img)}" />`,
+    `<meta name="twitter:card" content="summary" />`,
+    `<link rel="canonical" href="${escHtml(url)}" />`
+  ].join('\n  ');
+  const color = /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#2F5BEA';
+  return html.toString()
+    .replace(/<title>[\s\S]*?<\/title>/, tags)
+    .replace(/<meta name="theme-color" content="[^"]*" \/>/, `<meta name="theme-color" content="${color}" />`)
+    .replace('<html lang="tr">', `<html lang="${m.lang === 'en' ? 'en' : 'tr'}">`);
+}
+
+async function serveStatic(req, res, pathname, db) {
   const root = config.staticDir;
   let rel;
   try {
@@ -220,8 +246,10 @@ async function serveStatic(req, res, pathname) {
     res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Ön yüz derlenmemiş (dist/index.html yok).');
   }
+  const fm = /^\/f\/([a-z0-9-]{1,80})\/?$/.exec(pathname);
+  const html = fm && db ? await withFormMeta(db, indexHtml, fm[1]) : indexHtml;
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-  res.end(req.method === 'HEAD' ? undefined : indexHtml);
+  res.end(req.method === 'HEAD' ? undefined : html);
 }
 
 async function main() {
@@ -254,7 +282,7 @@ async function main() {
         res.writeHead(405);
         return res.end();
       }
-      return await serveStatic(req, res, pathname);
+      return await serveStatic(req, res, pathname, db);
     } catch (e) {
       console.error('[http]', e);
       if (!res.headersSent) sendJson(res, 500, { error: { message: 'Sunucu hatası.', code: 'sunucu' } });

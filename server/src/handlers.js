@@ -1161,6 +1161,20 @@ H.getAssistant = async (ctx, slug, { preview = false } = {}) => {
 };
 
 // Siteye gömülen balonun (asistan.js) ihtiyacı: renk ve balon yazısı. Kapalıysa null → balon hiç çıkmaz.
+// Form linki paylaşılınca (WhatsApp, Instagram) görünen önizleme bilgisi; sadece yayındaki herkese açık metinler
+export async function formLinkMeta(db, slug) {
+  const form = await formBySlug(db.query, slug);
+  if (!form || !form.published) return null;
+  const c = content(form);
+  const s = c.settings || {};
+  const name = String(form.isletme || s.title || form.name || '').trim();
+  const hasAppt = (c.fields || []).some((f) => f.type === 'randevu');
+  const en = (s.language || 'tr') === 'en';
+  const what = hasAppt ? (en ? 'Book online' : 'Online randevu') : (en ? 'Online form' : 'Online başvuru');
+  const desc = String(s.description || '').trim() || (hasAppt ? (en ? 'Pick a free day and time, book in seconds.' : 'Boş gün ve saati seçin, randevunuzu hemen alın.') : (en ? 'Fill in the form online.' : 'Formu online doldurun.'));
+  return { title: name ? `${name} · ${what}` : what, description: desc.slice(0, 200), color: c.appearance?.primary || '#2F5BEA', lang: s.language || 'tr' };
+}
+
 export async function assistantBubble(db, slug) {
   if (!/^[a-z0-9-]{1,80}$/.test(String(slug || ''))) return null;
   const d = await H.getAssistant({ db }, slug);

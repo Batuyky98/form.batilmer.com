@@ -3,6 +3,8 @@ import * as api from '../lib/api.js';
 import FormRenderer, { appearanceStyle } from '../components/FormRenderer.jsx';
 import { Spinner } from '../components/ui.jsx';
 import { t } from '../lib/i18n.js';
+import { directionsUrl, telUrl, whatsappUrl } from '../lib/shared.js';
+import { WaIcon } from '../components/ContactButtons.jsx';
 
 // Sohbet asistanının penceresinde açılan form (?asistan=1): kendi içinde kaydırılır, yükseklik bildirmez
 const inAssistant = new URLSearchParams(window.location.search).get('asistan') === '1';
@@ -67,6 +69,41 @@ function useAutoHeight(slug) {
   }, [slug]);
 }
 
+// Link olarak açılınca (Instagram bio, WhatsApp, QR) form kendi başına duran bir sayfa olur:
+// işletme adı + logo, yol tarifi / ara / WhatsApp düğmeleri, marka renginde zemin.
+const standalone = !isEmbedded && !inAssistant;
+
+function initials(name) {
+  return String(name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toLocaleUpperCase('tr-TR') || '•';
+}
+
+function LinkHeader({ data }) {
+  const c = data.content;
+  const s = c.settings || {};
+  const a = c.appearance || {};
+  const name = data.isletme || s.title || data.name;
+  const hasAppt = (c.fields || []).some((f) => f.type === 'randevu');
+  const en = data.lang === 'en';
+  const sub = s.description || (hasAppt ? (en ? 'Book online in seconds' : 'Online randevu alın, sıra beklemeyin') : en ? 'Online form' : 'Online başvuru');
+  const dir = directionsUrl(s);
+  const tel = telUrl(s.kvkk?.contactPhone);
+  const wa = whatsappUrl(s.assistant?.whatsapp);
+  return (
+    <header className="lp-head">
+      <div className="lp-logo">{a.logo ? <img src={a.logo} alt={name} /> : <span>{initials(name)}</span>}</div>
+      <h1 className="lp-name">{name}</h1>
+      <p className="lp-sub">{sub}</p>
+      {(dir || tel || wa) && (
+        <div className="lp-actions">
+          {dir && <a href={dir} target="_blank" rel="noopener noreferrer">📍 {en ? 'Directions' : 'Yol tarifi'}</a>}
+          {tel && <a href={tel}>📞 {en ? 'Call' : 'Ara'}</a>}
+          {wa && <a href={wa} target="_blank" rel="noopener noreferrer" className="lp-wa"><WaIcon /> WhatsApp</a>}
+        </div>
+      )}
+    </header>
+  );
+}
+
 export default function PublicForm({ slug }) {
   const [data, setData] = useState(undefined);
   useAutoHeight(slug);
@@ -75,7 +112,9 @@ export default function PublicForm({ slug }) {
     api.getPublicForm(slug).then((d) => {
       setData(d);
       if (d) {
-        document.title = d.content.settings.title || d.name;
+        const hasAppt = (d.content.fields || []).some((f) => f.type === 'randevu');
+        document.title = d.isletme ? `${d.isletme} · ${hasAppt ? (d.lang === 'en' ? 'Book online' : 'Online randevu') : d.content.settings.title || d.name}` : d.content.settings.title || d.name;
+        if (standalone) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', d.content.appearance?.primary || '#2F5BEA');
         document.documentElement.lang = d.lang || 'tr';
       }
     });
@@ -90,12 +129,28 @@ export default function PublicForm({ slug }) {
     );
   }
 
-  const content = data.content;
+  // Bağımsız sayfada logo üst başlıkta durur (formda tekrar etmez), şeffaf zeminli form kart içine alınır
+  const content = standalone
+    ? { ...data.content, appearance: { ...data.content.appearance, logo: '', background: data.content.appearance.background === 'seffaf' ? 'beyaz' : data.content.appearance.background } }
+    : data.content;
   const a = content.appearance;
+  // Not: bileşen değil düz fonksiyon; her çizimde formun yeniden kurulmasını (state kaybını) önler
+  const page = (children) =>
+    standalone ? (
+      <div className={`lp ${a.dark ? 'lp-dark' : ''}`} style={{ '--lp-primary': a.primary || '#2F5BEA' }}>
+        <div className="lp-inner">
+          <LinkHeader data={data} />
+          {children}
+          <a className="lp-foot" href="https://form.batilmer.com" target="_blank" rel="noopener noreferrer">Batilmer ile online randevu</a>
+        </div>
+      </div>
+    ) : (
+      children
+    );
 
   if (!data.open) {
-    return (
-      <div className={`public-wrap ${isEmbedded ? 'embedded' : ''}`}>
+    return page(
+      <div className={`public-wrap ${isEmbedded ? 'embedded' : ''} ${standalone ? 'lp-wrap' : ''}`}>
         <div className={`bf bf-bg-${a.background} ${a.dark ? 'bf-dark' : ''} ${a.width === 'dar' ? 'bf-narrow' : ''}`} style={appearanceStyle(a)}>
           {a.titleOn === true && content.settings.title && <h2 className="bf-title">{content.settings.title}</h2>}
           <div className="bf-closed">{data.reason || t(data.lang, 'formClosed')}</div>
@@ -104,8 +159,8 @@ export default function PublicForm({ slug }) {
     );
   }
 
-  return (
-    <div className={`public-wrap ${isEmbedded ? 'embedded' : ''}`}>
+  return page(
+    <div className={`public-wrap ${isEmbedded ? 'embedded' : ''} ${standalone ? 'lp-wrap' : ''}`}>
       {inAssistant && (
         <button type="button" className="pf-back-chat" onClick={() => window.location.assign(`/asistan/${slug}`)}>← Sohbete dön</button>
       )}
@@ -128,7 +183,7 @@ export default function PublicForm({ slug }) {
           if (!isEmbedded) window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
       />
-      {!isEmbedded && (
+      {inAssistant && (
         <div className="public-foot">
           {data.isletme && <span>{data.isletme} · </span>}
           <span>Batilmer Form</span>
