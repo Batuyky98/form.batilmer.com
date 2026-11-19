@@ -72,6 +72,8 @@ export const COLOR_FIELDS = [
 export const DEFAULT_SETTINGS = {
   title: '',
   description: '',
+  // Form linki doğrudan açılınca (Instagram bio, WhatsApp) üstte çıkan işletme kartı. Boş = otomatik (işletme adı / hazır alt yazı)
+  linkPage: { title: '', subtitle: '', buttons: true },
   duplicateCheck: 'yok', // 'yok' | 'email' | 'tc' | 'tel'
   // İşletme adresi: müşteriye "Yol tarifi al" düğmesiyle gösterilir (randevu sonrası ve iptal sayfasında)
   address: '',
@@ -166,6 +168,7 @@ export function normalizeContent(c) {
   settings.assistant = { ...clone(DEFAULT_SETTINGS.assistant), ...(c.settings?.assistant || {}) };
   settings.assistant.items = { ...clone(DEFAULT_SETTINGS.assistant.items), ...(c.settings?.assistant?.items || {}) };
   settings.autoReply = { ...clone(DEFAULT_SETTINGS.autoReply), ...(c.settings?.autoReply || {}) };
+  settings.linkPage = { ...clone(DEFAULT_SETTINGS.linkPage), ...(c.settings?.linkPage || {}) };
   // Eski sürümdeki "bildirim gidecek e-postalar" kaldırıldı (elle yazılan adreslere kişisel veri gitmesin)
   delete settings.notifyEmails;
   const randevu = { ...clone(DEFAULT_RANDEVU), ...(c.randevu || {}) };

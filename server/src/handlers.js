@@ -939,6 +939,8 @@ function cleanDraft(draft, prev, user) {
   if (!['kucuk', 'orta', 'buyuk'].includes(next.appearance.logoSize)) next.appearance.logoSize = 'orta';
   if (!['sol', 'orta'].includes(next.appearance.logoAlign)) next.appearance.logoAlign = 'orta';
   next.settings.address = str(next.settings.address, 300);
+  const lp = next.settings.linkPage || {};
+  next.settings.linkPage = { title: str(lp.title, 80), subtitle: str(lp.subtitle, 160), buttons: lp.buttons !== false };
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
   next.settings.marketing.text = String(next.settings.marketing.text || '').slice(0, 30000);
@@ -1167,11 +1169,11 @@ export async function formLinkMeta(db, slug) {
   if (!form || !form.published) return null;
   const c = content(form);
   const s = c.settings || {};
-  const name = String(form.isletme || s.title || form.name || '').trim();
+  const name = String(s.linkPage?.title || form.isletme || s.title || form.name || '').trim();
   const hasAppt = (c.fields || []).some((f) => f.type === 'randevu');
   const en = (s.language || 'tr') === 'en';
   const what = hasAppt ? (en ? 'Book online' : 'Online randevu') : (en ? 'Online form' : 'Online başvuru');
-  const desc = String(s.description || '').trim() || (hasAppt ? (en ? 'Pick a free day and time, book in seconds.' : 'Boş gün ve saati seçin, randevunuzu hemen alın.') : (en ? 'Fill in the form online.' : 'Formu online doldurun.'));
+  const desc = String(s.linkPage?.subtitle || s.description || '').trim() || (hasAppt ? (en ? 'Pick a free day and time, book in seconds.' : 'Boş gün ve saati seçin, randevunuzu hemen alın.') : (en ? 'Fill in the form online.' : 'Formu online doldurun.'));
   return { title: name ? `${name} · ${what}` : what, description: desc.slice(0, 200), color: c.appearance?.primary || '#2F5BEA', lang: s.language || 'tr' };
 }
 

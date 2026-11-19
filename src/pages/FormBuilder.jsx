@@ -597,6 +597,19 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
       </section>
 
       <section className="sub-card stack">
+        <h3>Link sayfası <span className="muted small">(Instagram, WhatsApp, QR ile açılınca)</span></h3>
+        <div className="pf-hint">Form linki doğrudan açılınca formun üstünde işletme kartı görünür. Boş bırakılan yazı otomatik dolar. Logo <b>Görünüm</b> sekmesinden eklenir; logo yoksa kart logosuz görünür.</div>
+        <Field label="Başlık" htmlFor="lp-title" hint="Boş = işletme adı">
+          <input id="lp-title" maxLength={80} placeholder={meta?.isletme || 'İşletme adı'} value={s.linkPage?.title || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, title: e.target.value } })} />
+        </Field>
+        <Field label="Alt yazı" htmlFor="lp-sub" hint="Boş = &quot;Online randevu alın, sıra beklemeyin&quot;. WhatsApp'ta link önizlemesinde de bu yazı çıkar.">
+          <input id="lp-sub" maxLength={160} placeholder="Online randevu alın, sıra beklemeyin" value={s.linkPage?.subtitle || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, subtitle: e.target.value } })} />
+        </Field>
+        <Toggle id="lp-btn" checked={s.linkPage?.buttons !== false} onChange={(v) => set({ linkPage: { ...s.linkPage, buttons: v } })} label="Yol tarifi / Ara / WhatsApp düğmelerini göster" />
+        <div className="pf-hint">Düğmeler bilgisi girilmişse çıkar: adres (yukarıda), telefon (KVKK → iletişim telefonu), WhatsApp (Sohbet asistanı → WhatsApp numarası). Değişiklik <b>Yayınla</b> deyince linke yansır.</div>
+      </section>
+
+      <section className="sub-card stack">
         <h3>Gönderim</h3>
         <div className="pf-hint">Formun üstündeki başlık <b>Görünüm</b> sekmesinden eklenir ("Forma başlık ekle").</div>
         <Field label="Gönderdikten sonra">
@@ -1264,7 +1277,7 @@ function ShareTab({ form }) {
       {!form.publishedAt && <div className="notice notice-warn">Form henüz yayınlanmadı. Kodu şimdi alabilirsiniz ama form, yayınlanana kadar ziyaretçilere kapalı görünür.</div>}
       <section className="sub-card stack share-main">
         <h3>Form linki <span className="muted small">(Instagram, WhatsApp, QR)</span></h3>
-        <p className="muted small">Link açılınca form kendi başına bir randevu sayfası olarak görünür: işletme adı ve logo, yol tarifi / ara / WhatsApp düğmeleri, marka renginde zemin. Paylaşınca WhatsApp'ta işletme adıyla önizleme çıkar.</p>
+        <p className="muted small">Link açılınca form kendi başına bir randevu sayfası olarak görünür: işletme adı ve logo, yol tarifi / ara / WhatsApp düğmeleri, marka renginde zemin. Üstteki yazıları <b>Ayarlar → Link sayfası</b> bölümünden değiştirebilirsiniz.</p>
         <div className="share-link"><input readOnly value={url} aria-label="Form linki" onFocus={(e) => e.target.select()} /><button type="button" className="btn btn-primary" onClick={() => copy(url)}>Linki kopyala</button></div>
         <div className="share-btns">
           <a className="share-btn share-wa" href={`https://wa.me/?text=${encodeURIComponent(`${form.isletme || title}\n${url}`)}`} target="_blank" rel="noopener noreferrer"><WaIcon /> WhatsApp'ta gönder</a>

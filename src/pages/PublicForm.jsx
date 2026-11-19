@@ -73,24 +73,22 @@ function useAutoHeight(slug) {
 // işletme adı + logo, yol tarifi / ara / WhatsApp düğmeleri, marka renginde zemin.
 const standalone = !isEmbedded && !inAssistant;
 
-function initials(name) {
-  return String(name || '').trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toLocaleUpperCase('tr-TR') || '•';
-}
-
 function LinkHeader({ data }) {
   const c = data.content;
   const s = c.settings || {};
   const a = c.appearance || {};
-  const name = data.isletme || s.title || data.name;
+  const lp = s.linkPage || {};
+  const name = lp.title || data.isletme || s.title || data.name;
   const hasAppt = (c.fields || []).some((f) => f.type === 'randevu');
   const en = data.lang === 'en';
-  const sub = s.description || (hasAppt ? (en ? 'Book online in seconds' : 'Online randevu alın, sıra beklemeyin') : en ? 'Online form' : 'Online başvuru');
-  const dir = directionsUrl(s);
-  const tel = telUrl(s.kvkk?.contactPhone);
-  const wa = whatsappUrl(s.assistant?.whatsapp);
+  const sub = lp.subtitle || s.description || (hasAppt ? (en ? 'Book online in seconds' : 'Online randevu alın, sıra beklemeyin') : en ? 'Online form' : 'Online başvuru');
+  const btn = lp.buttons !== false;
+  const dir = btn ? directionsUrl(s) : '';
+  const tel = btn ? telUrl(s.kvkk?.contactPhone) : '';
+  const wa = btn ? whatsappUrl(s.assistant?.whatsapp) : '';
   return (
     <header className="lp-head">
-      <div className="lp-logo">{a.logo ? <img src={a.logo} alt={name} /> : <span>{initials(name)}</span>}</div>
+      {a.logo && <div className="lp-logo"><img src={a.logo} alt={name} /></div>}
       <h1 className="lp-name">{name}</h1>
       <p className="lp-sub">{sub}</p>
       {(dir || tel || wa) && (
@@ -113,7 +111,8 @@ export default function PublicForm({ slug }) {
       setData(d);
       if (d) {
         const hasAppt = (d.content.fields || []).some((f) => f.type === 'randevu');
-        document.title = d.isletme ? `${d.isletme} · ${hasAppt ? (d.lang === 'en' ? 'Book online' : 'Online randevu') : d.content.settings.title || d.name}` : d.content.settings.title || d.name;
+        const lpt = d.content.settings.linkPage?.title || d.isletme;
+        document.title = lpt ? `${lpt} · ${hasAppt ? (d.lang === 'en' ? 'Book online' : 'Online randevu') : d.content.settings.title || d.name}` : d.content.settings.title || d.name;
         if (standalone) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', d.content.appearance?.primary || '#2F5BEA');
         document.documentElement.lang = d.lang || 'tr';
       }
