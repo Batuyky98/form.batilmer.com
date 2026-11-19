@@ -41,11 +41,11 @@ Yayındaki özellikler: çok adımlı form, randevu + müsaitlik, bildirim (canl
 | 8 Ara | Görsel | 10-kvkk | hazır |
 | 10 Ara | Reels | Tek dokunuşla hatırlatma (8 sn) | yapılacak |
 | 12 Ara | Görsel | 11-hepsi-tek-panelde | hazır |
-| (onay bekliyor) | Görsel | 13-neon-sehir (trend: retro neon şehir; oyun adı/logo/font yok) | taslak |
 
 Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, Vital içeren ilk post arşivlenmeli.
 
 ## Sosyal medya yönetimi hizmeti (Kas 2026 kararı)
+- Müşteriye özel reels/görsel araçları repoya konmaz (sadece panel kodu Git'te).
 - Sunum: https://claude.ai/artifact/TXBcpR9uZTwyjybY3uMM1q (genel, firmaya özel değil; logo girişte). İlk aday: Ern Car Care (görüşme aşaması).
 - Paketler (aylık, KDV hariç): Gümüş 4 gönderi + 2 reels 4.999 ₺ · Altın 6 + 3 6.999 ₺ (önerilen) · Platin 8 + 4 8.999 ₺.
 - Çekimi işletme yapar (WhatsApp grubu), biz kurgu/müzik/açıklama/hashtag hazırlayıp **teslim ederiz; paylaşımı işletme yapar**. Yerinde çekim, reklam yönetimi, rapor, DM yanıtlama **yok**. Hesap erişimi gerekmez.
@@ -53,10 +53,6 @@ Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, V
 - Şartlar: asgari süre yok, aylık peşin, yıllık peşin ödemede %10 indirim (Gümüş 53.990, Altın 75.590, Platin 97.190, form 10.690 ₺/yıl), ilk ay profil paketi hediye (bio metni, öne çıkan kapakları).
 - Randevu formu kurulumu: panelde işletmeye özel form (`/f/<slug>`) + sadece o forma yetkili kullanıcı, 2FA, bildirim, bio linki/QR. İlk müşteriden önce: işletmeler arası ayrım testi, KVKK metni + hizmet sözleşmesi.
 - Kapanış slaytında [telefon] boş; kullanıcı numarayı verecek. Reels videoları kullanıcıda.
-
-## Örnek reels (müşteri adayı videosundan)
-- `pazarlama/araclar/ornek-reels-video.py <kaynak.mp4> <logo.png> <klasör>` + `ornek-reels-muzik.py <olaylar.json> <çıktı.wav>`; ffmpeg ile birleştir (loudnorm -13 LUFS). Sahneler dosya başındaki `SAHNE` listesinde.
-- Ern Car Care çizik rötuş videosundan 26 sn örnek yapıldı (kanca → 6 adım → önce/sonra → soru → randevu bitiş kartı). Ham yazılar buzlu bantla kapatılıyor. Logo afişten kesildi; orijinal logo istenecek.
 
 ## Claude aboneliği
 - 2 kişi için öneri: yıllık Pro (~400 $). Team Standard yıllık 480 $, toplu indirim yok.
