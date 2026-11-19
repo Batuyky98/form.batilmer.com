@@ -86,11 +86,14 @@ function LinkHeader({ data }) {
   const dir = btn ? directionsUrl(s) : '';
   const tel = btn ? telUrl(s.kvkk?.contactPhone) : '';
   const wa = btn ? whatsappUrl(s.assistant?.whatsapp) : '';
+  const showT = lp.showTitle !== false;
+  const showS = lp.showSubtitle !== false;
+  if (!a.logo && !showT && !showS && !dir && !tel && !wa) return null;
   return (
     <header className="lp-head">
       {a.logo && <div className="lp-logo"><img src={a.logo} alt={name} /></div>}
-      <h1 className="lp-name">{name}</h1>
-      <p className="lp-sub">{sub}</p>
+      {showT && <h1 className="lp-name">{name}</h1>}
+      {showS && <p className="lp-sub">{sub}</p>}
       {(dir || tel || wa) && (
         <div className="lp-actions">
           {dir && <a href={dir} target="_blank" rel="noopener noreferrer">📍 {en ? 'Directions' : 'Yol tarifi'}</a>}

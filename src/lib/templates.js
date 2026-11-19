@@ -73,7 +73,7 @@ export const DEFAULT_SETTINGS = {
   title: '',
   description: '',
   // Form linki doğrudan açılınca (Instagram bio, WhatsApp) üstte çıkan işletme kartı. Boş = otomatik (işletme adı / hazır alt yazı)
-  linkPage: { title: '', subtitle: '', buttons: true },
+  linkPage: { title: '', subtitle: '', showTitle: true, showSubtitle: true, buttons: true },
   duplicateCheck: 'yok', // 'yok' | 'email' | 'tc' | 'tel'
   // İşletme adresi: müşteriye "Yol tarifi al" düğmesiyle gösterilir (randevu sonrası ve iptal sayfasında)
   address: '',

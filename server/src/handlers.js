@@ -940,7 +940,7 @@ function cleanDraft(draft, prev, user) {
   if (!['sol', 'orta'].includes(next.appearance.logoAlign)) next.appearance.logoAlign = 'orta';
   next.settings.address = str(next.settings.address, 300);
   const lp = next.settings.linkPage || {};
-  next.settings.linkPage = { title: str(lp.title, 80), subtitle: str(lp.subtitle, 160), buttons: lp.buttons !== false };
+  next.settings.linkPage = { title: str(lp.title, 80), subtitle: str(lp.subtitle, 160), showTitle: lp.showTitle !== false, showSubtitle: lp.showSubtitle !== false, buttons: lp.buttons !== false };
   next.settings.kvkk.text = String(next.settings.kvkk.text || '').slice(0, 30000);
   next.settings.consent.text = String(next.settings.consent.text || '').slice(0, 30000);
   next.settings.marketing.text = String(next.settings.marketing.text || '').slice(0, 30000);

@@ -598,13 +598,19 @@ function SettingsTab({ form, draft, setDraft, isAdmin, onMetaSaved, onControlSav
 
       <section className="sub-card stack">
         <h3>Link sayfası <span className="muted small">(Instagram, WhatsApp, QR ile açılınca)</span></h3>
-        <div className="pf-hint">Form linki doğrudan açılınca formun üstünde işletme kartı görünür. Boş bırakılan yazı otomatik dolar. Logo <b>Görünüm</b> sekmesinden eklenir; logo yoksa kart logosuz görünür.</div>
-        <Field label="Başlık" htmlFor="lp-title" hint="Boş = işletme adı">
-          <input id="lp-title" maxLength={80} placeholder={meta?.isletme || 'İşletme adı'} value={s.linkPage?.title || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, title: e.target.value } })} />
-        </Field>
-        <Field label="Alt yazı" htmlFor="lp-sub" hint="Boş = &quot;Online randevu alın, sıra beklemeyin&quot;. WhatsApp'ta link önizlemesinde de bu yazı çıkar.">
-          <input id="lp-sub" maxLength={160} placeholder="Online randevu alın, sıra beklemeyin" value={s.linkPage?.subtitle || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, subtitle: e.target.value } })} />
-        </Field>
+        <div className="pf-hint">Form linki doğrudan açılınca formun üstünde işletme kartı görünür. Boş bırakılan yazı otomatik dolar; hiç görünmesin isterseniz anahtarı kapatın. Hepsi kapalıysa ve logo yoksa form doğrudan en üstten başlar. Logo <b>Görünüm</b> sekmesinden eklenir; logo yoksa kart logosuz görünür.</div>
+        <Toggle id="lp-st" checked={s.linkPage?.showTitle !== false} onChange={(v) => set({ linkPage: { ...s.linkPage, showTitle: v } })} label="Başlık göster" />
+        {s.linkPage?.showTitle !== false && (
+          <Field label="Başlık" htmlFor="lp-title" hint="Boş = işletme adı">
+            <input id="lp-title" maxLength={80} placeholder={meta?.isletme || 'İşletme adı'} value={s.linkPage?.title || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, title: e.target.value } })} />
+          </Field>
+        )}
+        <Toggle id="lp-ss" checked={s.linkPage?.showSubtitle !== false} onChange={(v) => set({ linkPage: { ...s.linkPage, showSubtitle: v } })} label="Alt yazı göster" />
+        {s.linkPage?.showSubtitle !== false && (
+          <Field label="Alt yazı" htmlFor="lp-sub" hint="Boş = &quot;Online randevu alın, sıra beklemeyin&quot;. WhatsApp'ta link önizlemesinde de bu yazı çıkar.">
+            <input id="lp-sub" maxLength={160} placeholder="Online randevu alın, sıra beklemeyin" value={s.linkPage?.subtitle || ''} onChange={(e) => set({ linkPage: { ...s.linkPage, subtitle: e.target.value } })} />
+          </Field>
+        )}
         <Toggle id="lp-btn" checked={s.linkPage?.buttons !== false} onChange={(v) => set({ linkPage: { ...s.linkPage, buttons: v } })} label="Yol tarifi / Ara / WhatsApp düğmelerini göster" />
         <div className="pf-hint">Düğmeler bilgisi girilmişse çıkar: adres (yukarıda), telefon (KVKK → iletişim telefonu), WhatsApp (Sohbet asistanı → WhatsApp numarası). Değişiklik <b>Yayınla</b> deyince linke yansır.</div>
       </section>
