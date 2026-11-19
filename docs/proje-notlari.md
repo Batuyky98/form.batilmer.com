@@ -40,6 +40,7 @@ Yayındaki özellikler: çok adımlı form, randevu + müsaitlik, bildirim (canl
 | 8 Ara | Görsel | 10-kvkk | hazır |
 | 10 Ara | Reels | Tek dokunuşla hatırlatma (8 sn) | yapılacak |
 | 12 Ara | Görsel | 11-hepsi-tek-panelde | hazır |
+| (onay bekliyor) | Görsel | 13-neon-sehir (trend: retro neon şehir; oyun adı/logo/font yok) | taslak |
 
 Sabitlenecek: 11-hepsi-tek-panelde, reels-2, mevcut "Fikirden canlıya". Eski, Vital içeren ilk post arşivlenmeli.
 
